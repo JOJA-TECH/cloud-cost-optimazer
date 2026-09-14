@@ -1,0 +1,137 @@
+{
+  "responses.zip": {
+    "sha256": "f2398e51f56e297061a360152682e9591cfe1a1922be4e86958755f611ddf472",
+    "bytes": 12269734,
+    "archivo": "responses.zip"
+  },
+  "azure_retail_pricing/estructura.json": {
+    "sha256": "ca7c36a3d03e8638a4096f7201e1314fbfc432774011ca8af6e387c937dc390a",
+    "bytes": 3879,
+    "archivo": "estructura.json"
+  },
+  "azure_retail_pricing/respuesta.json": {
+    "sha256": "2bc00709ea9856d8be10ce0de27fba5ca592bded81a2e364546c4b15ffb05e2e",
+    "bytes": 262393,
+    "archivo": "respuesta.json"
+  },
+  "azure_retail_pricing/resumen.json": {
+    "sha256": "64965c7bee4e6bab7837dde904915dbc5c1084dda7cf0aa805823b11d6587203",
+    "bytes": 140,
+    "archivo": "resumen.json"
+  },
+  "azure_monitor_logs/estructura.json": {
+    "sha256": "8c1cc3c1c17f24a0756892a191f74fea2dad694ba6b7f648c71be4d9b41e9410",
+    "bytes": 1498,
+    "archivo": "estructura.json"
+  },
+  "azure_monitor_logs/respuesta.json": {
+    "sha256": "6ef9008846fcb97094e686381478ecbb3883adb9c9c058cd7b4fcb460ea64959",
+    "bytes": 26348,
+    "archivo": "respuesta.json"
+  },
+  "azure_monitor_logs/resumen.json": {
+    "sha256": "29e71127d4ae021dd984b9f1d48acc676646e615d11c22ae5c94c1f4ddd93e70",
+    "bytes": 136,
+    "archivo": "resumen.json"
+  },
+  "azure_monitor_metrics/estructura.json": {
+    "sha256": "7edc9dbcb7c64e4643fb8db1b0fcf8d5b146e1542bcb94a52593de610d7d9f62",
+    "bytes": 3829,
+    "archivo": "estructura.json"
+  },
+  "azure_monitor_metrics/respuesta.json": {
+    "sha256": "5082939266c773abd206e61c569b8e970f55ef824f34592c92d4b645e9064103",
+    "bytes": 15694,
+    "archivo": "respuesta.json"
+  },
+  "azure_monitor_metrics/resumen.json": {
+    "sha256": "cda1f8b327f761da8d34f426c3f6bf3b8488ce0732977fbf3b757acfc2c6c6bf",
+    "bytes": 139,
+    "archivo": "resumen.json"
+  },
+  "azure_sql_estado_tabla/estructura.json": {
+    "sha256": "3075e42fc7e0fdfcb301267304f2aa62b6f734db93cc98791601533d6d00b95e",
+    "bytes": 1808,
+    "archivo": "estructura.json"
+  },
+  "azure_sql_estado_tabla/respuesta.json": {
+    "sha256": "771c3d892677ccb0180c34a9c67a7d5d64ad8e1c9010feb68ff0ea97cceacce3",
+    "bytes": 20339,
+    "archivo": "respuesta.json"
+  },
+  "azure_sql_estado_tabla/resumen.json": {
+    "sha256": "20400d45e87a2fb99aa77fa84c3f151140b9d4c5dbf5bb0421f4c67484486972",
+    "bytes": 142,
+    "archivo": "resumen.json"
+  },
+  "azure_cost_management/estructura.json": {
+    "sha256": "cc4d8b581ff9790eb1cb959cebeaf23f80fd216c4df850b2b5bf8558d8eeb2db",
+    "bytes": 1933,
+    "archivo": "estructura.json"
+  },
+  "azure_cost_management/respuesta.json": {
+    "sha256": "8202991b021ce00df62dba5d7ffb0dcafed65db7118b6d9b1b0b2678db9253ba",
+    "bytes": 1946,
+    "archivo": "respuesta.json"
+  },
+  "azure_cost_management/resumen.json": {
+    "sha256": "a56ac17884ef0c6c2568d0c83415721fdff178d27d5032a1120b81f52ffd1c27",
+    "bytes": 139,
+    "archivo": "resumen.json"
+  },
+  "advisor_recommendations/estructura.json": {
+    "sha256": "d44df2de30a2f744a4c558c1d0dac0a9ad06e886b64a5a5f0ae58aa7c1c2de70",
+    "bytes": 4298,
+    "archivo": "estructura.json"
+  },
+  "advisor_recommendations/respuesta.json": {
+    "sha256": "dad966dc0bd2c8052920f94b5953df9999c58746f9051268cc6496dfe7943cc3",
+    "bytes": 12076,
+    "archivo": "respuesta.json"
+  },
+  "advisor_recommendations/resumen.json": {
+    "sha256": "d8459e10fefd3ada2e932e60fd529038f5b9da2fbbf6ae1fc0723784dbd9ccb3",
+    "bytes": 141,
+    "archivo": "resumen.json"
+  },
+  "query_store_database_watcher/estructura.json": {
+    "sha256": "8de1726acacde9b2c118262ff632bca25480eba17ff84537af03781c45bd7d33",
+    "bytes": 10856,
+    "archivo": "estructura.json"
+  },
+  "query_store_database_watcher/respuesta.json": {
+    "sha256": "ca15909fcc63585fc8898b94982255515ad9a8291beb8ef12eccb82f49fde6be",
+    "bytes": 36581,
+    "archivo": "respuesta.json"
+  },
+  "query_store_database_watcher/resumen.json": {
+    "sha256": "e1f90af955b40573945f3cdfcfb6b4714be90e43f357b389a92dc8adb9a7f352",
+    "bytes": 146,
+    "archivo": "resumen.json"
+  },
+  "arm_sql_resources/estructura.json": {
+    "sha256": "a1cf542f86bd1c06fe8f1bdf11c0a2e07e244407c710fe96b5acfcffca887415",
+    "bytes": 18869,
+    "archivo": "estructura.json"
+  },
+  "arm_sql_resources/respuesta.json": {
+    "sha256": "1cebb19f3b943c154d1823256e19d78b62f3676172db1e21d3d857e43357c157",
+    "bytes": 6264,
+    "archivo": "respuesta.json"
+  },
+  "arm_sql_resources/resumen.json": {
+    "sha256": "a9772a564419d75e688b62dced4652f2a307f4ac2018ba8f9fec84a0c7dac02e",
+    "bytes": 135,
+    "archivo": "resumen.json"
+  },
+  "carga_base_de_datos/registros.json": {
+    "sha256": "068f1f6b8504b208b1c4bbe3ec81b8aaacb04030c48b8b5ca5891e8994631a9e",
+    "bytes": 34843674,
+    "archivo": "registros.json"
+  },
+  "carga_base_de_datos/resumen_carga.json": {
+    "sha256": "31c1730a1b460e613df9429dbb04d07db96fd5e9b5e7273ea34dec9c5562611e",
+    "bytes": 375721,
+    "archivo": "resumen_carga.json"
+  }
+}

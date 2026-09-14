@@ -1,0 +1,112 @@
+{
+  "id": "subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.CostManagement/query/3793c7f7-73e4-4412-a3bd-c8a85c3cd96a",
+  "name": "3793c7f7-73e4-4412-a3bd-c8a85c3cd96a",
+  "type": "Microsoft.CostManagement/query",
+  "location": null,
+  "sku": null,
+  "eTag": null,
+  "properties": {
+    "nextLink": null,
+    "columns": [
+      {
+        "name": "PreTaxCost",
+        "type": "Number"
+      },
+      {
+        "name": "UsageDate",
+        "type": "Number"
+      },
+      {
+        "name": "ServiceName",
+        "type": "String"
+      },
+      {
+        "name": "ResourceGroup",
+        "type": "String"
+      },
+      {
+        "name": "Currency",
+        "type": "String"
+      }
+    ],
+    "rows": [
+      [
+        0.1600161336,
+        20260901,
+        "Storage",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.12,
+        20260901,
+        "Virtual Network",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.1600161336,
+        20260902,
+        "Storage",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.12,
+        20260902,
+        "Virtual Network",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.1600161336,
+        20260903,
+        "Storage",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.12,
+        20260903,
+        "Virtual Network",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.1600161336,
+        20260904,
+        "Storage",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.12,
+        20260904,
+        "Virtual Network",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.0,
+        20260905,
+        "SQL Database",
+        "rg-proyecto-grado-free",
+        "USD"
+      ],
+      [
+        0.1400141169,
+        20260905,
+        "Storage",
+        "pruebas",
+        "USD"
+      ],
+      [
+        0.105,
+        20260905,
+        "Virtual Network",
+        "pruebas",
+        "USD"
+      ]
+    ]
+  }
+}

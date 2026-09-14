@@ -1,0 +1,153 @@
+{
+  "database_resource": {
+    "sku": {
+      "name": "GP_S_Gen5",
+      "tier": "GeneralPurpose",
+      "family": "Gen5",
+      "capacity": 2
+    },
+    "kind": "v12.0,user,vcore,serverless,freelimit",
+    "properties": {
+      "collation": "SQL_Latin1_General_CP1_CI_AS",
+      "maxSizeBytes": 34359738368,
+      "status": "Online",
+      "databaseId": "b206da86-7ecc-4150-af6e-c56f1afe51a7",
+      "creationDate": "2026-09-05T22:09:58.49Z",
+      "currentServiceObjectiveName": "GP_S_Gen5_2",
+      "requestedServiceObjectiveName": "GP_S_Gen5_2",
+      "defaultSecondaryLocation": "australiasoutheast",
+      "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+      "zoneRedundant": false,
+      "maxLogSizeBytes": 193273528320,
+      "earliestRestoreDate": "2026-09-05T22:13:12Z",
+      "readScale": "Disabled",
+      "currentSku": {
+        "name": "GP_S_Gen5",
+        "tier": "GeneralPurpose",
+        "family": "Gen5",
+        "capacity": 2
+      },
+      "autoPauseDelay": 60,
+      "currentBackupStorageRedundancy": "Local",
+      "requestedBackupStorageRedundancy": "Local",
+      "minCapacity": 0.5,
+      "maintenanceConfigurationId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_Default",
+      "isLedgerOn": false,
+      "isInfraEncryptionEnabled": false,
+      "useFreeLimit": true,
+      "freeLimitExhaustionBehavior": "AutoPause",
+      "availabilityZone": "NoPreference"
+    },
+    "location": "australiaeast",
+    "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado",
+    "name": "proyectogrado",
+    "type": "Microsoft.Sql/servers/databases"
+  },
+  "server_resource": {
+    "kind": "v12.0",
+    "properties": {
+      "administratorLogin": "dbadmin",
+      "version": "12.0",
+      "state": "Ready",
+      "fullyQualifiedDomainName": "sql-cuddly-moray.database.windows.net",
+      "privateEndpointConnections": [],
+      "minimalTlsVersion": "1.2",
+      "publicNetworkAccess": "Enabled",
+      "restrictOutboundNetworkAccess": "Disabled",
+      "externalGovernanceStatus": "Disabled",
+      "retentionDays": -1
+    },
+    "location": "australiaeast",
+    "tags": {},
+    "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray",
+    "name": "sql-cuddly-moray",
+    "type": "Microsoft.Sql/servers"
+  },
+  "databases_list": {
+    "value": [
+      {
+        "sku": {
+          "name": "GP_SYSTEM",
+          "tier": "System",
+          "family": "SYSTEM",
+          "capacity": 4
+        },
+        "kind": "v12.0,system,serverless",
+        "managedBy": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray",
+        "properties": {
+          "collation": "SQL_Latin1_General_CP1_CI_AS",
+          "maxSizeBytes": 107374182400,
+          "status": "Online",
+          "databaseId": "da585b4c-70e2-4cf7-b046-1d313ff9f207",
+          "creationDate": "2026-09-05T22:08:32.453Z",
+          "currentServiceObjectiveName": "GP_SYSTEM_4",
+          "requestedServiceObjectiveName": "GP_SYSTEM_4",
+          "defaultSecondaryLocation": "australiasoutheast",
+          "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+          "zoneRedundant": false,
+          "readScale": "Disabled",
+          "currentSku": {
+            "name": "GP_SYSTEM",
+            "tier": "System",
+            "family": "SYSTEM",
+            "capacity": 4
+          },
+          "currentBackupStorageRedundancy": "Local",
+          "requestedBackupStorageRedundancy": "Local",
+          "maintenanceConfigurationId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_Default",
+          "isLedgerOn": false,
+          "isInfraEncryptionEnabled": false,
+          "availabilityZone": "NoPreference"
+        },
+        "location": "australiaeast",
+        "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/master",
+        "name": "master",
+        "type": "Microsoft.Sql/servers/databases"
+      },
+      {
+        "sku": {
+          "name": "GP_S_Gen5",
+          "tier": "GeneralPurpose",
+          "family": "Gen5",
+          "capacity": 2
+        },
+        "kind": "v12.0,user,vcore,serverless,freelimit",
+        "properties": {
+          "collation": "SQL_Latin1_General_CP1_CI_AS",
+          "maxSizeBytes": 34359738368,
+          "status": "Online",
+          "databaseId": "b206da86-7ecc-4150-af6e-c56f1afe51a7",
+          "creationDate": "2026-09-05T22:09:58.49Z",
+          "currentServiceObjectiveName": "GP_S_Gen5_2",
+          "requestedServiceObjectiveName": "GP_S_Gen5_2",
+          "defaultSecondaryLocation": "australiasoutheast",
+          "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+          "zoneRedundant": false,
+          "maxLogSizeBytes": 193273528320,
+          "earliestRestoreDate": "2026-09-05T22:13:12Z",
+          "readScale": "Disabled",
+          "currentSku": {
+            "name": "GP_S_Gen5",
+            "tier": "GeneralPurpose",
+            "family": "Gen5",
+            "capacity": 2
+          },
+          "autoPauseDelay": 60,
+          "currentBackupStorageRedundancy": "Local",
+          "requestedBackupStorageRedundancy": "Local",
+          "minCapacity": 0.5,
+          "maintenanceConfigurationId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_Default",
+          "isLedgerOn": false,
+          "isInfraEncryptionEnabled": false,
+          "useFreeLimit": true,
+          "freeLimitExhaustionBehavior": "AutoPause",
+          "availabilityZone": "NoPreference"
+        },
+        "location": "australiaeast",
+        "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado",
+        "name": "proyectogrado",
+        "type": "Microsoft.Sql/servers/databases"
+      }
+    ]
+  }
+}

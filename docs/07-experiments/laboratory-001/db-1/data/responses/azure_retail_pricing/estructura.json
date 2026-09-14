@@ -1,0 +1,141 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "BillingCurrency": {
+      "path": "$.BillingCurrency",
+      "type": "string",
+      "example": "USD"
+    },
+    "CustomerEntityId": {
+      "path": "$.CustomerEntityId",
+      "type": "string",
+      "example": "Default"
+    },
+    "CustomerEntityType": {
+      "path": "$.CustomerEntityType",
+      "type": "string",
+      "example": "Retail"
+    },
+    "Items": {
+      "path": "$.Items",
+      "type": "array",
+      "count": 343,
+      "items": {
+        "path": "$.Items[]",
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "path": "$.Items[].currencyCode",
+            "type": "string",
+            "example": "USD"
+          },
+          "tierMinimumUnits": {
+            "path": "$.Items[].tierMinimumUnits",
+            "type": "number",
+            "example": 0.0
+          },
+          "retailPrice": {
+            "path": "$.Items[].retailPrice",
+            "type": "number",
+            "example": 14.49104
+          },
+          "unitPrice": {
+            "path": "$.Items[].unitPrice",
+            "type": "number",
+            "example": 14.49104
+          },
+          "armRegionName": {
+            "path": "$.Items[].armRegionName",
+            "type": "string",
+            "example": "australiaeast"
+          },
+          "location": {
+            "path": "$.Items[].location",
+            "type": "string",
+            "example": "AU East"
+          },
+          "effectiveStartDate": {
+            "path": "$.Items[].effectiveStartDate",
+            "type": "string",
+            "example": "2025-06-01T00:00:00Z"
+          },
+          "meterId": {
+            "path": "$.Items[].meterId",
+            "type": "string",
+            "example": "2d6ad12e-49dd-4279-9c6b-e0cd904957ab"
+          },
+          "meterName": {
+            "path": "$.Items[].meterName",
+            "type": "string",
+            "example": "vCore"
+          },
+          "productId": {
+            "path": "$.Items[].productId",
+            "type": "string",
+            "example": "DZH318Z0BPXL"
+          },
+          "skuId": {
+            "path": "$.Items[].skuId",
+            "type": "string",
+            "example": "DZH318Z0BPXL/010Q"
+          },
+          "productName": {
+            "path": "$.Items[].productName",
+            "type": "string",
+            "example": "SQL Database Single/Elastic Pool General Purpose - Compute Gen5"
+          },
+          "skuName": {
+            "path": "$.Items[].skuName",
+            "type": "string",
+            "example": "80 vCore"
+          },
+          "serviceName": {
+            "path": "$.Items[].serviceName",
+            "type": "string",
+            "example": "SQL Database"
+          },
+          "serviceId": {
+            "path": "$.Items[].serviceId",
+            "type": "string",
+            "example": "DZH3180HX10K"
+          },
+          "serviceFamily": {
+            "path": "$.Items[].serviceFamily",
+            "type": "string",
+            "example": "Databases"
+          },
+          "unitOfMeasure": {
+            "path": "$.Items[].unitOfMeasure",
+            "type": "string",
+            "example": "1 Hour"
+          },
+          "type": {
+            "path": "$.Items[].type",
+            "type": "string",
+            "example": "Consumption"
+          },
+          "isPrimaryMeterRegion": {
+            "path": "$.Items[].isPrimaryMeterRegion",
+            "type": "boolean",
+            "example": false
+          },
+          "armSkuName": {
+            "path": "$.Items[].armSkuName",
+            "type": "string",
+            "example": "SQLDB_GP_Compute_Gen5_80"
+          }
+        }
+      }
+    },
+    "NextPageLink": {
+      "path": "$.NextPageLink",
+      "type": "null"
+    },
+    "Count": {
+      "path": "$.Count",
+      "type": "integer",
+      "example": 343
+    }
+  }
+}

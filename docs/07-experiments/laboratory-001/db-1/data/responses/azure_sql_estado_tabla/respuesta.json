@@ -1,0 +1,729 @@
+{
+  "tabla": "dbo.carga_telemetria",
+  "existe": true,
+  "total_filas": 239006,
+  "columnas": [
+    {
+      "columna": "id",
+      "tipo": "bigint"
+    },
+    {
+      "columna": "evento",
+      "tipo": "nvarchar"
+    },
+    {
+      "columna": "carga",
+      "tipo": "int"
+    },
+    {
+      "columna": "descripcion",
+      "tipo": "nvarchar"
+    },
+    {
+      "columna": "creado_el",
+      "tipo": "datetime2"
+    }
+  ],
+  "filas": [
+    {
+      "id": 476913,
+      "evento": "evento_7lsSkV",
+      "carga": 572,
+      "descripcion": "IwhGwwcucxzYxo7vZAvPasZwoY07Wnj5oeiU4MXY",
+      "creado_el": "2026-09-06T02:26:00.334028"
+    },
+    {
+      "id": 476908,
+      "evento": "evento_a4RYuY",
+      "carga": 741,
+      "descripcion": "vbG1Kqd1dlvN7R7BFnaOjEjVcvBsYyBoGFLDkTel",
+      "creado_el": "2026-09-06T02:26:00.319540"
+    },
+    {
+      "id": 476905,
+      "evento": "evento_enI1GH",
+      "carga": 631,
+      "descripcion": "DV6UE71aXl0jz46PE22GVjLmVV7gNfIxyGB61FYA",
+      "creado_el": "2026-09-06T02:26:00.308368"
+    },
+    {
+      "id": 476904,
+      "evento": "evento_njz4a3",
+      "carga": 700,
+      "descripcion": "G2Vq0uqZjvXo87poEWR6jrgDehvB0cFG2xkn3KLU",
+      "creado_el": "2026-09-06T02:26:00.305824"
+    },
+    {
+      "id": 476903,
+      "evento": "evento_DzS8dY",
+      "carga": 524,
+      "descripcion": "sSh2R8XsSD8ZVeiYchxaiQhI3LqC9T7ee9A0KJIB",
+      "creado_el": "2026-09-06T02:26:00.302618"
+    },
+    {
+      "id": 476900,
+      "evento": "evento_KrsFgF",
+      "carga": 625,
+      "descripcion": "VHI0phjrHo9JjZpwKuZLWtSODzjhf30YiI9BTLOX",
+      "creado_el": "2026-09-06T02:26:00.293099"
+    },
+    {
+      "id": 476899,
+      "evento": "evento_rLKW6g",
+      "carga": 886,
+      "descripcion": "JXcI2g6TWm84Q09mQVkgeRQXuSNTDPalhxEiOpqP",
+      "creado_el": "2026-09-06T02:26:00.290789"
+    },
+    {
+      "id": 476898,
+      "evento": "evento_5zjIx1",
+      "carga": 887,
+      "descripcion": "TcQP71BSnJ0wT3aBPW6m1149bYYGGc9VK3LKysdI",
+      "creado_el": "2026-09-06T02:26:00.287512"
+    },
+    {
+      "id": 476895,
+      "evento": "evento_Pg96Dp",
+      "carga": 936,
+      "descripcion": "VEVvj5OWfUcnyS4OZrC3QArzsefxxINySdYUsuJG",
+      "creado_el": "2026-09-06T02:26:00.279417"
+    },
+    {
+      "id": 476894,
+      "evento": "evento_lHif5N",
+      "carga": 992,
+      "descripcion": "t0SCMbnog2S7vp76yOVT8xkqcd5UmN1Vy28ZsAKh",
+      "creado_el": "2026-09-06T02:26:00.277042"
+    },
+    {
+      "id": 476893,
+      "evento": "evento_EdQ7TU",
+      "carga": 970,
+      "descripcion": "n2tdmMAvn5YaVsnFrUy7BfM0GZWWMyZUtQHUfoIL",
+      "creado_el": "2026-09-06T02:26:00.274147"
+    },
+    {
+      "id": 476891,
+      "evento": "evento_VP49Ng",
+      "carga": 905,
+      "descripcion": "hbRGvdJgWbTrOqoBEkotG6H6Fs9kurrHO3Yo9Lu6",
+      "creado_el": "2026-09-06T02:26:00.268101"
+    },
+    {
+      "id": 476889,
+      "evento": "evento_c1hsFb",
+      "carga": 780,
+      "descripcion": "ID23xIr4kZoaB20zXEoaDnwcoGTDTnyvzYCpcxdH",
+      "creado_el": "2026-09-06T02:26:00.262046"
+    },
+    {
+      "id": 476887,
+      "evento": "evento_ssCSNH",
+      "carga": 620,
+      "descripcion": "yKoYfNpov4hUIACCVbl7c6re9JzCF9K7Mf38q7BZ",
+      "creado_el": "2026-09-06T02:26:00.253275"
+    },
+    {
+      "id": 476884,
+      "evento": "evento_uTY4zE",
+      "carga": 640,
+      "descripcion": "sRitC15GPF0IMCxYdH0sts6xToBhN6bifudVeUOW",
+      "creado_el": "2026-09-06T02:26:00.238582"
+    },
+    {
+      "id": 476883,
+      "evento": "evento_oDTpgM",
+      "carga": 774,
+      "descripcion": "RnoX5LD6TFwqOPVGJn21N6xp6mUvFvarZmm3GLKD",
+      "creado_el": "2026-09-06T02:26:00.235978"
+    },
+    {
+      "id": 476882,
+      "evento": "evento_eJtuoA",
+      "carga": 966,
+      "descripcion": "orpAE2IeX7jfoUrA8ExHtlAcIuO1ajh0vB9mSCKb",
+      "creado_el": "2026-09-06T02:26:00.233026"
+    },
+    {
+      "id": 476881,
+      "evento": "evento_hivQw9",
+      "carga": 528,
+      "descripcion": "9cs4bKgKiwx9PJ26tOTGTipWh1y38qByeI03FTWY",
+      "creado_el": "2026-09-06T02:26:00.229896"
+    },
+    {
+      "id": 476880,
+      "evento": "evento_pnIJNK",
+      "carga": 508,
+      "descripcion": "jfzilawRTWKsMJihS5SwxVy7XyIMrzflnkdbPKa3",
+      "creado_el": "2026-09-06T02:26:00.226995"
+    },
+    {
+      "id": 476878,
+      "evento": "evento_1JMFa8",
+      "carga": 760,
+      "descripcion": "D0UPMSg1lBig5WGDUaTg3oIca84Nemv0Hd9VdDms",
+      "creado_el": "2026-09-06T02:26:00.221902"
+    },
+    {
+      "id": 476877,
+      "evento": "evento_04gaes",
+      "carga": 539,
+      "descripcion": "nffOOywSY9P4Pj2AqYrEPRLwBFQVMUooYJFDmVWp",
+      "creado_el": "2026-09-06T02:26:00.218924"
+    },
+    {
+      "id": 476875,
+      "evento": "evento_kN0B1o",
+      "carga": 713,
+      "descripcion": "JsHO5IKFWnLAGh248Bood28uSGpFiMl6czo5XYdM",
+      "creado_el": "2026-09-06T02:26:00.213265"
+    },
+    {
+      "id": 476874,
+      "evento": "evento_VYKQ4L",
+      "carga": 949,
+      "descripcion": "vt8NuVn3lKL2GmtH1VhiVodyx84eSAuvBnXj8zHE",
+      "creado_el": "2026-09-06T02:26:00.210357"
+    },
+    {
+      "id": 476868,
+      "evento": "evento_RbDCgH",
+      "carga": 744,
+      "descripcion": "KlLoie6zLgf3qYWB2SMPJLsKUFUgFE5Jj7o3lmP1",
+      "creado_el": "2026-09-06T02:26:00.194262"
+    },
+    {
+      "id": 476866,
+      "evento": "evento_NjAWaF",
+      "carga": 936,
+      "descripcion": "p6FOGo3VnnMc7GADxjC7GBEmAVktcVuM4Zf2RVqb",
+      "creado_el": "2026-09-06T02:26:00.187270"
+    },
+    {
+      "id": 476865,
+      "evento": "evento_7p3Q2G",
+      "carga": 672,
+      "descripcion": "yrmeo8Pj77tMFif861k9nCUzuvQGd4DAAnb2JzF5",
+      "creado_el": "2026-09-06T02:26:00.185898"
+    },
+    {
+      "id": 476863,
+      "evento": "evento_4L8bJJ",
+      "carga": 689,
+      "descripcion": "7x7GaMKrmhx3dkNKbHnpWxN24TGwRn7ktEZAvSnp",
+      "creado_el": "2026-09-06T02:26:00.180499"
+    },
+    {
+      "id": 476862,
+      "evento": "evento_NhrGGo",
+      "carga": 874,
+      "descripcion": "MgxhNzNVtbMZQb87h1dgVWxDWLlvBqiyp9GAXCWS",
+      "creado_el": "2026-09-06T02:26:00.174081"
+    },
+    {
+      "id": 476860,
+      "evento": "evento_mT1CXD",
+      "carga": 979,
+      "descripcion": "XGaqT2DPSdB3LzdFS9xWFFIuAiERfGvuMx8poUxF",
+      "creado_el": "2026-09-06T02:26:00.168301"
+    },
+    {
+      "id": 476854,
+      "evento": "evento_G9EsnP",
+      "carga": 675,
+      "descripcion": "CLSV2i85vKMnnalrZitZ576G4Lj6Lx31eZpE3u2O",
+      "creado_el": "2026-09-06T02:26:00.151791"
+    },
+    {
+      "id": 476853,
+      "evento": "evento_PqWo9C",
+      "carga": 587,
+      "descripcion": "5dzZYz0wP44RUdxsBkzVmEGoAS44hMLqUmBNZUNd",
+      "creado_el": "2026-09-06T02:26:00.146849"
+    },
+    {
+      "id": 476851,
+      "evento": "evento_35eNbg",
+      "carga": 519,
+      "descripcion": "7Le0Hy2r4YfuRrLCc4VJfGgOkHgFwYKCx0Bfnz0Y",
+      "creado_el": "2026-09-06T02:26:00.140755"
+    },
+    {
+      "id": 476850,
+      "evento": "evento_4HPA92",
+      "carga": 808,
+      "descripcion": "STaWsBehZjqcLdu6qqFYpCSVdkDYZ821qAwfp6Ee",
+      "creado_el": "2026-09-06T02:26:00.138737"
+    },
+    {
+      "id": 476849,
+      "evento": "evento_Jj7S7B",
+      "carga": 859,
+      "descripcion": "DfVrk474cIE0Mti5KrPsAO26kHJQjSXyJ3S4gdNV",
+      "creado_el": "2026-09-06T02:26:00.136011"
+    },
+    {
+      "id": 476848,
+      "evento": "evento_K8QKRV",
+      "carga": 664,
+      "descripcion": "0azNjLDAbUS1Yiz0fh51zUgV1qFLpyUp2PcXeOav",
+      "creado_el": "2026-09-06T02:26:00.132884"
+    },
+    {
+      "id": 476846,
+      "evento": "evento_QqNlS0",
+      "carga": 863,
+      "descripcion": "VdPw8FOGwZBF6Iu73yHRa1SgcC0IksVut1yeeMlx",
+      "creado_el": "2026-09-06T02:26:00.127057"
+    },
+    {
+      "id": 476845,
+      "evento": "evento_EWdqRq",
+      "carga": 956,
+      "descripcion": "U9tl1jlpMZSlrgHEebJMSlg2mi1BIZaq8yHUzkhY",
+      "creado_el": "2026-09-06T02:26:00.124274"
+    },
+    {
+      "id": 476843,
+      "evento": "evento_5kRXze",
+      "carga": 802,
+      "descripcion": "0mJXvmBIhVYZumiLLx1OwtcAafdbgMaZdzw8SaUQ",
+      "creado_el": "2026-09-06T02:26:00.118266"
+    },
+    {
+      "id": 476842,
+      "evento": "evento_jDc4sM",
+      "carga": 908,
+      "descripcion": "p2zQ22QCLqkk3Sqrgng2VbskEEdIMfhddmKnm0qt",
+      "creado_el": "2026-09-06T02:26:00.115645"
+    },
+    {
+      "id": 476841,
+      "evento": "evento_71qd2u",
+      "carga": 974,
+      "descripcion": "prC5oG5vlxbG4r2XV3Rdxbh3ocEK0YVw9873ErqC",
+      "creado_el": "2026-09-06T02:26:00.112936"
+    },
+    {
+      "id": 476840,
+      "evento": "evento_2tVzZy",
+      "carga": 644,
+      "descripcion": "vGlz1TDXKquHjjFgEcuFI9H9cDonW5qTFvBPeVSt",
+      "creado_el": "2026-09-06T02:26:00.109446"
+    },
+    {
+      "id": 476839,
+      "evento": "evento_MqxTcQ",
+      "carga": 610,
+      "descripcion": "jFgc4qsX80zny1cSjWpjxYLCmDWjKV17pT7rkEoK",
+      "creado_el": "2026-09-06T02:26:00.107002"
+    },
+    {
+      "id": 476833,
+      "evento": "evento_7PR33o",
+      "carga": 856,
+      "descripcion": "Sp2ZIBj7Zb1kVfuNroLB54JIx3qL46729NRKQLg6",
+      "creado_el": "2026-09-06T02:26:00.085809"
+    },
+    {
+      "id": 476831,
+      "evento": "evento_1Z13p4",
+      "carga": 592,
+      "descripcion": "lfkD8HP5zsY0q5m37tbNnYZ8LFAD0TmH30HPIvAg",
+      "creado_el": "2026-09-06T02:26:00.080438"
+    },
+    {
+      "id": 476828,
+      "evento": "evento_6aYHZn",
+      "carga": 798,
+      "descripcion": "lNrDBCLT4SATKwblDWDX0M8SPmz7hlTWQPKnVG2a",
+      "creado_el": "2026-09-06T02:26:00.071277"
+    },
+    {
+      "id": 476825,
+      "evento": "evento_SHN4A9",
+      "carga": 934,
+      "descripcion": "0KG6wPJUAC9WpgBA3b4P7jJmtYzT0up4yMg8F2sE",
+      "creado_el": "2026-09-06T02:26:00.062228"
+    },
+    {
+      "id": 476822,
+      "evento": "evento_l3i0G7",
+      "carga": 776,
+      "descripcion": "SePq5bEetwZWzoarOob44NuQ0kaCv6NnwspLEf8E",
+      "creado_el": "2026-09-06T02:26:00.052718"
+    },
+    {
+      "id": 476821,
+      "evento": "evento_HpbtAk",
+      "carga": 707,
+      "descripcion": "dle7EGxWpQ6nT6jPPWX5pWmbLEwPVHPpclzSpI8z",
+      "creado_el": "2026-09-06T02:26:00.050699"
+    },
+    {
+      "id": 476819,
+      "evento": "evento_UE9HR9",
+      "carga": 585,
+      "descripcion": "q2ZCFjLS7KDGvstDnWul3xYMoBxn8f0b5CtuvZPr",
+      "creado_el": "2026-09-06T02:26:00.044638"
+    },
+    {
+      "id": 476812,
+      "evento": "evento_UIB5iH",
+      "carga": 818,
+      "descripcion": "m30RfspbXFQpbIvXx0COs8FkioELwgDnSjGddFGB",
+      "creado_el": "2026-09-06T02:26:00.018781"
+    },
+    {
+      "id": 476811,
+      "evento": "evento_lVdV1X",
+      "carga": 591,
+      "descripcion": "xJI9iOUNRSL4orwUOUVJo3SUHSDF7pUnmTzawx0m",
+      "creado_el": "2026-09-06T02:26:00.016392"
+    },
+    {
+      "id": 476808,
+      "evento": "evento_xtfaih",
+      "carga": 962,
+      "descripcion": "H7ZbFWvXgUgoNxmXjxxUU3BSOoiEetUigmyW7PeU",
+      "creado_el": "2026-09-06T02:26:00.007172"
+    },
+    {
+      "id": 476807,
+      "evento": "evento_bc2Xmh",
+      "carga": 628,
+      "descripcion": "t5zE0hU2K91xPYzA6q8lgtns5QWHnD8I7pScl7Qd",
+      "creado_el": "2026-09-06T02:26:00.004496"
+    },
+    {
+      "id": 476805,
+      "evento": "evento_xqmmFZ",
+      "carga": 756,
+      "descripcion": "OMIQmbz2SqxD5VqC7d7jPvREbb4WPKaGaR9pPNFp",
+      "creado_el": "2026-09-06T02:25:59.998453"
+    },
+    {
+      "id": 476804,
+      "evento": "evento_pGYmmc",
+      "carga": 832,
+      "descripcion": "gA4qbmX7L9JKE3sstNXveF3LZ8OV4ZtfDw1GMwwU",
+      "creado_el": "2026-09-06T02:25:59.995056"
+    },
+    {
+      "id": 476803,
+      "evento": "evento_oAPoDT",
+      "carga": 625,
+      "descripcion": "fJrgTXyWuBJUpQCQJTM766bJTvZOyFWtLucHtUsu",
+      "creado_el": "2026-09-06T02:25:59.992880"
+    },
+    {
+      "id": 476802,
+      "evento": "evento_XMsjQP",
+      "carga": 677,
+      "descripcion": "U009aFyzUFl5sSM8ZSEcsFAlDZzDXs3EnHQs8Gtm",
+      "creado_el": "2026-09-06T02:25:59.990744"
+    },
+    {
+      "id": 476801,
+      "evento": "evento_R59a1M",
+      "carga": 554,
+      "descripcion": "oTYtW5A9RaOq8BopCfJlDmxWeALZ3ZYlDd3j64P2",
+      "creado_el": "2026-09-06T02:25:59.987519"
+    },
+    {
+      "id": 476800,
+      "evento": "evento_nCIb1j",
+      "carga": 551,
+      "descripcion": "YKh1qfdNLBbMxUnHbEHRHDnfNTwkCE1FxdNRWvN9",
+      "creado_el": "2026-09-06T02:25:59.985366"
+    },
+    {
+      "id": 476799,
+      "evento": "evento_bcleEz",
+      "carga": 744,
+      "descripcion": "4pSgZEOrJad9KOLfiqW8PBdMw09XGRPjo6kwhAgh",
+      "creado_el": "2026-09-06T02:25:59.982679"
+    },
+    {
+      "id": 476798,
+      "evento": "evento_Wc0WBn",
+      "carga": 676,
+      "descripcion": "asxVb0exI1KGKL8i013salXAQG9XeJyl90Lqj4lM",
+      "creado_el": "2026-09-06T02:25:59.979295"
+    },
+    {
+      "id": 476796,
+      "evento": "evento_g1UZ0B",
+      "carga": 598,
+      "descripcion": "8roDTvCg7bbNLq6GR7LAY8MPSTOsOIRyF1KACcJo",
+      "creado_el": "2026-09-06T02:25:59.974484"
+    },
+    {
+      "id": 476795,
+      "evento": "evento_PBCnSc",
+      "carga": 856,
+      "descripcion": "2HFrmtC4ebsnvl2317UckV0O9SbEZflHc7yXP2XT",
+      "creado_el": "2026-09-06T02:25:59.969006"
+    },
+    {
+      "id": 476793,
+      "evento": "evento_UpG7cY",
+      "carga": 960,
+      "descripcion": "d1oAzDrbyNL7J8VFldMvewZvM0EDzG9d7Bn72jfX",
+      "creado_el": "2026-09-06T02:25:59.963315"
+    },
+    {
+      "id": 476792,
+      "evento": "evento_UJc88g",
+      "carga": 920,
+      "descripcion": "6OcaFhonOZXAgslSaVWRiX4RkKZU2a8reCzQngbZ",
+      "creado_el": "2026-09-06T02:25:59.960252"
+    },
+    {
+      "id": 476790,
+      "evento": "evento_2LvrXp",
+      "carga": 887,
+      "descripcion": "tkx8u5t1hNmVIKwmV0PDvBo218RrdwJ53GbvXfJR",
+      "creado_el": "2026-09-06T02:25:59.954078"
+    },
+    {
+      "id": 476789,
+      "evento": "evento_E4jmyG",
+      "carga": 565,
+      "descripcion": "8REqQ5Y6U4WvNEcDF6iQNI59DjdDbyJPAQAercV6",
+      "creado_el": "2026-09-06T02:25:59.952067"
+    },
+    {
+      "id": 476788,
+      "evento": "evento_llAGCI",
+      "carga": 645,
+      "descripcion": "cfJFglFRh1eZia7MIxw7hrD6rmvaNAY3fCaiNWjd",
+      "creado_el": "2026-09-06T02:25:59.948375"
+    },
+    {
+      "id": 476787,
+      "evento": "evento_PPbXMr",
+      "carga": 933,
+      "descripcion": "HUhNQVD6y0gqfH1lQbubZld3ETkQr8Gl0yhtrbIq",
+      "creado_el": "2026-09-06T02:25:59.945658"
+    },
+    {
+      "id": 476784,
+      "evento": "evento_S7fq9d",
+      "carga": 621,
+      "descripcion": "4W49Z1C8di8amGIZoGIlkWXi7K1IRgGaUCjEp3Rz",
+      "creado_el": "2026-09-06T02:25:59.938381"
+    },
+    {
+      "id": 476783,
+      "evento": "evento_7aQo8k",
+      "carga": 620,
+      "descripcion": "YZEwFBBd1EUjjtApbc4zGG9SePyylbw8sxSHfwh2",
+      "creado_el": "2026-09-06T02:25:59.935886"
+    },
+    {
+      "id": 476782,
+      "evento": "evento_BHLGAr",
+      "carga": 815,
+      "descripcion": "7e9ZwH79QfDALVi8qCBvTj9BFybCvOGsLdEwMhlk",
+      "creado_el": "2026-09-06T02:25:59.932949"
+    },
+    {
+      "id": 476780,
+      "evento": "evento_MKO8Ft",
+      "carga": 949,
+      "descripcion": "Dit3psSDwErkFrCHPqaOgyogwzYFhlU8qIfrbMeI",
+      "creado_el": "2026-09-06T02:25:59.927107"
+    },
+    {
+      "id": 476777,
+      "evento": "evento_yn6XVI",
+      "carga": 893,
+      "descripcion": "jlfTpID3AgKSOYwUVUsHVZPvLl9rQe2EgSxfeZJA",
+      "creado_el": "2026-09-06T02:25:59.920392"
+    },
+    {
+      "id": 476775,
+      "evento": "evento_aoDvEY",
+      "carga": 953,
+      "descripcion": "6RfSvAhdpvD7HzQJajFWDskLxqcB82ziyUfkzUPu",
+      "creado_el": "2026-09-06T02:25:59.914949"
+    },
+    {
+      "id": 476773,
+      "evento": "evento_gMnJeD",
+      "carga": 886,
+      "descripcion": "ZlDTfYRd1YT3zurbzebHDkXsb2nuQf2VN1gq6az4",
+      "creado_el": "2026-09-06T02:25:59.909697"
+    },
+    {
+      "id": 476771,
+      "evento": "evento_OOByZe",
+      "carga": 886,
+      "descripcion": "lZViMRK8aD1ogKWCZxrYF2T0WD2OBS0n8HZkHWfG",
+      "creado_el": "2026-09-06T02:25:59.904213"
+    },
+    {
+      "id": 476766,
+      "evento": "evento_En99it",
+      "carga": 748,
+      "descripcion": "LjcUB16neU3FozQtYq4daFdXmqztr8m4NIdA7Wgm",
+      "creado_el": "2026-09-06T02:25:59.888729"
+    },
+    {
+      "id": 476763,
+      "evento": "evento_9cKK8s",
+      "carga": 602,
+      "descripcion": "5xeNClj7UOD1vQUekLqCDdqK5rGhYIIUjCEb90Sg",
+      "creado_el": "2026-09-06T02:25:59.880655"
+    },
+    {
+      "id": 476762,
+      "evento": "evento_DoJBIC",
+      "carga": 688,
+      "descripcion": "O2JvuubURg0vGM9gCtJ5GgKqV62P4ocwXb50Xw6x",
+      "creado_el": "2026-09-06T02:25:59.877343"
+    },
+    {
+      "id": 476761,
+      "evento": "evento_XsgM5t",
+      "carga": 753,
+      "descripcion": "IT6FY5pSLuz48EXud8N3EImKPbMwa6CKDpGWUcH8",
+      "creado_el": "2026-09-06T02:25:59.875333"
+    },
+    {
+      "id": 476760,
+      "evento": "evento_xLH0AQ",
+      "carga": 889,
+      "descripcion": "InVs78nosGvXZUtrcFnjvwClkwvqV1NlDBgr0qMq",
+      "creado_el": "2026-09-06T02:25:59.872945"
+    },
+    {
+      "id": 476759,
+      "evento": "evento_nz68Zh",
+      "carga": 542,
+      "descripcion": "0VniL2wQP7E3kCjbl3K0XFN1VINqyhrae2miykqj",
+      "creado_el": "2026-09-06T02:25:59.869294"
+    },
+    {
+      "id": 476758,
+      "evento": "evento_zZZY58",
+      "carga": 994,
+      "descripcion": "gw6orNbZjTOFUxPScfNamMTgaVCOV8pZRSRTPGKN",
+      "creado_el": "2026-09-06T02:25:59.866814"
+    },
+    {
+      "id": 476757,
+      "evento": "evento_hb6BiW",
+      "carga": 755,
+      "descripcion": "9x30rIn6lkTtdf3gGuweEjlTNEavVMRQL9FySMQQ",
+      "creado_el": "2026-09-06T02:25:59.863801"
+    },
+    {
+      "id": 476754,
+      "evento": "evento_O5igfW",
+      "carga": 777,
+      "descripcion": "ywFOO9DkgIIoE7oOA8szUVoha6Ov2JMZhsguXGEw",
+      "creado_el": "2026-09-06T02:25:59.856585"
+    },
+    {
+      "id": 476752,
+      "evento": "evento_cIlg99",
+      "carga": 866,
+      "descripcion": "5PAQ3XtfqbyeTqJOnyqopkx03jgxA4xn71n4e3vI",
+      "creado_el": "2026-09-06T02:25:59.851153"
+    },
+    {
+      "id": 476750,
+      "evento": "evento_eMDSY7",
+      "carga": 860,
+      "descripcion": "sGgUyx7MRC0vdaHRxPFjufltBmFkNQzxUhuWWafp",
+      "creado_el": "2026-09-06T02:25:59.845637"
+    },
+    {
+      "id": 476739,
+      "evento": "evento_cKPfyV",
+      "carga": 640,
+      "descripcion": "jHblwgHsI5icmuOjRV3GDQqbQCn9CqEmVQMvo82j",
+      "creado_el": "2026-09-06T02:25:59.804952"
+    },
+    {
+      "id": 476738,
+      "evento": "evento_w0JWoS",
+      "carga": 737,
+      "descripcion": "PAHCjuMQ98hD6GiRkOyUXd5IwtEN8DzofO2lsCrR",
+      "creado_el": "2026-09-06T02:25:59.801270"
+    },
+    {
+      "id": 476735,
+      "evento": "evento_zCOSJU",
+      "carga": 752,
+      "descripcion": "obqd0wo7nz1t2x7CLu7EDO81RxgGzkG2sZiSVEud",
+      "creado_el": "2026-09-06T02:25:59.793211"
+    },
+    {
+      "id": 476732,
+      "evento": "evento_hNIYxS",
+      "carga": 944,
+      "descripcion": "j6wKzyUh4tvoH29egpIgRVlLzQgEwr8LJabHRtxh",
+      "creado_el": "2026-09-06T02:25:59.785658"
+    },
+    {
+      "id": 476731,
+      "evento": "evento_G3Od9a",
+      "carga": 746,
+      "descripcion": "c04ZkHBTARM1Gny7HeIuUCJQpHkEVV9wOQlVfGVN",
+      "creado_el": "2026-09-06T02:25:59.782885"
+    },
+    {
+      "id": 476729,
+      "evento": "evento_S0Iqna",
+      "carga": 837,
+      "descripcion": "gBpUX5g8HlfcuqDTPrvz0JYBaFINUBq61KEfQvsq",
+      "creado_el": "2026-09-06T02:25:59.777481"
+    },
+    {
+      "id": 476727,
+      "evento": "evento_DK9ynz",
+      "carga": 754,
+      "descripcion": "xRk87zclsWwVbHX7wvcPyh4mIldIqhc1kbv4ila7",
+      "creado_el": "2026-09-06T02:25:59.771790"
+    },
+    {
+      "id": 476726,
+      "evento": "evento_eZCIZo",
+      "carga": 973,
+      "descripcion": "5uekcZqWH2eBu2dWqDbwlyIv1NZAdY0HUHDCad4j",
+      "creado_el": "2026-09-06T02:25:59.769766"
+    },
+    {
+      "id": 476724,
+      "evento": "evento_9Ixq2U",
+      "carga": 518,
+      "descripcion": "ii4OWFeF04vn0vtDOL3Z9wBm57zxmjccr3KmCcpL",
+      "creado_el": "2026-09-06T02:25:59.763919"
+    },
+    {
+      "id": 476721,
+      "evento": "evento_rNU6Af",
+      "carga": 964,
+      "descripcion": "YdM7qw5B6XtwCWam3SXM8LCuR02i41crDeuKunEn",
+      "creado_el": "2026-09-06T02:25:59.746061"
+    },
+    {
+      "id": 476719,
+      "evento": "evento_C1HjON",
+      "carga": 854,
+      "descripcion": "CaXx505zbVPkbpI5XD9fWvdTtLPNZMMIXlmNTwZ7",
+      "creado_el": "2026-09-06T02:25:59.739750"
+    },
+    {
+      "id": 476715,
+      "evento": "evento_AnFfkj",
+      "carga": 798,
+      "descripcion": "X3UlwH5nuE70KfsMelaskLmocFVmET5VglesTlmq",
+      "creado_el": "2026-09-06T02:25:59.729095"
+    }
+  ]
+}

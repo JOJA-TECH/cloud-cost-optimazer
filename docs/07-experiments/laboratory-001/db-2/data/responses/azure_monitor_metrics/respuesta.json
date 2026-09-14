@@ -1,0 +1,549 @@
+{
+  "cost": 210,
+  "timespan": "2026-09-06T02:10:25Z/2026-09-06T02:25:25Z",
+  "interval": "PT1M",
+  "value": [
+    {
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado/providers/Microsoft.Insights/metrics/cpu_percent",
+      "type": "Microsoft.Insights/metrics",
+      "name": {
+        "value": "cpu_percent",
+        "localizedValue": "CPU percentage"
+      },
+      "displayDescription": "CPU percentage",
+      "unit": "Percent",
+      "timeseries": [
+        {
+          "metadatavalues": [],
+          "data": [
+            {
+              "timeStamp": "2026-09-06T02:10:00Z",
+              "average": 26.25,
+              "minimum": 21,
+              "maximum": 31
+            },
+            {
+              "timeStamp": "2026-09-06T02:11:00Z",
+              "average": 28,
+              "minimum": 26,
+              "maximum": 32
+            },
+            {
+              "timeStamp": "2026-09-06T02:12:00Z",
+              "average": 27.5,
+              "minimum": 20,
+              "maximum": 33
+            },
+            {
+              "timeStamp": "2026-09-06T02:13:00Z",
+              "average": 28,
+              "minimum": 26,
+              "maximum": 29
+            },
+            {
+              "timeStamp": "2026-09-06T02:14:00Z",
+              "average": 28,
+              "minimum": 25,
+              "maximum": 32
+            },
+            {
+              "timeStamp": "2026-09-06T02:15:00Z",
+              "average": 27,
+              "minimum": 22,
+              "maximum": 33
+            },
+            {
+              "timeStamp": "2026-09-06T02:16:00Z",
+              "average": 28,
+              "minimum": 21,
+              "maximum": 35
+            },
+            {
+              "timeStamp": "2026-09-06T02:17:00Z",
+              "average": 25.75,
+              "minimum": 20,
+              "maximum": 31
+            },
+            {
+              "timeStamp": "2026-09-06T02:18:00Z",
+              "average": 28.75,
+              "minimum": 23,
+              "maximum": 36
+            },
+            {
+              "timeStamp": "2026-09-06T02:19:00Z",
+              "average": 29,
+              "minimum": 23,
+              "maximum": 33
+            },
+            {
+              "timeStamp": "2026-09-06T02:20:00Z",
+              "average": 24.75,
+              "minimum": 19,
+              "maximum": 29
+            },
+            {
+              "timeStamp": "2026-09-06T02:21:00Z",
+              "average": 29,
+              "minimum": 22,
+              "maximum": 34
+            },
+            {
+              "timeStamp": "2026-09-06T02:22:00Z",
+              "average": 29.25,
+              "minimum": 24,
+              "maximum": 33
+            },
+            {
+              "timeStamp": "2026-09-06T02:23:00Z",
+              "average": 28.75,
+              "minimum": 25,
+              "maximum": 34
+            },
+            {
+              "timeStamp": "2026-09-06T02:24:00Z",
+              "average": 28,
+              "minimum": 25,
+              "maximum": 31
+            }
+          ]
+        }
+      ],
+      "errorCode": "Success"
+    },
+    {
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado/providers/Microsoft.Insights/metrics/storage_percent",
+      "type": "Microsoft.Insights/metrics",
+      "name": {
+        "value": "storage_percent",
+        "localizedValue": "Data space used percent"
+      },
+      "displayDescription": "Data space used percent. Not applicable to data warehouses or hyperscale databases.",
+      "unit": "Percent",
+      "timeseries": [
+        {
+          "metadatavalues": [],
+          "data": [
+            {
+              "timeStamp": "2026-09-06T02:10:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:11:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:12:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:13:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:14:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:15:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:16:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:17:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:18:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:19:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:20:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:21:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:22:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:23:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:24:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            }
+          ]
+        }
+      ],
+      "errorCode": "Success"
+    },
+    {
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado/providers/Microsoft.Insights/metrics/sessions_percent",
+      "type": "Microsoft.Insights/metrics",
+      "name": {
+        "value": "sessions_percent",
+        "localizedValue": "Sessions percentage"
+      },
+      "displayDescription": "Sessions percentage. Not applicable to data warehouses.",
+      "unit": "Percent",
+      "timeseries": [
+        {
+          "metadatavalues": [],
+          "data": [
+            {
+              "timeStamp": "2026-09-06T02:10:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:11:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:12:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:13:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:14:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:15:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:16:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:17:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:18:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:19:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:20:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:21:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:22:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:23:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:24:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            }
+          ]
+        }
+      ],
+      "errorCode": "Success"
+    },
+    {
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado/providers/Microsoft.Insights/metrics/workers_percent",
+      "type": "Microsoft.Insights/metrics",
+      "name": {
+        "value": "workers_percent",
+        "localizedValue": "Workers percentage"
+      },
+      "displayDescription": "Workers percentage. Not applicable to data warehouses.",
+      "unit": "Percent",
+      "timeseries": [
+        {
+          "metadatavalues": [],
+          "data": [
+            {
+              "timeStamp": "2026-09-06T02:10:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:11:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:12:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:13:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:14:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:15:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:16:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:17:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:18:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:19:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:20:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:21:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:22:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:23:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            },
+            {
+              "timeStamp": "2026-09-06T02:24:00Z",
+              "average": 1,
+              "minimum": 1,
+              "maximum": 1
+            }
+          ]
+        }
+      ],
+      "errorCode": "Success"
+    },
+    {
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado/providers/Microsoft.Insights/metrics/deadlock",
+      "type": "Microsoft.Insights/metrics",
+      "name": {
+        "value": "deadlock",
+        "localizedValue": "Deadlocks"
+      },
+      "displayDescription": "Deadlocks. Not applicable to data warehouses.",
+      "unit": "Count",
+      "timeseries": [
+        {
+          "metadatavalues": [],
+          "data": [
+            {
+              "timeStamp": "2026-09-06T02:10:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:11:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:12:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:13:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:14:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:15:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:16:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:17:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:18:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:19:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:20:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:21:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:22:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:23:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            },
+            {
+              "timeStamp": "2026-09-06T02:24:00Z",
+              "average": 0,
+              "minimum": 0,
+              "maximum": 0
+            }
+          ]
+        }
+      ],
+      "errorCode": "Success"
+    }
+  ],
+  "namespace": "Microsoft.Sql/servers/databases",
+  "resourceregion": "australiaeast"
+}

@@ -1,0 +1,129 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "cost": {
+      "path": "$.cost",
+      "type": "integer",
+      "example": 210
+    },
+    "timespan": {
+      "path": "$.timespan",
+      "type": "string",
+      "example": "2026-09-06T02:10:25Z/2026-09-06T02:25:25Z"
+    },
+    "interval": {
+      "path": "$.interval",
+      "type": "string",
+      "example": "PT1M"
+    },
+    "value": {
+      "path": "$.value",
+      "type": "array",
+      "count": 5,
+      "items": {
+        "path": "$.value[]",
+        "type": "object",
+        "properties": {
+          "id": {
+            "path": "$.value[].id",
+            "type": "string",
+            "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/server"
+          },
+          "type": {
+            "path": "$.value[].type",
+            "type": "string",
+            "example": "Microsoft.Insights/metrics"
+          },
+          "name": {
+            "path": "$.value[].name",
+            "type": "object",
+            "properties": {
+              "value": {
+                "path": "$.value[].name.value",
+                "type": "string",
+                "example": "cpu_percent"
+              },
+              "localizedValue": {
+                "path": "$.value[].name.localizedValue",
+                "type": "string",
+                "example": "CPU percentage"
+              }
+            }
+          },
+          "displayDescription": {
+            "path": "$.value[].displayDescription",
+            "type": "string",
+            "example": "CPU percentage"
+          },
+          "unit": {
+            "path": "$.value[].unit",
+            "type": "string",
+            "example": "Percent"
+          },
+          "timeseries": {
+            "path": "$.value[].timeseries",
+            "type": "array",
+            "count": 1,
+            "items": {
+              "path": "$.value[].timeseries[]",
+              "type": "object",
+              "properties": {
+                "metadatavalues": {
+                  "path": "$.value[].timeseries[].metadatavalues",
+                  "type": "array",
+                  "count": 0,
+                  "items": {
+                    "type": "empty"
+                  }
+                },
+                "data": {
+                  "path": "$.value[].timeseries[].data",
+                  "type": "array",
+                  "count": 15,
+                  "items": {
+                    "path": "$.value[].timeseries[].data[]",
+                    "type": "object",
+                    "properties": {
+                      "timeStamp": {
+                        "path": "$.value[].timeseries[].data[].timeStamp",
+                        "type": "truncado"
+                      },
+                      "average": {
+                        "path": "$.value[].timeseries[].data[].average",
+                        "type": "truncado"
+                      },
+                      "minimum": {
+                        "path": "$.value[].timeseries[].data[].minimum",
+                        "type": "truncado"
+                      },
+                      "maximum": {
+                        "path": "$.value[].timeseries[].data[].maximum",
+                        "type": "truncado"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "errorCode": {
+            "path": "$.value[].errorCode",
+            "type": "string",
+            "example": "Success"
+          }
+        }
+      }
+    },
+    "namespace": {
+      "path": "$.namespace",
+      "type": "string",
+      "example": "Microsoft.Sql/servers/databases"
+    },
+    "resourceregion": {
+      "path": "$.resourceregion",
+      "type": "string",
+      "example": "australiaeast"
+    }
+  }
+}

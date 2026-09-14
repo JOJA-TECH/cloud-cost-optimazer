@@ -1,0 +1,58 @@
+{
+  "arm_sql_resources": {
+    "inicio": "2026-09-05T22:09:58.490000+00:00",
+    "fin": "2026-09-05T22:09:58.490000+00:00",
+    "span": "0:00:00",
+    "origen": "creationDate (database_resource)",
+    "nota": "1 timestamps; rango 0:00:00"
+  },
+  "azure_cost_management": {
+    "inicio": "2026-09-01T00:00:00+00:00",
+    "fin": "2026-09-05T00:00:00+00:00",
+    "span": "4 days, 0:00:00",
+    "origen": "UsageDate (rows)",
+    "nota": "11 timestamps; rango 4 days, 0:00:00"
+  },
+  "azure_retail_pricing": {
+    "inicio": "2014-11-01T00:00:00+00:00",
+    "fin": "2025-10-01T00:00:00+00:00",
+    "span": "3987 days, 0:00:00",
+    "origen": "effectiveStartDate (Items)",
+    "nota": "343 timestamps; rango 3987 days, 0:00:00"
+  },
+  "azure_monitor_metrics": {
+    "inicio": "2026-09-06T02:10:00+00:00",
+    "fin": "2026-09-06T02:24:00+00:00",
+    "span": "0:14:00",
+    "origen": "timeStamp (timeseries) + timespan=2026-09-06T02:10:25Z/2026-09-06T02:25:25Z",
+    "nota": "75 timestamps; rango 0:14:00"
+  },
+  "azure_monitor_logs": {
+    "inicio": "2026-09-06T00:10:00+00:00",
+    "fin": "2026-09-06T00:16:00+00:00",
+    "span": "0:06:00",
+    "origen": "TimeGenerated (rows)",
+    "nota": "20 timestamps; rango 0:06:00"
+  },
+  "query_store_database_watcher": {
+    "inicio": "2026-09-05T22:09:54.703000+00:00",
+    "fin": "2026-09-06T02:26:29.723000+00:00",
+    "span": "4:16:35.020000",
+    "origen": "timestamps de Query Store / DMVs",
+    "nota": "136 timestamps; rango 4:16:35.020000"
+  },
+  "azure_sql_estado_tabla": {
+    "inicio": "2026-09-06T02:25:59.729095+00:00",
+    "fin": "2026-09-06T02:26:00.334028+00:00",
+    "span": "0:00:00.604933",
+    "origen": "creado_el (filas)",
+    "nota": "100 timestamps; rango 0:00:00.604933"
+  },
+  "advisor_recommendations": {
+    "inicio": "2026-04-17T00:17:45.300897+00:00",
+    "fin": "2026-09-06T00:30:47.357963+00:00",
+    "span": "142 days, 0:13:02.057066",
+    "origen": "lastUpdated (recomendaciones)",
+    "nota": "9 timestamps; rango 142 days, 0:13:02.057066"
+  }
+}

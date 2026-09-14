@@ -1,0 +1,333 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "query_store_query_text": {
+      "path": "$.query_store_query_text",
+      "type": "array",
+      "count": 10,
+      "items": {
+        "path": "$.query_store_query_text[]",
+        "type": "object",
+        "properties": {
+          "query_sql_text": {
+            "path": "$.query_store_query_text[].query_sql_text",
+            "type": "string",
+            "example": "SELECT id, evento, carga, descripcion, creado_el FROM dbo.carga_telemetria ORDER BY id"
+          },
+          "query_text_id": {
+            "path": "$.query_store_query_text[].query_text_id",
+            "type": "integer",
+            "example": 3060
+          },
+          "statement_sql_handle": {
+            "path": "$.query_store_query_text[].statement_sql_handle",
+            "type": "string",
+            "example": "0900d75ac218473e0542ea2ed8162b0eba540000000000000000000000000000000000000000000000000000"
+          }
+        }
+      }
+    },
+    "query_store_query": {
+      "path": "$.query_store_query",
+      "type": "array",
+      "count": 10,
+      "items": {
+        "path": "$.query_store_query[]",
+        "type": "object",
+        "properties": {
+          "query_id": {
+            "path": "$.query_store_query[].query_id",
+            "type": "integer",
+            "example": 37
+          },
+          "object_id": {
+            "path": "$.query_store_query[].object_id",
+            "type": "integer",
+            "example": 0
+          },
+          "query_hash": {
+            "path": "$.query_store_query[].query_hash",
+            "type": "string",
+            "example": "27c8a65d3db349d8"
+          },
+          "is_internal_query": {
+            "path": "$.query_store_query[].is_internal_query",
+            "type": "boolean",
+            "example": false
+          },
+          "initial_compile_start_time": {
+            "path": "$.query_store_query[].initial_compile_start_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.340000"
+          },
+          "last_execution_time": {
+            "path": "$.query_store_query[].last_execution_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.557000"
+          },
+          "count_compiles": {
+            "path": "$.query_store_query[].count_compiles",
+            "type": "integer",
+            "example": 1
+          }
+        }
+      }
+    },
+    "query_store_runtime_stats": {
+      "path": "$.query_store_runtime_stats",
+      "type": "array",
+      "count": 20,
+      "items": {
+        "path": "$.query_store_runtime_stats[]",
+        "type": "object",
+        "properties": {
+          "query_id": {
+            "path": "$.query_store_runtime_stats[].query_id",
+            "type": "integer",
+            "example": 37
+          },
+          "count_executions": {
+            "path": "$.query_store_runtime_stats[].count_executions",
+            "type": "integer",
+            "example": 1
+          },
+          "avg_duration": {
+            "path": "$.query_store_runtime_stats[].avg_duration",
+            "type": "number",
+            "example": 214292.0
+          },
+          "avg_cpu_time": {
+            "path": "$.query_store_runtime_stats[].avg_cpu_time",
+            "type": "number",
+            "example": 214259.0
+          },
+          "avg_logical_io_reads": {
+            "path": "$.query_store_runtime_stats[].avg_logical_io_reads",
+            "type": "number",
+            "example": 3.0
+          },
+          "avg_logical_io_writes": {
+            "path": "$.query_store_runtime_stats[].avg_logical_io_writes",
+            "type": "number",
+            "example": 0.0
+          },
+          "first_execution_time": {
+            "path": "$.query_store_runtime_stats[].first_execution_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.557000"
+          },
+          "last_execution_time": {
+            "path": "$.query_store_runtime_stats[].last_execution_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.557000"
+          }
+        }
+      }
+    },
+    "query_store_wait_stats": {
+      "path": "$.query_store_wait_stats",
+      "type": "array",
+      "count": 20,
+      "items": {
+        "path": "$.query_store_wait_stats[]",
+        "type": "object",
+        "properties": {
+          "query_id": {
+            "path": "$.query_store_wait_stats[].query_id",
+            "type": "integer",
+            "example": 51
+          },
+          "wait_category_desc": {
+            "path": "$.query_store_wait_stats[].wait_category_desc",
+            "type": "string",
+            "example": "Other Disk IO"
+          },
+          "avg_query_wait_time_ms": {
+            "path": "$.query_store_wait_stats[].avg_query_wait_time_ms",
+            "type": "number",
+            "example": 2486.925
+          },
+          "total_query_wait_time_ms": {
+            "path": "$.query_store_wait_stats[].total_query_wait_time_ms",
+            "type": "integer",
+            "example": 198954
+          }
+        }
+      }
+    },
+    "dm_exec_query_stats": {
+      "path": "$.dm_exec_query_stats",
+      "type": "array",
+      "count": 10,
+      "items": {
+        "path": "$.dm_exec_query_stats[]",
+        "type": "object",
+        "properties": {
+          "text": {
+            "path": "$.dm_exec_query_stats[].text",
+            "type": "string",
+            "example": "SELECT TOP 20 p.query_id, s.wait_category_desc, s.avg_query_wait_time_ms, s.total_query_wait_time_ms FROM sys.query_stor"
+          },
+          "creation_time": {
+            "path": "$.dm_exec_query_stats[].creation_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.603000"
+          },
+          "last_execution_time": {
+            "path": "$.dm_exec_query_stats[].last_execution_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.633000"
+          },
+          "execution_count": {
+            "path": "$.dm_exec_query_stats[].execution_count",
+            "type": "integer",
+            "example": 1
+          },
+          "total_worker_time": {
+            "path": "$.dm_exec_query_stats[].total_worker_time",
+            "type": "integer",
+            "example": 13476
+          },
+          "total_elapsed_time": {
+            "path": "$.dm_exec_query_stats[].total_elapsed_time",
+            "type": "integer",
+            "example": 13476
+          },
+          "total_logical_reads": {
+            "path": "$.dm_exec_query_stats[].total_logical_reads",
+            "type": "integer",
+            "example": 86
+          }
+        }
+      }
+    },
+    "database_watcher_dm_db_resource_stats": {
+      "path": "$.database_watcher_dm_db_resource_stats",
+      "type": "array",
+      "count": 50,
+      "items": {
+        "path": "$.database_watcher_dm_db_resource_stats[]",
+        "type": "object",
+        "properties": {
+          "end_time": {
+            "path": "$.database_watcher_dm_db_resource_stats[].end_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:22.670000"
+          },
+          "avg_cpu_percent": {
+            "path": "$.database_watcher_dm_db_resource_stats[].avg_cpu_percent",
+            "type": "number",
+            "example": 1.34
+          },
+          "avg_data_io_percent": {
+            "path": "$.database_watcher_dm_db_resource_stats[].avg_data_io_percent",
+            "type": "number",
+            "example": 0.01
+          },
+          "avg_log_write_percent": {
+            "path": "$.database_watcher_dm_db_resource_stats[].avg_log_write_percent",
+            "type": "number",
+            "example": 0.01
+          },
+          "avg_memory_usage_percent": {
+            "path": "$.database_watcher_dm_db_resource_stats[].avg_memory_usage_percent",
+            "type": "number",
+            "example": 0.17
+          },
+          "avg_instance_cpu_percent": {
+            "path": "$.database_watcher_dm_db_resource_stats[].avg_instance_cpu_percent",
+            "type": "number",
+            "example": 11.97
+          },
+          "dtu_limit": {
+            "path": "$.database_watcher_dm_db_resource_stats[].dtu_limit",
+            "type": "null"
+          },
+          "cpu_limit": {
+            "path": "$.database_watcher_dm_db_resource_stats[].cpu_limit",
+            "type": "number",
+            "example": 2.0
+          }
+        }
+      }
+    },
+    "database_watcher_sessions": {
+      "path": "$.database_watcher_sessions",
+      "type": "array",
+      "count": 6,
+      "items": {
+        "path": "$.database_watcher_sessions[]",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "path": "$.database_watcher_sessions[].session_id",
+            "type": "integer",
+            "example": 52
+          },
+          "status": {
+            "path": "$.database_watcher_sessions[].status",
+            "type": "string",
+            "example": "running"
+          },
+          "login_name": {
+            "path": "$.database_watcher_sessions[].login_name",
+            "type": "string",
+            "example": "dbadmin"
+          },
+          "host_name": {
+            "path": "$.database_watcher_sessions[].host_name",
+            "type": "string",
+            "example": "vm-extractor"
+          },
+          "program_name": {
+            "path": "$.database_watcher_sessions[].program_name",
+            "type": "string",
+            "example": "python3.14"
+          },
+          "last_request_start_time": {
+            "path": "$.database_watcher_sessions[].last_request_start_time",
+            "type": "string",
+            "example": "2026-09-06T02:26:29.723000"
+          }
+        }
+      }
+    },
+    "carga_telemetria_resumen": {
+      "path": "$.carga_telemetria_resumen",
+      "type": "array",
+      "count": 1,
+      "items": {
+        "path": "$.carga_telemetria_resumen[]",
+        "type": "object",
+        "properties": {
+          "total_filas": {
+            "path": "$.carga_telemetria_resumen[].total_filas",
+            "type": "integer",
+            "example": 239006
+          },
+          "suma_carga": {
+            "path": "$.carga_telemetria_resumen[].suma_carga",
+            "type": "integer",
+            "example": 180181054
+          },
+          "carga_promedio": {
+            "path": "$.carga_telemetria_resumen[].carga_promedio",
+            "type": "integer",
+            "example": 753
+          },
+          "mas_antiguo": {
+            "path": "$.carga_telemetria_resumen[].mas_antiguo",
+            "type": "string",
+            "example": "2026-09-05T22:12:41.909423"
+          },
+          "mas_reciente": {
+            "path": "$.carga_telemetria_resumen[].mas_reciente",
+            "type": "string",
+            "example": "2026-09-06T02:26:00.334028"
+          }
+        }
+      }
+    }
+  }
+}

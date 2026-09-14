@@ -1,0 +1,74 @@
+[
+  {
+    "fuente": "arm_sql_resources",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Completa",
+    "cobertura_suficiente": "Si (snapshot puntual: la fuente no exige historico)",
+    "recomendacion": "suficiente",
+    "detalle_faltante": "server_resource.properties.privateEndpointConnections"
+  },
+  {
+    "fuente": "azure_cost_management",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Parcial",
+    "cobertura_suficiente": "Si (mes en curso)",
+    "recomendacion": "parcialmente suficiente",
+    "detalle_faltante": "ninguno"
+  },
+  {
+    "fuente": "azure_retail_pricing",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Completa",
+    "cobertura_suficiente": "Si (catalogo vigente; historico limitado)",
+    "recomendacion": "suficiente",
+    "detalle_faltante": "NextPageLink"
+  },
+  {
+    "fuente": "azure_monitor_metrics",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Parcial",
+    "cobertura_suficiente": "No (ventana consultada corta: PT15M; falta historico)",
+    "recomendacion": "suficiente",
+    "detalle_faltante": "value[].timeseries[].metadatavalues"
+  },
+  {
+    "fuente": "azure_monitor_logs",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Parcial",
+    "cobertura_suficiente": "No (20 filas, ventana corta para tendencias)",
+    "recomendacion": "parcialmente suficiente",
+    "detalle_faltante": "rows[].DurationMs, rows[].RemoteIPLatitude, rows[].RemoteIPLongitude"
+  },
+  {
+    "fuente": "query_store_database_watcher",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Completa",
+    "cobertura_suficiente": "Parcial (historico acumulandose; pocas horas en el lab)",
+    "recomendacion": "suficiente",
+    "detalle_faltante": "database_watcher_dm_db_resource_stats[].dtu_limit"
+  },
+  {
+    "fuente": "azure_sql_estado_tabla",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Completa",
+    "cobertura_suficiente": "Si (coincide con la ventana experimental)",
+    "recomendacion": "suficiente",
+    "detalle_faltante": "ninguno"
+  },
+  {
+    "fuente": "advisor_recommendations",
+    "consulta_exitosa": "Si",
+    "con_datos": "Si",
+    "datos_necesarios": "Parcial",
+    "cobertura_suficiente": "No (sin categoria Cost en el lab)",
+    "recomendacion": "complementaria",
+    "detalle_faltante": "ninguno"
+  }
+]

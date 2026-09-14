@@ -1,0 +1,495 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "database_resource": {
+      "path": "$.database_resource",
+      "type": "object",
+      "properties": {
+        "sku": {
+          "path": "$.database_resource.sku",
+          "type": "object",
+          "properties": {
+            "name": {
+              "path": "$.database_resource.sku.name",
+              "type": "string",
+              "example": "GP_S_Gen5"
+            },
+            "tier": {
+              "path": "$.database_resource.sku.tier",
+              "type": "string",
+              "example": "GeneralPurpose"
+            },
+            "family": {
+              "path": "$.database_resource.sku.family",
+              "type": "string",
+              "example": "Gen5"
+            },
+            "capacity": {
+              "path": "$.database_resource.sku.capacity",
+              "type": "integer",
+              "example": 2
+            }
+          }
+        },
+        "kind": {
+          "path": "$.database_resource.kind",
+          "type": "string",
+          "example": "v12.0,user,vcore,serverless,freelimit"
+        },
+        "properties": {
+          "path": "$.database_resource.properties",
+          "type": "object",
+          "properties": {
+            "collation": {
+              "path": "$.database_resource.properties.collation",
+              "type": "string",
+              "example": "SQL_Latin1_General_CP1_CI_AS"
+            },
+            "maxSizeBytes": {
+              "path": "$.database_resource.properties.maxSizeBytes",
+              "type": "integer",
+              "example": 34359738368
+            },
+            "status": {
+              "path": "$.database_resource.properties.status",
+              "type": "string",
+              "example": "Online"
+            },
+            "databaseId": {
+              "path": "$.database_resource.properties.databaseId",
+              "type": "string",
+              "example": "b206da86-7ecc-4150-af6e-c56f1afe51a7"
+            },
+            "creationDate": {
+              "path": "$.database_resource.properties.creationDate",
+              "type": "string",
+              "example": "2026-09-05T22:09:58.49Z"
+            },
+            "currentServiceObjectiveName": {
+              "path": "$.database_resource.properties.currentServiceObjectiveName",
+              "type": "string",
+              "example": "GP_S_Gen5_2"
+            },
+            "requestedServiceObjectiveName": {
+              "path": "$.database_resource.properties.requestedServiceObjectiveName",
+              "type": "string",
+              "example": "GP_S_Gen5_2"
+            },
+            "defaultSecondaryLocation": {
+              "path": "$.database_resource.properties.defaultSecondaryLocation",
+              "type": "string",
+              "example": "australiasoutheast"
+            },
+            "catalogCollation": {
+              "path": "$.database_resource.properties.catalogCollation",
+              "type": "string",
+              "example": "SQL_Latin1_General_CP1_CI_AS"
+            },
+            "zoneRedundant": {
+              "path": "$.database_resource.properties.zoneRedundant",
+              "type": "boolean",
+              "example": false
+            },
+            "maxLogSizeBytes": {
+              "path": "$.database_resource.properties.maxLogSizeBytes",
+              "type": "integer",
+              "example": 193273528320
+            },
+            "earliestRestoreDate": {
+              "path": "$.database_resource.properties.earliestRestoreDate",
+              "type": "string",
+              "example": "2026-09-05T22:13:12Z"
+            },
+            "readScale": {
+              "path": "$.database_resource.properties.readScale",
+              "type": "string",
+              "example": "Disabled"
+            },
+            "currentSku": {
+              "path": "$.database_resource.properties.currentSku",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "path": "$.database_resource.properties.currentSku.name",
+                  "type": "string",
+                  "example": "GP_S_Gen5"
+                },
+                "tier": {
+                  "path": "$.database_resource.properties.currentSku.tier",
+                  "type": "string",
+                  "example": "GeneralPurpose"
+                },
+                "family": {
+                  "path": "$.database_resource.properties.currentSku.family",
+                  "type": "string",
+                  "example": "Gen5"
+                },
+                "capacity": {
+                  "path": "$.database_resource.properties.currentSku.capacity",
+                  "type": "integer",
+                  "example": 2
+                }
+              }
+            },
+            "autoPauseDelay": {
+              "path": "$.database_resource.properties.autoPauseDelay",
+              "type": "integer",
+              "example": 60
+            },
+            "currentBackupStorageRedundancy": {
+              "path": "$.database_resource.properties.currentBackupStorageRedundancy",
+              "type": "string",
+              "example": "Local"
+            },
+            "requestedBackupStorageRedundancy": {
+              "path": "$.database_resource.properties.requestedBackupStorageRedundancy",
+              "type": "string",
+              "example": "Local"
+            },
+            "minCapacity": {
+              "path": "$.database_resource.properties.minCapacity",
+              "type": "number",
+              "example": 0.5
+            },
+            "maintenanceConfigurationId": {
+              "path": "$.database_resource.properties.maintenanceConfigurationId",
+              "type": "string",
+              "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_"
+            },
+            "isLedgerOn": {
+              "path": "$.database_resource.properties.isLedgerOn",
+              "type": "boolean",
+              "example": false
+            },
+            "isInfraEncryptionEnabled": {
+              "path": "$.database_resource.properties.isInfraEncryptionEnabled",
+              "type": "boolean",
+              "example": false
+            },
+            "useFreeLimit": {
+              "path": "$.database_resource.properties.useFreeLimit",
+              "type": "boolean",
+              "example": true
+            },
+            "freeLimitExhaustionBehavior": {
+              "path": "$.database_resource.properties.freeLimitExhaustionBehavior",
+              "type": "string",
+              "example": "AutoPause"
+            },
+            "availabilityZone": {
+              "path": "$.database_resource.properties.availabilityZone",
+              "type": "string",
+              "example": "NoPreference"
+            }
+          }
+        },
+        "location": {
+          "path": "$.database_resource.location",
+          "type": "string",
+          "example": "australiaeast"
+        },
+        "id": {
+          "path": "$.database_resource.id",
+          "type": "string",
+          "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/server"
+        },
+        "name": {
+          "path": "$.database_resource.name",
+          "type": "string",
+          "example": "proyectogrado"
+        },
+        "type": {
+          "path": "$.database_resource.type",
+          "type": "string",
+          "example": "Microsoft.Sql/servers/databases"
+        }
+      }
+    },
+    "server_resource": {
+      "path": "$.server_resource",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "path": "$.server_resource.kind",
+          "type": "string",
+          "example": "v12.0"
+        },
+        "properties": {
+          "path": "$.server_resource.properties",
+          "type": "object",
+          "properties": {
+            "administratorLogin": {
+              "path": "$.server_resource.properties.administratorLogin",
+              "type": "string",
+              "example": "dbadmin"
+            },
+            "version": {
+              "path": "$.server_resource.properties.version",
+              "type": "string",
+              "example": "12.0"
+            },
+            "state": {
+              "path": "$.server_resource.properties.state",
+              "type": "string",
+              "example": "Ready"
+            },
+            "fullyQualifiedDomainName": {
+              "path": "$.server_resource.properties.fullyQualifiedDomainName",
+              "type": "string",
+              "example": "sql-cuddly-moray.database.windows.net"
+            },
+            "privateEndpointConnections": {
+              "path": "$.server_resource.properties.privateEndpointConnections",
+              "type": "array",
+              "count": 0,
+              "items": {
+                "type": "empty"
+              }
+            },
+            "minimalTlsVersion": {
+              "path": "$.server_resource.properties.minimalTlsVersion",
+              "type": "string",
+              "example": "1.2"
+            },
+            "publicNetworkAccess": {
+              "path": "$.server_resource.properties.publicNetworkAccess",
+              "type": "string",
+              "example": "Enabled"
+            },
+            "restrictOutboundNetworkAccess": {
+              "path": "$.server_resource.properties.restrictOutboundNetworkAccess",
+              "type": "string",
+              "example": "Disabled"
+            },
+            "externalGovernanceStatus": {
+              "path": "$.server_resource.properties.externalGovernanceStatus",
+              "type": "string",
+              "example": "Disabled"
+            },
+            "retentionDays": {
+              "path": "$.server_resource.properties.retentionDays",
+              "type": "integer",
+              "example": -1
+            }
+          }
+        },
+        "location": {
+          "path": "$.server_resource.location",
+          "type": "string",
+          "example": "australiaeast"
+        },
+        "tags": {
+          "path": "$.server_resource.tags",
+          "type": "object",
+          "properties": {}
+        },
+        "id": {
+          "path": "$.server_resource.id",
+          "type": "string",
+          "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/server"
+        },
+        "name": {
+          "path": "$.server_resource.name",
+          "type": "string",
+          "example": "sql-cuddly-moray"
+        },
+        "type": {
+          "path": "$.server_resource.type",
+          "type": "string",
+          "example": "Microsoft.Sql/servers"
+        }
+      }
+    },
+    "databases_list": {
+      "path": "$.databases_list",
+      "type": "object",
+      "properties": {
+        "value": {
+          "path": "$.databases_list.value",
+          "type": "array",
+          "count": 2,
+          "items": {
+            "path": "$.databases_list.value[]",
+            "type": "object",
+            "properties": {
+              "sku": {
+                "path": "$.databases_list.value[].sku",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "path": "$.databases_list.value[].sku.name",
+                    "type": "string",
+                    "example": "GP_SYSTEM"
+                  },
+                  "tier": {
+                    "path": "$.databases_list.value[].sku.tier",
+                    "type": "string",
+                    "example": "System"
+                  },
+                  "family": {
+                    "path": "$.databases_list.value[].sku.family",
+                    "type": "string",
+                    "example": "SYSTEM"
+                  },
+                  "capacity": {
+                    "path": "$.databases_list.value[].sku.capacity",
+                    "type": "integer",
+                    "example": 4
+                  }
+                }
+              },
+              "kind": {
+                "path": "$.databases_list.value[].kind",
+                "type": "string",
+                "example": "v12.0,system,serverless"
+              },
+              "managedBy": {
+                "path": "$.databases_list.value[].managedBy",
+                "type": "string",
+                "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/server"
+              },
+              "properties": {
+                "path": "$.databases_list.value[].properties",
+                "type": "object",
+                "properties": {
+                  "collation": {
+                    "path": "$.databases_list.value[].properties.collation",
+                    "type": "string",
+                    "example": "SQL_Latin1_General_CP1_CI_AS"
+                  },
+                  "maxSizeBytes": {
+                    "path": "$.databases_list.value[].properties.maxSizeBytes",
+                    "type": "integer",
+                    "example": 107374182400
+                  },
+                  "status": {
+                    "path": "$.databases_list.value[].properties.status",
+                    "type": "string",
+                    "example": "Online"
+                  },
+                  "databaseId": {
+                    "path": "$.databases_list.value[].properties.databaseId",
+                    "type": "string",
+                    "example": "da585b4c-70e2-4cf7-b046-1d313ff9f207"
+                  },
+                  "creationDate": {
+                    "path": "$.databases_list.value[].properties.creationDate",
+                    "type": "string",
+                    "example": "2026-09-05T22:08:32.453Z"
+                  },
+                  "currentServiceObjectiveName": {
+                    "path": "$.databases_list.value[].properties.currentServiceObjectiveName",
+                    "type": "string",
+                    "example": "GP_SYSTEM_4"
+                  },
+                  "requestedServiceObjectiveName": {
+                    "path": "$.databases_list.value[].properties.requestedServiceObjectiveName",
+                    "type": "string",
+                    "example": "GP_SYSTEM_4"
+                  },
+                  "defaultSecondaryLocation": {
+                    "path": "$.databases_list.value[].properties.defaultSecondaryLocation",
+                    "type": "string",
+                    "example": "australiasoutheast"
+                  },
+                  "catalogCollation": {
+                    "path": "$.databases_list.value[].properties.catalogCollation",
+                    "type": "string",
+                    "example": "SQL_Latin1_General_CP1_CI_AS"
+                  },
+                  "zoneRedundant": {
+                    "path": "$.databases_list.value[].properties.zoneRedundant",
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "readScale": {
+                    "path": "$.databases_list.value[].properties.readScale",
+                    "type": "string",
+                    "example": "Disabled"
+                  },
+                  "currentSku": {
+                    "path": "$.databases_list.value[].properties.currentSku",
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "path": "$.databases_list.value[].properties.currentSku.name",
+                        "type": "string",
+                        "example": "GP_SYSTEM"
+                      },
+                      "tier": {
+                        "path": "$.databases_list.value[].properties.currentSku.tier",
+                        "type": "string",
+                        "example": "System"
+                      },
+                      "family": {
+                        "path": "$.databases_list.value[].properties.currentSku.family",
+                        "type": "string",
+                        "example": "SYSTEM"
+                      },
+                      "capacity": {
+                        "path": "$.databases_list.value[].properties.currentSku.capacity",
+                        "type": "integer",
+                        "example": 4
+                      }
+                    }
+                  },
+                  "currentBackupStorageRedundancy": {
+                    "path": "$.databases_list.value[].properties.currentBackupStorageRedundancy",
+                    "type": "string",
+                    "example": "Local"
+                  },
+                  "requestedBackupStorageRedundancy": {
+                    "path": "$.databases_list.value[].properties.requestedBackupStorageRedundancy",
+                    "type": "string",
+                    "example": "Local"
+                  },
+                  "maintenanceConfigurationId": {
+                    "path": "$.databases_list.value[].properties.maintenanceConfigurationId",
+                    "type": "string",
+                    "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_"
+                  },
+                  "isLedgerOn": {
+                    "path": "$.databases_list.value[].properties.isLedgerOn",
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "isInfraEncryptionEnabled": {
+                    "path": "$.databases_list.value[].properties.isInfraEncryptionEnabled",
+                    "type": "boolean",
+                    "example": false
+                  },
+                  "availabilityZone": {
+                    "path": "$.databases_list.value[].properties.availabilityZone",
+                    "type": "string",
+                    "example": "NoPreference"
+                  }
+                }
+              },
+              "location": {
+                "path": "$.databases_list.value[].location",
+                "type": "string",
+                "example": "australiaeast"
+              },
+              "id": {
+                "path": "$.databases_list.value[].id",
+                "type": "string",
+                "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/server"
+              },
+              "name": {
+                "path": "$.databases_list.value[].name",
+                "type": "string",
+                "example": "master"
+              },
+              "type": {
+                "path": "$.databases_list.value[].type",
+                "type": "string",
+                "example": "Microsoft.Sql/servers/databases"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

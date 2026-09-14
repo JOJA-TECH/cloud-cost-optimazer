@@ -1,0 +1,116 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "value": {
+      "path": "$.value",
+      "type": "array",
+      "count": 9,
+      "items": {
+        "path": "$.value[]",
+        "type": "object",
+        "properties": {
+          "properties": {
+            "path": "$.value[].properties",
+            "type": "object",
+            "properties": {
+              "category": {
+                "path": "$.value[].properties.category",
+                "type": "string",
+                "example": "HighAvailability"
+              },
+              "impact": {
+                "path": "$.value[].properties.impact",
+                "type": "string",
+                "example": "High"
+              },
+              "impactedField": {
+                "path": "$.value[].properties.impactedField",
+                "type": "string",
+                "example": "Microsoft.Subscriptions/subscriptions"
+              },
+              "impactedValue": {
+                "path": "$.value[].properties.impactedValue",
+                "type": "string",
+                "example": "e44b10e0-cdae-4525-b479-b9ad9454f0d1"
+              },
+              "lastUpdated": {
+                "path": "$.value[].properties.lastUpdated",
+                "type": "string",
+                "example": "2026-05-20T19:34:01.7499612Z"
+              },
+              "recommendationTypeId": {
+                "path": "$.value[].properties.recommendationTypeId",
+                "type": "string",
+                "example": "242639fd-cd73-4be2-8f55-70478db8d1a5"
+              },
+              "shortDescription": {
+                "path": "$.value[].properties.shortDescription",
+                "type": "object",
+                "properties": {
+                  "problem": {
+                    "path": "$.value[].properties.shortDescription.problem",
+                    "type": "string",
+                    "example": "Create an Azure Service Health alert"
+                  },
+                  "solution": {
+                    "path": "$.value[].properties.shortDescription.solution",
+                    "type": "string",
+                    "example": "Create an Azure Service Health alert"
+                  }
+                }
+              },
+              "extendedProperties": {
+                "path": "$.value[].properties.extendedProperties",
+                "type": "object",
+                "properties": {
+                  "recommendationSubCategory": {
+                    "path": "$.value[].properties.extendedProperties.recommendationSubCategory",
+                    "type": "string",
+                    "example": "MonitoringAndAlerting"
+                  },
+                  "maturityLevel": {
+                    "path": "$.value[].properties.extendedProperties.maturityLevel",
+                    "type": "string",
+                    "example": "GA"
+                  },
+                  "recommendationOfferingId": {
+                    "path": "$.value[].properties.extendedProperties.recommendationOfferingId",
+                    "type": "string",
+                    "example": "ed05f3b7-8949-4698-9b38-49ab8abb5ee0"
+                  }
+                }
+              },
+              "resourceMetadata": {
+                "path": "$.value[].properties.resourceMetadata",
+                "type": "object",
+                "properties": {
+                  "resourceId": {
+                    "path": "$.value[].properties.resourceMetadata.resourceId",
+                    "type": "string",
+                    "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1"
+                  }
+                }
+              }
+            }
+          },
+          "id": {
+            "path": "$.value[].id",
+            "type": "string",
+            "example": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Advisor/recommendations/a6a86f2b0fc0badadfada74b"
+          },
+          "type": {
+            "path": "$.value[].type",
+            "type": "string",
+            "example": "Microsoft.Advisor/recommendations"
+          },
+          "name": {
+            "path": "$.value[].name",
+            "type": "string",
+            "example": "a6a86f2b0fc0badadfada74b92f3c24907562d4e9dd7be3099219ff4e606923f"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "tabla": {
+      "path": "$.tabla",
+      "type": "string",
+      "example": "dbo.carga_telemetria"
+    },
+    "existe": {
+      "path": "$.existe",
+      "type": "boolean",
+      "example": true
+    },
+    "total_filas": {
+      "path": "$.total_filas",
+      "type": "integer",
+      "example": 239006
+    },
+    "columnas": {
+      "path": "$.columnas",
+      "type": "array",
+      "count": 5,
+      "items": {
+        "path": "$.columnas[]",
+        "type": "object",
+        "properties": {
+          "columna": {
+            "path": "$.columnas[].columna",
+            "type": "string",
+            "example": "id"
+          },
+          "tipo": {
+            "path": "$.columnas[].tipo",
+            "type": "string",
+            "example": "bigint"
+          }
+        }
+      }
+    },
+    "filas": {
+      "path": "$.filas",
+      "type": "array",
+      "count": 100,
+      "items": {
+        "path": "$.filas[]",
+        "type": "object",
+        "properties": {
+          "id": {
+            "path": "$.filas[].id",
+            "type": "integer",
+            "example": 476913
+          },
+          "evento": {
+            "path": "$.filas[].evento",
+            "type": "string",
+            "example": "evento_7lsSkV"
+          },
+          "carga": {
+            "path": "$.filas[].carga",
+            "type": "integer",
+            "example": 572
+          },
+          "descripcion": {
+            "path": "$.filas[].descripcion",
+            "type": "string",
+            "example": "IwhGwwcucxzYxo7vZAvPasZwoY07Wnj5oeiU4MXY"
+          },
+          "creado_el": {
+            "path": "$.filas[].creado_el",
+            "type": "string",
+            "example": "2026-09-06T02:26:00.334028"
+          }
+        }
+      }
+    }
+  }
+}

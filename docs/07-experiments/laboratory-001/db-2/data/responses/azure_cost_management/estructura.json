@@ -1,0 +1,79 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "id": {
+      "path": "$.id",
+      "type": "string",
+      "example": "subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.CostManagement/query/3793c7f7-73e4-4412-a3bd-c8a8"
+    },
+    "name": {
+      "path": "$.name",
+      "type": "string",
+      "example": "3793c7f7-73e4-4412-a3bd-c8a85c3cd96a"
+    },
+    "type": {
+      "path": "$.type",
+      "type": "string",
+      "example": "Microsoft.CostManagement/query"
+    },
+    "location": {
+      "path": "$.location",
+      "type": "null"
+    },
+    "sku": {
+      "path": "$.sku",
+      "type": "null"
+    },
+    "eTag": {
+      "path": "$.eTag",
+      "type": "null"
+    },
+    "properties": {
+      "path": "$.properties",
+      "type": "object",
+      "properties": {
+        "nextLink": {
+          "path": "$.properties.nextLink",
+          "type": "null"
+        },
+        "columns": {
+          "path": "$.properties.columns",
+          "type": "array",
+          "count": 5,
+          "items": {
+            "path": "$.properties.columns[]",
+            "type": "object",
+            "properties": {
+              "name": {
+                "path": "$.properties.columns[].name",
+                "type": "string",
+                "example": "PreTaxCost"
+              },
+              "type": {
+                "path": "$.properties.columns[].type",
+                "type": "string",
+                "example": "Number"
+              }
+            }
+          }
+        },
+        "rows": {
+          "path": "$.properties.rows",
+          "type": "array",
+          "count": 11,
+          "items": {
+            "path": "$.properties.rows[]",
+            "type": "array",
+            "count": 5,
+            "items": {
+              "path": "$.properties.rows[][]",
+              "type": "number",
+              "example": 0.1600161336
+            }
+          }
+        }
+      }
+    }
+  }
+}

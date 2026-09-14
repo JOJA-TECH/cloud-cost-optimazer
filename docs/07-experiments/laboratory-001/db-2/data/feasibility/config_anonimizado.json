@@ -1,0 +1,20 @@
+{
+  "configuracion": {
+    "azure_subscription_id": "e44b10e0-cdae-4525-b479-b9ad9454f0d1",
+    "azure_location": "australiaeast",
+    "azure_resource_group": "rg-proyecto-grado-free",
+    "sql_server_fqdn": "sql-cuddly-moray.database.windows.net",
+    "sql_db": "proyectogrado",
+    "sql_db_resource_id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray/databases/proyectogrado",
+    "sql_server_resource_id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.Sql/servers/sql-cuddly-moray",
+    "log_analytics_workspace_id": "8e247ee6-014d-4f78-866d-7a228f7e71c7",
+    "log_analytics_resource_id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free/providers/Microsoft.OperationalInsights/workspaces/la-proyectogrado-free",
+    "capture_out": "data/responses"
+  },
+  "secretos_excluidos": [
+    "sql_password",
+    "telegram_token",
+    "telegram_chat_id",
+    "authorization"
+  ]
+}

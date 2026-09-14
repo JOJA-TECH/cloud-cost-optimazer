@@ -1,0 +1,1123 @@
+{
+  "query_store_query_text": [
+    {
+      "query_sql_text": "SELECT id, evento, carga, descripcion, creado_el FROM dbo.carga_telemetria ORDER BY id",
+      "query_text_id": 3060,
+      "statement_sql_handle": "0900d75ac218473e0542ea2ed8162b0eba540000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3434 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3059,
+      "statement_sql_handle": "0900e8ba6dc67976dc3a1ae6305811d72d120000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3433 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3058,
+      "statement_sql_handle": "0900276c9370d7c30fc89f9df8a89b903e600000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3432 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3057,
+      "statement_sql_handle": "0900d8e6dacf429db24675c92db2c0d1fef30000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3431 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3056,
+      "statement_sql_handle": "0900885ac563ea3e4da306db490685d8f79c0000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3430 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3055,
+      "statement_sql_handle": "09006173aef33e32c55cac276b49c307fea50000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3429 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3054,
+      "statement_sql_handle": "090071d4d8f1ebf7e0584975e8d65187928a0000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3428 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3053,
+      "statement_sql_handle": "0900a9c0ae685fd3e86e86933102563d99800000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3427 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3052,
+      "statement_sql_handle": "09003158765da93a3cf5138ee39d0de29b110000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "query_sql_text": "(@P1 int,@P2 nvarchar(64))INSERT INTO dbo.carga_aux_3426 (id, valor) VALUES (@P1, @P2)",
+      "query_text_id": 3051,
+      "statement_sql_handle": "0900debd684c47965b96ea7f1667efdbab850000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "query_store_query": [
+    {
+      "query_id": 37,
+      "object_id": 0,
+      "query_hash": "27c8a65d3db349d8",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-06T02:26:29.340000",
+      "last_execution_time": "2026-09-06T02:26:29.557000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 53,
+      "object_id": 0,
+      "query_hash": "61ecacc7fc4a0e34",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:31:21.337000",
+      "last_execution_time": "2026-09-06T02:26:10.400000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 6915,
+      "object_id": 0,
+      "query_hash": "202a94e5c3f9ab7d",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-06T02:25:58.947000",
+      "last_execution_time": "2026-09-06T02:25:59.040000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 6913,
+      "object_id": 0,
+      "query_hash": "c2284b13d10f4b5d",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-06T02:25:54.397000",
+      "last_execution_time": "2026-09-06T02:25:54.493000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 6911,
+      "object_id": 0,
+      "query_hash": "551a4f785c750fa2",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-06T02:25:49.897000",
+      "last_execution_time": "2026-09-06T02:25:49.980000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 23,
+      "object_id": 0,
+      "query_hash": "3647498dc3549cce",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:28:02.350000",
+      "last_execution_time": "2026-09-06T02:25:47.887000",
+      "count_compiles": 7
+    },
+    {
+      "query_id": 22,
+      "object_id": 0,
+      "query_hash": "8ce9aecf037ec40c",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:12:56.420000",
+      "last_execution_time": "2026-09-06T02:25:47.870000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 21,
+      "object_id": 0,
+      "query_hash": "17da054a61dada13",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:12:56.147000",
+      "last_execution_time": "2026-09-06T02:25:47.867000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 51,
+      "object_id": 0,
+      "query_hash": "1cca3a7aa73797fb",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:17:35.503000",
+      "last_execution_time": "2026-09-06T02:25:47.867000",
+      "count_compiles": 1
+    },
+    {
+      "query_id": 50,
+      "object_id": 0,
+      "query_hash": "f7dd3f46e71a7020",
+      "is_internal_query": false,
+      "initial_compile_start_time": "2026-09-05T22:58:19.643000",
+      "last_execution_time": "2026-09-06T02:25:44.217000",
+      "count_compiles": 134
+    }
+  ],
+  "query_store_runtime_stats": [
+    {
+      "query_id": 37,
+      "count_executions": 1,
+      "avg_duration": 214292.0,
+      "avg_cpu_time": 214259.0,
+      "avg_logical_io_reads": 3.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:26:29.557000",
+      "last_execution_time": "2026-09-06T02:26:29.557000"
+    },
+    {
+      "query_id": 53,
+      "count_executions": 1,
+      "avg_duration": 664051.0,
+      "avg_cpu_time": 121141.0,
+      "avg_logical_io_reads": 9060.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:26:10.400000",
+      "last_execution_time": "2026-09-06T02:26:10.400000"
+    },
+    {
+      "query_id": 23,
+      "count_executions": 3,
+      "avg_duration": 14411.333333333334,
+      "avg_cpu_time": 14362.333333333334,
+      "avg_logical_io_reads": 294.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.250000",
+      "last_execution_time": "2026-09-06T02:26:07.683000"
+    },
+    {
+      "query_id": 22,
+      "count_executions": 3,
+      "avg_duration": 192.33333333333334,
+      "avg_cpu_time": 192.0,
+      "avg_logical_io_reads": 0.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.230000",
+      "last_execution_time": "2026-09-06T02:26:07.667000"
+    },
+    {
+      "query_id": 51,
+      "count_executions": 1,
+      "avg_duration": 3658658.0,
+      "avg_cpu_time": 418273.0,
+      "avg_logical_io_reads": 13040.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.227000",
+      "last_execution_time": "2026-09-06T02:26:07.663000"
+    },
+    {
+      "query_id": 21,
+      "count_executions": 3,
+      "avg_duration": 243.0,
+      "avg_cpu_time": 243.0,
+      "avg_logical_io_reads": 0.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.230000",
+      "last_execution_time": "2026-09-06T02:26:07.663000"
+    },
+    {
+      "query_id": 12,
+      "count_executions": 1,
+      "avg_duration": 63.0,
+      "avg_cpu_time": 63.0,
+      "avg_logical_io_reads": 2.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.087000",
+      "last_execution_time": "2026-09-06T02:26:07.660000"
+    },
+    {
+      "query_id": 50,
+      "count_executions": 1,
+      "avg_duration": 914.0,
+      "avg_cpu_time": 913.0,
+      "avg_logical_io_reads": 44.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:02.960000",
+      "last_execution_time": "2026-09-06T02:26:04"
+    },
+    {
+      "query_id": 20,
+      "count_executions": 3,
+      "avg_duration": 46553.666666666664,
+      "avg_cpu_time": 46552.666666666664,
+      "avg_logical_io_reads": 9054.666666666666,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:02.957000",
+      "last_execution_time": "2026-09-06T02:26:03.997000"
+    },
+    {
+      "query_id": 19,
+      "count_executions": 3,
+      "avg_duration": 352928.3333333333,
+      "avg_cpu_time": 182462.0,
+      "avg_logical_io_reads": 9054.666666666666,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:02.660000",
+      "last_execution_time": "2026-09-06T02:26:03.697000"
+    },
+    {
+      "query_id": 17,
+      "count_executions": 3,
+      "avg_duration": 264.0,
+      "avg_cpu_time": 263.6666666666667,
+      "avg_logical_io_reads": 9.666666666666666,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:02.360000",
+      "last_execution_time": "2026-09-06T02:26:03.330000"
+    },
+    {
+      "query_id": 16,
+      "count_executions": 3,
+      "avg_duration": 57484.666666666664,
+      "avg_cpu_time": 47561.666666666664,
+      "avg_logical_io_reads": 9054.666666666666,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:02.357000",
+      "last_execution_time": "2026-09-06T02:26:03.327000"
+    },
+    {
+      "query_id": 14,
+      "count_executions": 93,
+      "avg_duration": 46442.25806451613,
+      "avg_cpu_time": 42936.096774193546,
+      "avg_logical_io_reads": 9058.21505376344,
+      "avg_logical_io_writes": 0.0967741935483871,
+      "first_execution_time": "2026-09-06T02:00:00",
+      "last_execution_time": "2026-09-06T02:26:03.273000"
+    },
+    {
+      "query_id": 11,
+      "count_executions": 125,
+      "avg_duration": 784.104,
+      "avg_cpu_time": 783.88,
+      "avg_logical_io_reads": 151.912,
+      "avg_logical_io_writes": 0.288,
+      "first_execution_time": "2026-09-06T02:00:08.873000",
+      "last_execution_time": "2026-09-06T02:26:00.697000"
+    },
+    {
+      "query_id": 10,
+      "count_executions": 626,
+      "avg_duration": 40.977635782747605,
+      "avg_cpu_time": 40.76198083067093,
+      "avg_logical_io_reads": 3.1677316293929714,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:08.410000",
+      "last_execution_time": "2026-09-06T02:26:00.337000"
+    },
+    {
+      "query_id": 6915,
+      "count_executions": 73,
+      "avg_duration": 33.917808219178085,
+      "avg_cpu_time": 33.61643835616438,
+      "avg_logical_io_reads": 1.0136986301369864,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:25:59.040000",
+      "last_execution_time": "2026-09-06T02:25:59.270000"
+    },
+    {
+      "query_id": 6913,
+      "count_executions": 13,
+      "avg_duration": 35.23076923076923,
+      "avg_cpu_time": 35.15384615384615,
+      "avg_logical_io_reads": 1.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:25:54.493000",
+      "last_execution_time": "2026-09-06T02:25:54.523000"
+    },
+    {
+      "query_id": 6911,
+      "count_executions": 14,
+      "avg_duration": 34.714285714285715,
+      "avg_cpu_time": 34.42857142857143,
+      "avg_logical_io_reads": 1.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:25:49.980000",
+      "last_execution_time": "2026-09-06T02:25:50.020000"
+    },
+    {
+      "query_id": 23,
+      "count_executions": 323,
+      "avg_duration": 13876.696594427245,
+      "avg_cpu_time": 13830.907120743033,
+      "avg_logical_io_reads": 273.1145510835913,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.250000",
+      "last_execution_time": "2026-09-06T02:25:47.887000"
+    },
+    {
+      "query_id": 22,
+      "count_executions": 323,
+      "avg_duration": 200.5077399380805,
+      "avg_cpu_time": 200.312693498452,
+      "avg_logical_io_reads": 0.0,
+      "avg_logical_io_writes": 0.0,
+      "first_execution_time": "2026-09-06T02:00:06.230000",
+      "last_execution_time": "2026-09-06T02:25:47.870000"
+    }
+  ],
+  "query_store_wait_stats": [
+    {
+      "query_id": 51,
+      "wait_category_desc": "Other Disk IO",
+      "avg_query_wait_time_ms": 2486.925,
+      "total_query_wait_time_ms": 198954
+    },
+    {
+      "query_id": 51,
+      "wait_category_desc": "Other Disk IO",
+      "avg_query_wait_time_ms": 1634.4285714285713,
+      "total_query_wait_time_ms": 148733
+    },
+    {
+      "query_id": 51,
+      "wait_category_desc": "Other Disk IO",
+      "avg_query_wait_time_ms": 3094.3,
+      "total_query_wait_time_ms": 92829
+    },
+    {
+      "query_id": 51,
+      "wait_category_desc": "Other Disk IO",
+      "avg_query_wait_time_ms": 570.9223300970874,
+      "total_query_wait_time_ms": 58805
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Network IO",
+      "avg_query_wait_time_ms": 80.4469964664311,
+      "total_query_wait_time_ms": 45533
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Network IO",
+      "avg_query_wait_time_ms": 130.19195046439629,
+      "total_query_wait_time_ms": 42052
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 2.2088571609071956,
+      "total_query_wait_time_ms": 34964
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 2.1507359909027732,
+      "total_query_wait_time_ms": 34044
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 3.4278215223097113,
+      "total_query_wait_time_ms": 22202
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 3.3194380114250426,
+      "total_query_wait_time_ms": 21500
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 18.01121076233184,
+      "total_query_wait_time_ms": 16066
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 17.707399103139014,
+      "total_query_wait_time_ms": 15795
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 0.8712066773533801,
+      "total_query_wait_time_ms": 15761
+    },
+    {
+      "query_id": 14,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 0.8393123652644962,
+      "total_query_wait_time_ms": 15184
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 21.87809187279152,
+      "total_query_wait_time_ms": 12383
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 21.579505300353357,
+      "total_query_wait_time_ms": 12214
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 49.83181818181818,
+      "total_query_wait_time_ms": 10963
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 49.231818181818184,
+      "total_query_wait_time_ms": 10831
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "CPU",
+      "avg_query_wait_time_ms": 26.8297213622291,
+      "total_query_wait_time_ms": 8666
+    },
+    {
+      "query_id": 19,
+      "wait_category_desc": "Unknown",
+      "avg_query_wait_time_ms": 26.476780185758514,
+      "total_query_wait_time_ms": 8552
+    }
+  ],
+  "dm_exec_query_stats": [
+    {
+      "text": "SELECT TOP 20 p.query_id, s.wait_category_desc, s.avg_query_wait_time_ms, s.total_query_wait_time_ms FROM sys.query_store_wait_stats s LEFT JOIN sys.query_store_plan p ON s.plan_id = p.plan_id ORDER BY s.total_query_wait_time_ms DESC",
+      "creation_time": "2026-09-06T02:26:29.603000",
+      "last_execution_time": "2026-09-06T02:26:29.633000",
+      "execution_count": 1,
+      "total_worker_time": 13476,
+      "total_elapsed_time": 13476,
+      "total_logical_reads": 86
+    },
+    {
+      "text": "SELECT TOP 20 p.query_id, s.count_executions, s.avg_duration, s.avg_cpu_time, s.avg_logical_io_reads, s.avg_logical_io_writes, CAST(s.first_execution_time AS datetime2) AS first_execution_time, CAST(s.last_execution_time AS datetime2) AS last_execution_time FROM sys.query_store_runtime_stats s LEFT JOIN sys.query_store_plan p ON s.plan_id = p.plan_id ORDER BY s.last_execution_time DESC",
+      "creation_time": "2026-09-06T02:26:29.580000",
+      "last_execution_time": "2026-09-06T02:26:29.587000",
+      "execution_count": 1,
+      "total_worker_time": 13328,
+      "total_elapsed_time": 13473,
+      "total_logical_reads": 294
+    },
+    {
+      "text": "SELECT TOP 10 query_id, object_id, query_hash, is_internal_query, CAST(initial_compile_start_time AS datetime2) AS initial_compile_start_time, CAST(last_execution_time AS datetime2) AS last_execution_time, count_compiles FROM sys.query_store_query ORDER BY last_execution_time DESC",
+      "creation_time": "2026-09-06T02:26:29.560000",
+      "last_execution_time": "2026-09-06T02:26:29.570000",
+      "execution_count": 1,
+      "total_worker_time": 6214,
+      "total_elapsed_time": 6499,
+      "total_logical_reads": 162
+    },
+    {
+      "text": "SELECT TOP 10 query_sql_text, query_text_id, statement_sql_handle FROM sys.query_store_query_text WHERE LEN(query_sql_text) > 0 ORDER BY query_text_id DESC",
+      "creation_time": "2026-09-06T02:26:29.340000",
+      "last_execution_time": "2026-09-06T02:26:29.343000",
+      "execution_count": 1,
+      "total_worker_time": 214259,
+      "total_elapsed_time": 214292,
+      "total_logical_reads": 3
+    },
+    {
+      "text": "SELECT id, evento, carga, descripcion, creado_el FROM dbo.carga_telemetria ORDER BY id",
+      "creation_time": "2026-09-05T22:31:21.337000",
+      "last_execution_time": "2026-09-06T02:26:09.737000",
+      "execution_count": 3,
+      "total_worker_time": 123152,
+      "total_elapsed_time": 666514,
+      "total_logical_reads": 9153
+    },
+    {
+      "text": "SELECT COUNT_BIG(*) FROM dbo.carga_telemetria",
+      "creation_time": "2026-09-05T22:15:08.297000",
+      "last_execution_time": "2026-09-06T02:26:09.683000",
+      "execution_count": 5,
+      "total_worker_time": 54463,
+      "total_elapsed_time": 54481,
+      "total_logical_reads": 9216
+    },
+    {
+      "text": "SELECT COUNT_BIG(*) FROM sys.dm_exec_sessions",
+      "creation_time": "2026-09-05T22:12:56.420000",
+      "last_execution_time": "2026-09-06T02:26:07.667000",
+      "execution_count": 3452,
+      "total_worker_time": 680286,
+      "total_elapsed_time": 681004,
+      "total_logical_reads": 0
+    },
+    {
+      "text": "SELECT TOP 20 p.query_id, s.count_executions, s.avg_duration, CAST(s.last_execution_time AS datetime2) AS last_execution_time FROM sys.query_store_runtime_stats s LEFT JOIN sys.query_store_plan p ON s.plan_id = p.plan_id ORDER BY s.last_execution_time DESC",
+      "creation_time": "2026-09-06T01:47:44.103000",
+      "last_execution_time": "2026-09-06T02:26:07.667000",
+      "execution_count": 481,
+      "total_worker_time": 6660348,
+      "total_elapsed_time": 6684335,
+      "total_logical_reads": 128534
+    },
+    {
+      "text": "SELECT TOP 20 * FROM sys.dm_db_resource_stats ORDER BY end_time DESC",
+      "creation_time": "2026-09-05T22:12:56.147000",
+      "last_execution_time": "2026-09-06T02:26:07.663000",
+      "execution_count": 3453,
+      "total_worker_time": 865320,
+      "total_elapsed_time": 865982,
+      "total_logical_reads": 0
+    },
+    {
+      "text": "SELECT TOP 500 * FROM dbo.carga_telemetria a ORDER BY a.carga DESC, a.descripcion",
+      "creation_time": "2026-09-05T22:17:35.503000",
+      "last_execution_time": "2026-09-06T02:26:04",
+      "execution_count": 339,
+      "total_worker_time": 68051136,
+      "total_elapsed_time": 570602866,
+      "total_logical_reads": 2245419
+    }
+  ],
+  "database_watcher_dm_db_resource_stats": [
+    {
+      "end_time": "2026-09-06T02:26:22.670000",
+      "avg_cpu_percent": 1.34,
+      "avg_data_io_percent": 0.01,
+      "avg_log_write_percent": 0.01,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.97,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:26:07.657000",
+      "avg_cpu_percent": 29.61,
+      "avg_data_io_percent": 16.02,
+      "avg_log_write_percent": 0.37,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.46,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:25:52.647000",
+      "avg_cpu_percent": 28.27,
+      "avg_data_io_percent": 15.97,
+      "avg_log_write_percent": 0.38,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.4,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:25:37.637000",
+      "avg_cpu_percent": 31.51,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.4,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.39,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:25:22.627000",
+      "avg_cpu_percent": 22.5,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.26,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.8,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:25:07.603000",
+      "avg_cpu_percent": 21.81,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.24,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 10.66,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:24:52.590000",
+      "avg_cpu_percent": 29.12,
+      "avg_data_io_percent": 15.94,
+      "avg_log_write_percent": 0.41,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 19.04,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:24:37.570000",
+      "avg_cpu_percent": 25.34,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.32,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 12.84,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:24:22.567000",
+      "avg_cpu_percent": 28.87,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.4,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.46,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:24:07.547000",
+      "avg_cpu_percent": 25.12,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.34,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.79,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:23:52.523000",
+      "avg_cpu_percent": 30.61,
+      "avg_data_io_percent": 15.84,
+      "avg_log_write_percent": 0.41,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.03,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:23:37.500000",
+      "avg_cpu_percent": 27.57,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.58,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:23:22.480000",
+      "avg_cpu_percent": 24.69,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.31,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.0,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:23:07.467000",
+      "avg_cpu_percent": 27.85,
+      "avg_data_io_percent": 15.81,
+      "avg_log_write_percent": 0.26,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 17.55,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:22:52.447000",
+      "avg_cpu_percent": 29.49,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.46,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.61,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:22:37.423000",
+      "avg_cpu_percent": 33.57,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.43,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.39,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:22:22.420000",
+      "avg_cpu_percent": 24.75,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.3,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.84,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:22:07.400000",
+      "avg_cpu_percent": 26.71,
+      "avg_data_io_percent": 15.79,
+      "avg_log_write_percent": 0.29,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 16.07,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:21:52.390000",
+      "avg_cpu_percent": 30.33,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.45,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.87,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:21:37.380000",
+      "avg_cpu_percent": 33.06,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.35,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.1,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:21:22.370000",
+      "avg_cpu_percent": 24.3,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.35,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.98,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:21:07.357000",
+      "avg_cpu_percent": 29.63,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.35,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 17.41,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:20:52.343000",
+      "avg_cpu_percent": 34.09,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.45,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.4,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:20:37.340000",
+      "avg_cpu_percent": 21.97,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.24,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.54,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:20:22.337000",
+      "avg_cpu_percent": 32.16,
+      "avg_data_io_percent": 15.69,
+      "avg_log_write_percent": 0.27,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.81,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:20:07.333000",
+      "avg_cpu_percent": 27.95,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.47,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.81,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:19:52.330000",
+      "avg_cpu_percent": 24.27,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.3,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.1,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:19:37.300000",
+      "avg_cpu_percent": 28.83,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.34,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.52,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:19:22.280000",
+      "avg_cpu_percent": 27.02,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.34,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.08,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:19:07.250000",
+      "avg_cpu_percent": 18.73,
+      "avg_data_io_percent": 15.6,
+      "avg_log_write_percent": 0.16,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.96,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:18:52.233000",
+      "avg_cpu_percent": 32.94,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.49,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.0,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:18:37.220000",
+      "avg_cpu_percent": 22.77,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.32,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.91,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:18:22.207000",
+      "avg_cpu_percent": 30.5,
+      "avg_data_io_percent": 15.37,
+      "avg_log_write_percent": 0.27,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.36,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:18:07.197000",
+      "avg_cpu_percent": 29.21,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.44,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 16.75,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:17:52.190000",
+      "avg_cpu_percent": 22.64,
+      "avg_data_io_percent": 12.2,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 16.03,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:17:37.183000",
+      "avg_cpu_percent": 35.7,
+      "avg_data_io_percent": 3.11,
+      "avg_log_write_percent": 0.46,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.53,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:17:22.173000",
+      "avg_cpu_percent": 26.22,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.22,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:17:07.153000",
+      "avg_cpu_percent": 30.14,
+      "avg_data_io_percent": 15.28,
+      "avg_log_write_percent": 0.36,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.88,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:16:52.130000",
+      "avg_cpu_percent": 25.15,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.31,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.09,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:16:37.113000",
+      "avg_cpu_percent": 26.96,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.92,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:16:22.087000",
+      "avg_cpu_percent": 31.42,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.41,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 14.4,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:16:07.080000",
+      "avg_cpu_percent": 19.79,
+      "avg_data_io_percent": 4.21,
+      "avg_log_write_percent": 0.24,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.47,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:15:52.053000",
+      "avg_cpu_percent": 31.59,
+      "avg_data_io_percent": 11.02,
+      "avg_log_write_percent": 0.4,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.73,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:15:37.040000",
+      "avg_cpu_percent": 24.18,
+      "avg_data_io_percent": 7.86,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 16.8,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:15:22.030000",
+      "avg_cpu_percent": 35.12,
+      "avg_data_io_percent": 7.34,
+      "avg_log_write_percent": 0.45,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.58,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:15:07.023000",
+      "avg_cpu_percent": 20.52,
+      "avg_data_io_percent": 15.14,
+      "avg_log_write_percent": 0.26,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.12,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:14:52.003000",
+      "avg_cpu_percent": 33.14,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.46,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 13.2,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:14:36.977000",
+      "avg_cpu_percent": 28.62,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.33,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 15.76,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:14:21.960000",
+      "avg_cpu_percent": 23.87,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.32,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 10.77,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    },
+    {
+      "end_time": "2026-09-06T02:14:06.950000",
+      "avg_cpu_percent": 22.21,
+      "avg_data_io_percent": 0.0,
+      "avg_log_write_percent": 0.25,
+      "avg_memory_usage_percent": 0.17,
+      "avg_instance_cpu_percent": 11.27,
+      "dtu_limit": null,
+      "cpu_limit": 2.0
+    }
+  ],
+  "database_watcher_sessions": [
+    {
+      "session_id": 52,
+      "status": "running",
+      "login_name": "dbadmin",
+      "host_name": "vm-extractor",
+      "program_name": "python3.14",
+      "last_request_start_time": "2026-09-06T02:26:29.723000"
+    },
+    {
+      "session_id": 87,
+      "status": "sleeping",
+      "login_name": "DB000009\\WF-6s8d9YYkWbEiMsT",
+      "host_name": "DB000009",
+      "program_name": "DmvCollector",
+      "last_request_start_time": "2026-09-06T02:26:07.427000"
+    },
+    {
+      "session_id": 78,
+      "status": "sleeping",
+      "login_name": "DB000009\\WF-6s8d9YYkWbEiMsT",
+      "host_name": "DB000009",
+      "program_name": "AutomaticTuningAgent",
+      "last_request_start_time": "2026-09-06T02:25:43.820000"
+    },
+    {
+      "session_id": 51,
+      "status": "sleeping",
+      "login_name": "DB000009\\WF-6s8d9YYkWbEiMsT",
+      "host_name": "DB000009",
+      "program_name": "BackupService",
+      "last_request_start_time": "2026-09-06T02:22:46.033000"
+    },
+    {
+      "session_id": 70,
+      "status": "sleeping",
+      "login_name": "DB000009\\WF-6s8d9YYkWbEiMsT",
+      "host_name": "DB000009",
+      "program_name": "MetricsDownloader",
+      "last_request_start_time": "2026-09-06T02:21:29.823000"
+    },
+    {
+      "session_id": 73,
+      "status": "running",
+      "login_name": "NT AUTHORITY\\SYSTEM",
+      "host_name": "DB000009",
+      "program_name": "TdService",
+      "last_request_start_time": "2026-09-05T22:09:54.703000"
+    }
+  ],
+  "carga_telemetria_resumen": [
+    {
+      "total_filas": 239006,
+      "suma_carga": 180181054,
+      "carga_promedio": 753,
+      "mas_antiguo": "2026-09-05T22:12:41.909423",
+      "mas_reciente": "2026-09-06T02:26:00.334028"
+    }
+  ]
+}

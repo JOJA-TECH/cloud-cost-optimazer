@@ -1,0 +1,58 @@
+{
+  "path": "$",
+  "type": "object",
+  "properties": {
+    "tables": {
+      "path": "$.tables",
+      "type": "array",
+      "count": 1,
+      "items": {
+        "path": "$.tables[]",
+        "type": "object",
+        "properties": {
+          "name": {
+            "path": "$.tables[].name",
+            "type": "string",
+            "example": "PrimaryResult"
+          },
+          "columns": {
+            "path": "$.tables[].columns",
+            "type": "array",
+            "count": 41,
+            "items": {
+              "path": "$.tables[].columns[]",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "path": "$.tables[].columns[].name",
+                  "type": "string",
+                  "example": "TenantId"
+                },
+                "type": {
+                  "path": "$.tables[].columns[].type",
+                  "type": "string",
+                  "example": "string"
+                }
+              }
+            }
+          },
+          "rows": {
+            "path": "$.tables[].rows",
+            "type": "array",
+            "count": 20,
+            "items": {
+              "path": "$.tables[].rows[]",
+              "type": "array",
+              "count": 41,
+              "items": {
+                "path": "$.tables[].rows[][]",
+                "type": "string",
+                "example": "8e247ee6-014d-4f78-866d-7a228f7e71c7"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

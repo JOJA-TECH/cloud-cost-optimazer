@@ -1,0 +1,1298 @@
+{
+  "arm_sql_resources": {
+    "campos": [
+      {
+        "campo": "database_resource.id",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free...[truncado]"
+      },
+      {
+        "campo": "database_resource.kind",
+        "tipo": "texto",
+        "ejemplo": "\"v12.0,user,vcore,serverless,freelimit\""
+      },
+      {
+        "campo": "database_resource.location",
+        "tipo": "texto",
+        "ejemplo": "\"australiaeast\""
+      },
+      {
+        "campo": "database_resource.name",
+        "tipo": "texto",
+        "ejemplo": "\"proyectogrado\""
+      },
+      {
+        "campo": "database_resource.properties.autoPauseDelay",
+        "tipo": "entero",
+        "ejemplo": "60"
+      },
+      {
+        "campo": "database_resource.properties.availabilityZone",
+        "tipo": "texto",
+        "ejemplo": "\"NoPreference\""
+      },
+      {
+        "campo": "database_resource.properties.catalogCollation",
+        "tipo": "texto",
+        "ejemplo": "\"SQL_Latin1_General_CP1_CI_AS\""
+      },
+      {
+        "campo": "database_resource.properties.collation",
+        "tipo": "texto",
+        "ejemplo": "\"SQL_Latin1_General_CP1_CI_AS\""
+      },
+      {
+        "campo": "database_resource.properties.creationDate",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-05T22:09:58.49Z\""
+      },
+      {
+        "campo": "database_resource.properties.currentBackupStorageRedundancy",
+        "tipo": "texto",
+        "ejemplo": "\"Local\""
+      },
+      {
+        "campo": "database_resource.properties.currentServiceObjectiveName",
+        "tipo": "texto",
+        "ejemplo": "\"GP_S_Gen5_2\""
+      },
+      {
+        "campo": "database_resource.properties.currentSku.capacity",
+        "tipo": "entero",
+        "ejemplo": "2"
+      },
+      {
+        "campo": "database_resource.properties.currentSku.family",
+        "tipo": "texto",
+        "ejemplo": "\"Gen5\""
+      },
+      {
+        "campo": "database_resource.properties.currentSku.name",
+        "tipo": "texto",
+        "ejemplo": "\"GP_S_Gen5\""
+      },
+      {
+        "campo": "database_resource.properties.currentSku.tier",
+        "tipo": "texto",
+        "ejemplo": "\"GeneralPurpose\""
+      },
+      {
+        "campo": "database_resource.properties.databaseId",
+        "tipo": "texto",
+        "ejemplo": "\"b206da86-7ecc-4150-af6e-c56f1afe51a7\""
+      },
+      {
+        "campo": "database_resource.properties.defaultSecondaryLocation",
+        "tipo": "texto",
+        "ejemplo": "\"australiasoutheast\""
+      },
+      {
+        "campo": "database_resource.properties.earliestRestoreDate",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-05T22:13:12Z\""
+      },
+      {
+        "campo": "database_resource.properties.freeLimitExhaustionBehavior",
+        "tipo": "texto",
+        "ejemplo": "\"AutoPause\""
+      },
+      {
+        "campo": "database_resource.properties.isInfraEncryptionEnabled",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "database_resource.properties.isLedgerOn",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "database_resource.properties.maintenanceConfigurationId",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publi...[truncado]"
+      },
+      {
+        "campo": "database_resource.properties.maxLogSizeBytes",
+        "tipo": "entero",
+        "ejemplo": "193273528320"
+      },
+      {
+        "campo": "database_resource.properties.maxSizeBytes",
+        "tipo": "entero",
+        "ejemplo": "34359738368"
+      },
+      {
+        "campo": "database_resource.properties.minCapacity",
+        "tipo": "numero",
+        "ejemplo": "0.5"
+      },
+      {
+        "campo": "database_resource.properties.readScale",
+        "tipo": "texto",
+        "ejemplo": "\"Disabled\""
+      },
+      {
+        "campo": "database_resource.properties.requestedBackupStorageRedundancy",
+        "tipo": "texto",
+        "ejemplo": "\"Local\""
+      },
+      {
+        "campo": "database_resource.properties.requestedServiceObjectiveName",
+        "tipo": "texto",
+        "ejemplo": "\"GP_S_Gen5_2\""
+      },
+      {
+        "campo": "database_resource.properties.status",
+        "tipo": "texto",
+        "ejemplo": "\"Online\""
+      },
+      {
+        "campo": "database_resource.properties.useFreeLimit",
+        "tipo": "booleano",
+        "ejemplo": "true"
+      },
+      {
+        "campo": "database_resource.properties.zoneRedundant",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "database_resource.sku.capacity",
+        "tipo": "entero",
+        "ejemplo": "2"
+      },
+      {
+        "campo": "database_resource.sku.family",
+        "tipo": "texto",
+        "ejemplo": "\"Gen5\""
+      },
+      {
+        "campo": "database_resource.sku.name",
+        "tipo": "texto",
+        "ejemplo": "\"GP_S_Gen5\""
+      },
+      {
+        "campo": "database_resource.sku.tier",
+        "tipo": "texto",
+        "ejemplo": "\"GeneralPurpose\""
+      },
+      {
+        "campo": "database_resource.type",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Sql/servers/databases\""
+      },
+      {
+        "campo": "databases_list.value[].id",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free...[truncado]"
+      },
+      {
+        "campo": "databases_list.value[].kind",
+        "tipo": "texto",
+        "ejemplo": "\"v12.0,system,serverless\""
+      },
+      {
+        "campo": "databases_list.value[].location",
+        "tipo": "texto",
+        "ejemplo": "\"australiaeast\""
+      },
+      {
+        "campo": "databases_list.value[].managedBy",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free...[truncado]"
+      },
+      {
+        "campo": "databases_list.value[].name",
+        "tipo": "texto",
+        "ejemplo": "\"master\""
+      },
+      {
+        "campo": "databases_list.value[].properties.availabilityZone",
+        "tipo": "texto",
+        "ejemplo": "\"NoPreference\""
+      },
+      {
+        "campo": "databases_list.value[].properties.catalogCollation",
+        "tipo": "texto",
+        "ejemplo": "\"SQL_Latin1_General_CP1_CI_AS\""
+      },
+      {
+        "campo": "databases_list.value[].properties.collation",
+        "tipo": "texto",
+        "ejemplo": "\"SQL_Latin1_General_CP1_CI_AS\""
+      },
+      {
+        "campo": "databases_list.value[].properties.creationDate",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-05T22:08:32.453Z\""
+      },
+      {
+        "campo": "databases_list.value[].properties.currentBackupStorageRedundancy",
+        "tipo": "texto",
+        "ejemplo": "\"Local\""
+      },
+      {
+        "campo": "databases_list.value[].properties.currentServiceObjectiveName",
+        "tipo": "texto",
+        "ejemplo": "\"GP_SYSTEM_4\""
+      },
+      {
+        "campo": "databases_list.value[].properties.currentSku.capacity",
+        "tipo": "entero",
+        "ejemplo": "4"
+      },
+      {
+        "campo": "databases_list.value[].properties.currentSku.family",
+        "tipo": "texto",
+        "ejemplo": "\"SYSTEM\""
+      },
+      {
+        "campo": "databases_list.value[].properties.currentSku.name",
+        "tipo": "texto",
+        "ejemplo": "\"GP_SYSTEM\""
+      },
+      {
+        "campo": "databases_list.value[].properties.currentSku.tier",
+        "tipo": "texto",
+        "ejemplo": "\"System\""
+      },
+      {
+        "campo": "databases_list.value[].properties.databaseId",
+        "tipo": "texto",
+        "ejemplo": "\"da585b4c-70e2-4cf7-b046-1d313ff9f207\""
+      },
+      {
+        "campo": "databases_list.value[].properties.defaultSecondaryLocation",
+        "tipo": "texto",
+        "ejemplo": "\"australiasoutheast\""
+      },
+      {
+        "campo": "databases_list.value[].properties.isInfraEncryptionEnabled",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "databases_list.value[].properties.isLedgerOn",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "databases_list.value[].properties.maintenanceConfigurationId",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Maintenance/publi...[truncado]"
+      },
+      {
+        "campo": "databases_list.value[].properties.maxSizeBytes",
+        "tipo": "entero",
+        "ejemplo": "107374182400"
+      },
+      {
+        "campo": "databases_list.value[].properties.readScale",
+        "tipo": "texto",
+        "ejemplo": "\"Disabled\""
+      },
+      {
+        "campo": "databases_list.value[].properties.requestedBackupStorageRedundancy",
+        "tipo": "texto",
+        "ejemplo": "\"Local\""
+      },
+      {
+        "campo": "databases_list.value[].properties.requestedServiceObjectiveName",
+        "tipo": "texto",
+        "ejemplo": "\"GP_SYSTEM_4\""
+      },
+      {
+        "campo": "databases_list.value[].properties.status",
+        "tipo": "texto",
+        "ejemplo": "\"Online\""
+      },
+      {
+        "campo": "databases_list.value[].properties.zoneRedundant",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "databases_list.value[].sku.capacity",
+        "tipo": "entero",
+        "ejemplo": "4"
+      },
+      {
+        "campo": "databases_list.value[].sku.family",
+        "tipo": "texto",
+        "ejemplo": "\"SYSTEM\""
+      },
+      {
+        "campo": "databases_list.value[].sku.name",
+        "tipo": "texto",
+        "ejemplo": "\"GP_SYSTEM\""
+      },
+      {
+        "campo": "databases_list.value[].sku.tier",
+        "tipo": "texto",
+        "ejemplo": "\"System\""
+      },
+      {
+        "campo": "databases_list.value[].type",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Sql/servers/databases\""
+      },
+      {
+        "campo": "server_resource.id",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free...[truncado]"
+      },
+      {
+        "campo": "server_resource.kind",
+        "tipo": "texto",
+        "ejemplo": "\"v12.0\""
+      },
+      {
+        "campo": "server_resource.location",
+        "tipo": "texto",
+        "ejemplo": "\"australiaeast\""
+      },
+      {
+        "campo": "server_resource.name",
+        "tipo": "texto",
+        "ejemplo": "\"sql-cuddly-moray\""
+      },
+      {
+        "campo": "server_resource.properties.administratorLogin",
+        "tipo": "texto",
+        "ejemplo": "\"dbadmin\""
+      },
+      {
+        "campo": "server_resource.properties.externalGovernanceStatus",
+        "tipo": "texto",
+        "ejemplo": "\"Disabled\""
+      },
+      {
+        "campo": "server_resource.properties.fullyQualifiedDomainName",
+        "tipo": "texto",
+        "ejemplo": "\"sql-cuddly-moray.database.windows.net\""
+      },
+      {
+        "campo": "server_resource.properties.minimalTlsVersion",
+        "tipo": "texto",
+        "ejemplo": "\"1.2\""
+      },
+      {
+        "campo": "server_resource.properties.publicNetworkAccess",
+        "tipo": "texto",
+        "ejemplo": "\"Enabled\""
+      },
+      {
+        "campo": "server_resource.properties.restrictOutboundNetworkAccess",
+        "tipo": "texto",
+        "ejemplo": "\"Disabled\""
+      },
+      {
+        "campo": "server_resource.properties.retentionDays",
+        "tipo": "entero",
+        "ejemplo": "-1"
+      },
+      {
+        "campo": "server_resource.properties.state",
+        "tipo": "texto",
+        "ejemplo": "\"Ready\""
+      },
+      {
+        "campo": "server_resource.properties.version",
+        "tipo": "texto",
+        "ejemplo": "\"12.0\""
+      },
+      {
+        "campo": "server_resource.type",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Sql/servers\""
+      }
+    ],
+    "datos_faltantes": [
+      {
+        "array": "server_resource.properties.privateEndpointConnections",
+        "veces": 1,
+        "veces_vacio": 1
+      }
+    ]
+  },
+  "azure_cost_management": {
+    "campos": [
+      {
+        "campo": "rows[].Currency",
+        "tipo": "texto",
+        "ejemplo": "\"USD\""
+      },
+      {
+        "campo": "rows[].PreTaxCost",
+        "tipo": "numero",
+        "ejemplo": "0.1600161336"
+      },
+      {
+        "campo": "rows[].ResourceGroup",
+        "tipo": "texto",
+        "ejemplo": "\"pruebas\""
+      },
+      {
+        "campo": "rows[].ServiceName",
+        "tipo": "texto",
+        "ejemplo": "\"Storage\""
+      },
+      {
+        "campo": "rows[].UsageDate",
+        "tipo": "numero",
+        "ejemplo": "20260901"
+      }
+    ],
+    "datos_faltantes": []
+  },
+  "azure_retail_pricing": {
+    "campos": [
+      {
+        "campo": "BillingCurrency",
+        "tipo": "texto",
+        "ejemplo": "\"USD\""
+      },
+      {
+        "campo": "Count",
+        "tipo": "entero",
+        "ejemplo": "343"
+      },
+      {
+        "campo": "CustomerEntityId",
+        "tipo": "texto",
+        "ejemplo": "\"Default\""
+      },
+      {
+        "campo": "CustomerEntityType",
+        "tipo": "texto",
+        "ejemplo": "\"Retail\""
+      },
+      {
+        "campo": "Items[].armRegionName",
+        "tipo": "texto",
+        "ejemplo": "\"australiaeast\""
+      },
+      {
+        "campo": "Items[].armSkuName",
+        "tipo": "texto",
+        "ejemplo": "\"SQLDB_GP_Compute_Gen5_80\""
+      },
+      {
+        "campo": "Items[].currencyCode",
+        "tipo": "texto",
+        "ejemplo": "\"USD\""
+      },
+      {
+        "campo": "Items[].effectiveStartDate",
+        "tipo": "texto",
+        "ejemplo": "\"2025-06-01T00:00:00Z\""
+      },
+      {
+        "campo": "Items[].isPrimaryMeterRegion",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "Items[].location",
+        "tipo": "texto",
+        "ejemplo": "\"AU East\""
+      },
+      {
+        "campo": "Items[].meterId",
+        "tipo": "texto",
+        "ejemplo": "\"2d6ad12e-49dd-4279-9c6b-e0cd904957ab\""
+      },
+      {
+        "campo": "Items[].meterName",
+        "tipo": "texto",
+        "ejemplo": "\"vCore\""
+      },
+      {
+        "campo": "Items[].productId",
+        "tipo": "texto",
+        "ejemplo": "\"DZH318Z0BPXL\""
+      },
+      {
+        "campo": "Items[].productName",
+        "tipo": "texto",
+        "ejemplo": "\"SQL Database Single/Elastic Pool General Purpose - Compute Gen5\""
+      },
+      {
+        "campo": "Items[].retailPrice",
+        "tipo": "numero",
+        "ejemplo": "14.49104"
+      },
+      {
+        "campo": "Items[].serviceFamily",
+        "tipo": "texto",
+        "ejemplo": "\"Databases\""
+      },
+      {
+        "campo": "Items[].serviceId",
+        "tipo": "texto",
+        "ejemplo": "\"DZH3180HX10K\""
+      },
+      {
+        "campo": "Items[].serviceName",
+        "tipo": "texto",
+        "ejemplo": "\"SQL Database\""
+      },
+      {
+        "campo": "Items[].skuId",
+        "tipo": "texto",
+        "ejemplo": "\"DZH318Z0BPXL/010Q\""
+      },
+      {
+        "campo": "Items[].skuName",
+        "tipo": "texto",
+        "ejemplo": "\"80 vCore\""
+      },
+      {
+        "campo": "Items[].tierMinimumUnits",
+        "tipo": "numero",
+        "ejemplo": "0.0"
+      },
+      {
+        "campo": "Items[].type",
+        "tipo": "texto",
+        "ejemplo": "\"Consumption\""
+      },
+      {
+        "campo": "Items[].unitOfMeasure",
+        "tipo": "texto",
+        "ejemplo": "\"1 Hour\""
+      },
+      {
+        "campo": "Items[].unitPrice",
+        "tipo": "numero",
+        "ejemplo": "14.49104"
+      },
+      {
+        "campo": "NextPageLink",
+        "tipo": "null",
+        "ejemplo": null
+      }
+    ],
+    "datos_faltantes": [
+      {
+        "campo": "NextPageLink",
+        "tipo": "null",
+        "veces_presente": 1,
+        "veces_nulo": 1
+      }
+    ]
+  },
+  "azure_monitor_metrics": {
+    "campos": [
+      {
+        "campo": "cost",
+        "tipo": "entero",
+        "ejemplo": "210"
+      },
+      {
+        "campo": "interval",
+        "tipo": "texto",
+        "ejemplo": "\"PT1M\""
+      },
+      {
+        "campo": "namespace",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Sql/servers/databases\""
+      },
+      {
+        "campo": "resourceregion",
+        "tipo": "texto",
+        "ejemplo": "\"australiaeast\""
+      },
+      {
+        "campo": "timespan",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:10:25Z/2026-09-06T02:25:25Z\""
+      },
+      {
+        "campo": "value[].displayDescription",
+        "tipo": "texto",
+        "ejemplo": "\"CPU percentage\""
+      },
+      {
+        "campo": "value[].errorCode",
+        "tipo": "texto",
+        "ejemplo": "\"Success\""
+      },
+      {
+        "campo": "value[].id",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourceGroups/rg-proyecto-grado-free...[truncado]"
+      },
+      {
+        "campo": "value[].name.localizedValue",
+        "tipo": "texto",
+        "ejemplo": "\"CPU percentage\""
+      },
+      {
+        "campo": "value[].name.value",
+        "tipo": "texto",
+        "ejemplo": "\"cpu_percent\""
+      },
+      {
+        "campo": "value[].timeseries[].data[].average",
+        "tipo": "numero",
+        "ejemplo": "26.25"
+      },
+      {
+        "campo": "value[].timeseries[].data[].maximum",
+        "tipo": "entero",
+        "ejemplo": "31"
+      },
+      {
+        "campo": "value[].timeseries[].data[].minimum",
+        "tipo": "entero",
+        "ejemplo": "21"
+      },
+      {
+        "campo": "value[].timeseries[].data[].timeStamp",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:10:00Z\""
+      },
+      {
+        "campo": "value[].type",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Insights/metrics\""
+      },
+      {
+        "campo": "value[].unit",
+        "tipo": "texto",
+        "ejemplo": "\"Percent\""
+      }
+    ],
+    "datos_faltantes": [
+      {
+        "array": "value[].timeseries[].metadatavalues",
+        "veces": 1,
+        "veces_vacio": 1
+      }
+    ]
+  },
+  "azure_monitor_logs": {
+    "campos": [
+      {
+        "campo": "rows[].AdditionalInformation",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Average",
+        "tipo": "numero",
+        "ejemplo": "10.5"
+      },
+      {
+        "campo": "rows[].CallerIpAddress",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Category",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Confidence",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].CorrelationId",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Count",
+        "tipo": "numero",
+        "ejemplo": "1"
+      },
+      {
+        "campo": "rows[].Description",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].DurationMs",
+        "tipo": "entero",
+        "ejemplo": null
+      },
+      {
+        "campo": "rows[].FirstReportedDateTime",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].IndicatorThreatType",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].IsActive",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].LastReportedDateTime",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].MaliciousIP",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Maximum",
+        "tipo": "numero",
+        "ejemplo": "11"
+      },
+      {
+        "campo": "rows[].MetricName",
+        "tipo": "texto",
+        "ejemplo": "\"sqlserver_process_core_percent\""
+      },
+      {
+        "campo": "rows[].Minimum",
+        "tipo": "numero",
+        "ejemplo": "10"
+      },
+      {
+        "campo": "rows[].OperationName",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].OperationVersion",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].RemoteIPCountry",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].RemoteIPLatitude",
+        "tipo": "numero",
+        "ejemplo": null
+      },
+      {
+        "campo": "rows[].RemoteIPLongitude",
+        "tipo": "numero",
+        "ejemplo": null
+      },
+      {
+        "campo": "rows[].ReportReferenceLink",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Resource",
+        "tipo": "texto",
+        "ejemplo": "\"PROYECTOGRADO\""
+      },
+      {
+        "campo": "rows[].ResourceGroup",
+        "tipo": "texto",
+        "ejemplo": "\"RG-PROYECTO-GRADO-FREE\""
+      },
+      {
+        "campo": "rows[].ResourceId",
+        "tipo": "texto",
+        "ejemplo": "\"/SUBSCRIPTIONS/E44B10E0-CDAE-4525-B479-B9AD9454F0D1/RESOURCEGROUPS/RG-PROYECTO-GRADO-FREE...[truncado]"
+      },
+      {
+        "campo": "rows[].ResourceProvider",
+        "tipo": "texto",
+        "ejemplo": "\"MICROSOFT.SQL\""
+      },
+      {
+        "campo": "rows[].ResultDescription",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].ResultSignature",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].ResultType",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].Severity",
+        "tipo": "entero",
+        "ejemplo": null
+      },
+      {
+        "campo": "rows[].SourceSystem",
+        "tipo": "texto",
+        "ejemplo": "\"Azure\""
+      },
+      {
+        "campo": "rows[].SubscriptionId",
+        "tipo": "texto",
+        "ejemplo": "\"e44b10e0-cdae-4525-b479-b9ad9454f0d1\""
+      },
+      {
+        "campo": "rows[].TLPLevel",
+        "tipo": "texto",
+        "ejemplo": "\"\""
+      },
+      {
+        "campo": "rows[].TenantId",
+        "tipo": "texto",
+        "ejemplo": "\"8e247ee6-014d-4f78-866d-7a228f7e71c7\""
+      },
+      {
+        "campo": "rows[].TimeGenerated",
+        "tipo": "fecha_hora",
+        "ejemplo": "\"2026-09-06T00:10:00Z\""
+      },
+      {
+        "campo": "rows[].TimeGrain",
+        "tipo": "texto",
+        "ejemplo": "\"PT1M\""
+      },
+      {
+        "campo": "rows[].Total",
+        "tipo": "numero",
+        "ejemplo": "10.5"
+      },
+      {
+        "campo": "rows[].Type",
+        "tipo": "texto",
+        "ejemplo": "\"AzureMetrics\""
+      },
+      {
+        "campo": "rows[].UnitName",
+        "tipo": "texto",
+        "ejemplo": "\"Percent\""
+      },
+      {
+        "campo": "rows[]._ResourceId",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/rg-proyecto-grado-free...[truncado]"
+      }
+    ],
+    "datos_faltantes": [
+      {
+        "campo": "rows[].DurationMs",
+        "tipo": "entero",
+        "veces_presente": 20,
+        "veces_nulo": 20
+      },
+      {
+        "campo": "rows[].RemoteIPLatitude",
+        "tipo": "numero",
+        "veces_presente": 20,
+        "veces_nulo": 20
+      },
+      {
+        "campo": "rows[].RemoteIPLongitude",
+        "tipo": "numero",
+        "veces_presente": 20,
+        "veces_nulo": 20
+      },
+      {
+        "campo": "rows[].Severity",
+        "tipo": "entero",
+        "veces_presente": 20,
+        "veces_nulo": 20
+      }
+    ]
+  },
+  "query_store_database_watcher": {
+    "campos": [
+      {
+        "campo": "carga_telemetria_resumen[].carga_promedio",
+        "tipo": "entero",
+        "ejemplo": "753"
+      },
+      {
+        "campo": "carga_telemetria_resumen[].mas_antiguo",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-05T22:12:41.909423\""
+      },
+      {
+        "campo": "carga_telemetria_resumen[].mas_reciente",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:00.334028\""
+      },
+      {
+        "campo": "carga_telemetria_resumen[].suma_carga",
+        "tipo": "entero",
+        "ejemplo": "180181054"
+      },
+      {
+        "campo": "carga_telemetria_resumen[].total_filas",
+        "tipo": "entero",
+        "ejemplo": "239006"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].avg_cpu_percent",
+        "tipo": "numero",
+        "ejemplo": "1.34"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].avg_data_io_percent",
+        "tipo": "numero",
+        "ejemplo": "0.01"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].avg_instance_cpu_percent",
+        "tipo": "numero",
+        "ejemplo": "11.97"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].avg_log_write_percent",
+        "tipo": "numero",
+        "ejemplo": "0.01"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].avg_memory_usage_percent",
+        "tipo": "numero",
+        "ejemplo": "0.17"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].cpu_limit",
+        "tipo": "numero",
+        "ejemplo": "2.0"
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].dtu_limit",
+        "tipo": "null",
+        "ejemplo": null
+      },
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].end_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:22.670000\""
+      },
+      {
+        "campo": "database_watcher_sessions[].host_name",
+        "tipo": "texto",
+        "ejemplo": "\"vm-extractor\""
+      },
+      {
+        "campo": "database_watcher_sessions[].last_request_start_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.723000\""
+      },
+      {
+        "campo": "database_watcher_sessions[].login_name",
+        "tipo": "texto",
+        "ejemplo": "\"dbadmin\""
+      },
+      {
+        "campo": "database_watcher_sessions[].program_name",
+        "tipo": "texto",
+        "ejemplo": "\"python3.14\""
+      },
+      {
+        "campo": "database_watcher_sessions[].session_id",
+        "tipo": "entero",
+        "ejemplo": "52"
+      },
+      {
+        "campo": "database_watcher_sessions[].status",
+        "tipo": "texto",
+        "ejemplo": "\"running\""
+      },
+      {
+        "campo": "dm_exec_query_stats[].creation_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.603000\""
+      },
+      {
+        "campo": "dm_exec_query_stats[].execution_count",
+        "tipo": "entero",
+        "ejemplo": "1"
+      },
+      {
+        "campo": "dm_exec_query_stats[].last_execution_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.633000\""
+      },
+      {
+        "campo": "dm_exec_query_stats[].text",
+        "tipo": "texto",
+        "ejemplo": "\"SELECT TOP 20 p.query_id, s.wait_category_desc, s.avg_query_wait_time_ms, s.total_query_w...[truncado]"
+      },
+      {
+        "campo": "dm_exec_query_stats[].total_elapsed_time",
+        "tipo": "entero",
+        "ejemplo": "13476"
+      },
+      {
+        "campo": "dm_exec_query_stats[].total_logical_reads",
+        "tipo": "entero",
+        "ejemplo": "86"
+      },
+      {
+        "campo": "dm_exec_query_stats[].total_worker_time",
+        "tipo": "entero",
+        "ejemplo": "13476"
+      },
+      {
+        "campo": "query_store_query[].count_compiles",
+        "tipo": "entero",
+        "ejemplo": "1"
+      },
+      {
+        "campo": "query_store_query[].initial_compile_start_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.340000\""
+      },
+      {
+        "campo": "query_store_query[].is_internal_query",
+        "tipo": "booleano",
+        "ejemplo": "false"
+      },
+      {
+        "campo": "query_store_query[].last_execution_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.557000\""
+      },
+      {
+        "campo": "query_store_query[].object_id",
+        "tipo": "entero",
+        "ejemplo": "0"
+      },
+      {
+        "campo": "query_store_query[].query_hash",
+        "tipo": "texto",
+        "ejemplo": "\"27c8a65d3db349d8\""
+      },
+      {
+        "campo": "query_store_query[].query_id",
+        "tipo": "entero",
+        "ejemplo": "37"
+      },
+      {
+        "campo": "query_store_query_text[].query_sql_text",
+        "tipo": "texto",
+        "ejemplo": "\"SELECT id, evento, carga, descripcion, creado_el FROM dbo.carga_telemetria ORDER BY id\""
+      },
+      {
+        "campo": "query_store_query_text[].query_text_id",
+        "tipo": "entero",
+        "ejemplo": "3060"
+      },
+      {
+        "campo": "query_store_query_text[].statement_sql_handle",
+        "tipo": "texto",
+        "ejemplo": "\"0900d75ac218473e0542ea2ed8162b0eba540000000000000000000000000000000000000000000000000000\""
+      },
+      {
+        "campo": "query_store_runtime_stats[].avg_cpu_time",
+        "tipo": "numero",
+        "ejemplo": "214259.0"
+      },
+      {
+        "campo": "query_store_runtime_stats[].avg_duration",
+        "tipo": "numero",
+        "ejemplo": "214292.0"
+      },
+      {
+        "campo": "query_store_runtime_stats[].avg_logical_io_reads",
+        "tipo": "numero",
+        "ejemplo": "3.0"
+      },
+      {
+        "campo": "query_store_runtime_stats[].avg_logical_io_writes",
+        "tipo": "numero",
+        "ejemplo": "0.0"
+      },
+      {
+        "campo": "query_store_runtime_stats[].count_executions",
+        "tipo": "entero",
+        "ejemplo": "1"
+      },
+      {
+        "campo": "query_store_runtime_stats[].first_execution_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.557000\""
+      },
+      {
+        "campo": "query_store_runtime_stats[].last_execution_time",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:29.557000\""
+      },
+      {
+        "campo": "query_store_runtime_stats[].query_id",
+        "tipo": "entero",
+        "ejemplo": "37"
+      },
+      {
+        "campo": "query_store_wait_stats[].avg_query_wait_time_ms",
+        "tipo": "numero",
+        "ejemplo": "2486.925"
+      },
+      {
+        "campo": "query_store_wait_stats[].query_id",
+        "tipo": "entero",
+        "ejemplo": "51"
+      },
+      {
+        "campo": "query_store_wait_stats[].total_query_wait_time_ms",
+        "tipo": "entero",
+        "ejemplo": "198954"
+      },
+      {
+        "campo": "query_store_wait_stats[].wait_category_desc",
+        "tipo": "texto",
+        "ejemplo": "\"Other Disk IO\""
+      }
+    ],
+    "datos_faltantes": [
+      {
+        "campo": "database_watcher_dm_db_resource_stats[].dtu_limit",
+        "tipo": "null",
+        "veces_presente": 1,
+        "veces_nulo": 1
+      }
+    ]
+  },
+  "azure_sql_estado_tabla": {
+    "campos": [
+      {
+        "campo": "columnas[].columna",
+        "tipo": "texto",
+        "ejemplo": "\"id\""
+      },
+      {
+        "campo": "columnas[].tipo",
+        "tipo": "texto",
+        "ejemplo": "\"bigint\""
+      },
+      {
+        "campo": "existe",
+        "tipo": "booleano",
+        "ejemplo": "true"
+      },
+      {
+        "campo": "filas[].carga",
+        "tipo": "entero",
+        "ejemplo": "572"
+      },
+      {
+        "campo": "filas[].creado_el",
+        "tipo": "texto",
+        "ejemplo": "\"2026-09-06T02:26:00.334028\""
+      },
+      {
+        "campo": "filas[].descripcion",
+        "tipo": "texto",
+        "ejemplo": "\"IwhGwwcucxzYxo7vZAvPasZwoY07Wnj5oeiU4MXY\""
+      },
+      {
+        "campo": "filas[].evento",
+        "tipo": "texto",
+        "ejemplo": "\"evento_7lsSkV\""
+      },
+      {
+        "campo": "filas[].id",
+        "tipo": "entero",
+        "ejemplo": "476913"
+      },
+      {
+        "campo": "tabla",
+        "tipo": "texto",
+        "ejemplo": "\"dbo.carga_telemetria\""
+      },
+      {
+        "campo": "total_filas",
+        "tipo": "entero",
+        "ejemplo": "239006"
+      }
+    ],
+    "datos_faltantes": []
+  },
+  "advisor_recommendations": {
+    "campos": [
+      {
+        "campo": "value[].id",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Advisor/recommend...[truncado]"
+      },
+      {
+        "campo": "value[].name",
+        "tipo": "texto",
+        "ejemplo": "\"a6a86f2b0fc0badadfada74b92f3c24907562d4e9dd7be3099219ff4e606923f\""
+      },
+      {
+        "campo": "value[].properties.category",
+        "tipo": "texto",
+        "ejemplo": "\"HighAvailability\""
+      },
+      {
+        "campo": "value[].properties.extendedProperties.maturityLevel",
+        "tipo": "texto",
+        "ejemplo": "\"GA\""
+      },
+      {
+        "campo": "value[].properties.extendedProperties.recommendationOfferingId",
+        "tipo": "texto",
+        "ejemplo": "\"ed05f3b7-8949-4698-9b38-49ab8abb5ee0\""
+      },
+      {
+        "campo": "value[].properties.extendedProperties.recommendationSubCategory",
+        "tipo": "texto",
+        "ejemplo": "\"MonitoringAndAlerting\""
+      },
+      {
+        "campo": "value[].properties.impact",
+        "tipo": "texto",
+        "ejemplo": "\"High\""
+      },
+      {
+        "campo": "value[].properties.impactedField",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Subscriptions/subscriptions\""
+      },
+      {
+        "campo": "value[].properties.impactedValue",
+        "tipo": "texto",
+        "ejemplo": "\"e44b10e0-cdae-4525-b479-b9ad9454f0d1\""
+      },
+      {
+        "campo": "value[].properties.lastUpdated",
+        "tipo": "texto",
+        "ejemplo": "\"2026-05-20T19:34:01.7499612Z\""
+      },
+      {
+        "campo": "value[].properties.recommendationTypeId",
+        "tipo": "texto",
+        "ejemplo": "\"242639fd-cd73-4be2-8f55-70478db8d1a5\""
+      },
+      {
+        "campo": "value[].properties.resourceMetadata.resourceId",
+        "tipo": "texto",
+        "ejemplo": "\"/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1\""
+      },
+      {
+        "campo": "value[].properties.shortDescription.problem",
+        "tipo": "texto",
+        "ejemplo": "\"Create an Azure Service Health alert\""
+      },
+      {
+        "campo": "value[].properties.shortDescription.solution",
+        "tipo": "texto",
+        "ejemplo": "\"Create an Azure Service Health alert\""
+      },
+      {
+        "campo": "value[].type",
+        "tipo": "texto",
+        "ejemplo": "\"Microsoft.Advisor/recommendations\""
+      }
+    ],
+    "datos_faltantes": []
+  }
+}

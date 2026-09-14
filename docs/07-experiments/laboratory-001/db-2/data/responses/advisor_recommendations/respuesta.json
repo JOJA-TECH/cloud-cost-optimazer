@@ -1,0 +1,235 @@
+{
+  "value": [
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "High",
+        "impactedField": "Microsoft.Subscriptions/subscriptions",
+        "impactedValue": "e44b10e0-cdae-4525-b479-b9ad9454f0d1",
+        "lastUpdated": "2026-05-20T19:34:01.7499612Z",
+        "recommendationTypeId": "242639fd-cd73-4be2-8f55-70478db8d1a5",
+        "shortDescription": {
+          "problem": "Create an Azure Service Health alert",
+          "solution": "Create an Azure Service Health alert"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "MonitoringAndAlerting",
+          "maturityLevel": "GA",
+          "recommendationOfferingId": "ed05f3b7-8949-4698-9b38-49ab8abb5ee0"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/providers/Microsoft.Advisor/recommendations/a6a86f2b0fc0badadfada74b92f3c24907562d4e9dd7be3099219ff4e606923f",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "a6a86f2b0fc0badadfada74b92f3c24907562d4e9dd7be3099219ff4e606923f"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "High",
+        "impactedField": "MICROSOFT.COMPUTE/VIRTUALMACHINES",
+        "impactedValue": "streaming",
+        "lastUpdated": "2026-07-29T07:15:34.7039596Z",
+        "recommendationTypeId": "13cea0f1-c3f7-4c66-8b3b-9928a0f07cea",
+        "shortDescription": {
+          "problem": "Review and migrate virtual machine workloads",
+          "solution": "Review and migrate virtual machine workloads"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "ServiceUpgradeAndRetirement",
+          "maturityLevel": "Preview",
+          "retirementDate": "2028-11-15",
+          "retirementFeatureName": "LSv2, G, GS, F, FS, Fsv2, B, Av2 - Series",
+          "recommendationOfferingId": "af1f3e3c-c276-446a-affc-78e683c6603d"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming/providers/Microsoft.Advisor/recommendations/d898b8091db5841de0251dc7c6c5bb21ef6574f3058e322dcb94ff8c65f405be",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "d898b8091db5841de0251dc7c6c5bb21ef6574f3058e322dcb94ff8c65f405be"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.COMPUTE/VIRTUALMACHINES",
+        "impactedValue": "streaming",
+        "lastUpdated": "2026-06-21T13:19:43.2624587Z",
+        "recommendationTypeId": "5f2613df-629f-4b07-9425-2a47ea0dfad3",
+        "shortDescription": {
+          "problem": "Migrate workload to Virtual Machine Scale Sets Flex",
+          "solution": "Migrate workload to Virtual Machine Scale Sets Flex"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "ServiceUpgradeAndRetirement",
+          "maturityLevel": "Preview",
+          "recommendationOfferingId": "ceccbf46-e9ab-431d-b496-fc2cf6fc2691"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming/providers/Microsoft.Advisor/recommendations/38f8ed4d82de2e426900f2e8dc4f68e6838cadd7c1d4268987cd1824067ef909",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "38f8ed4d82de2e426900f2e8dc4f68e6838cadd7c1d4268987cd1824067ef909"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "High",
+        "impactedField": "MICROSOFT.COMPUTE/VIRTUALMACHINES",
+        "impactedValue": "streaming",
+        "lastUpdated": "2026-05-20T03:24:13.3372492Z",
+        "recommendationTypeId": "7f71b153-c0b7-4e99-a23e-db8179183ec9",
+        "shortDescription": {
+          "problem": "Migrate workload to D-series or better virtual machine",
+          "solution": "Migrate workload to D-series or better virtual machine"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "ServiceUpgradeAndRetirement",
+          "maturityLevel": "Preview",
+          "recommendationOfferingId": "ceccbf46-e9ab-431d-b496-fc2cf6fc2691"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming/providers/Microsoft.Advisor/recommendations/3719098afecc6bb13cea7d5854c7c62b0cd0b808dcd15ae7b8eb8331a8a3a4c0",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "3719098afecc6bb13cea7d5854c7c62b0cd0b808dcd15ae7b8eb8331a8a3a4c0"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.COMPUTE/VIRTUALMACHINES",
+        "impactedValue": "streaming",
+        "lastUpdated": "2026-07-01T20:42:51.1210338Z",
+        "recommendationTypeId": "00e4ac6c-afa3-4578-a021-5f15e18850a2",
+        "shortDescription": {
+          "problem": "Align location of resource and resource group",
+          "solution": "Align location of resource and resource group"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "RegionalResiliency",
+          "maturityLevel": "GA",
+          "recommendationOfferingId": "d050b850-445a-4d54-9e47-42c76c0d0350"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming/providers/Microsoft.Advisor/recommendations/0f618ebebcb107885f96f825694b16596fcd6a70e4833dcc1deaf7b16b128ebf",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "0f618ebebcb107885f96f825694b16596fcd6a70e4833dcc1deaf7b16b128ebf"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.NETWORK/VIRTUALNETWORKS",
+        "impactedValue": "streaming-vnet",
+        "lastUpdated": "2026-04-17T00:17:45.3008970Z",
+        "recommendationTypeId": "56f0c458-521d-4b8b-a704-c0a099483d19",
+        "shortDescription": {
+          "problem": "Use NAT gateway for outbound connectivity",
+          "solution": "Use NAT gateway for outbound connectivity"
+        },
+        "extendedProperties": {
+          "region": "westus2",
+          "recommendationSubCategory": "Scalability",
+          "maturityLevel": "GA",
+          "recommendationOfferingId": "021d60de-795e-468a-953b-cb0067f8542e"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.network/virtualnetworks/streaming-vnet"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.network/virtualnetworks/streaming-vnet/providers/Microsoft.Advisor/recommendations/31df8d0d2f9d2b51232216580824db20f507e41af3b9921fade01e7f936825d9",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "31df8d0d2f9d2b51232216580824db20f507e41af3b9921fade01e7f936825d9"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.NETWORK/VIRTUALNETWORKS",
+        "impactedValue": "vnet-centralus",
+        "lastUpdated": "2026-04-17T00:17:53.5363078Z",
+        "recommendationTypeId": "56f0c458-521d-4b8b-a704-c0a099483d19",
+        "shortDescription": {
+          "problem": "Use NAT gateway for outbound connectivity",
+          "solution": "Use NAT gateway for outbound connectivity"
+        },
+        "extendedProperties": {
+          "region": "centralus",
+          "recommendationSubCategory": "Scalability",
+          "maturityLevel": "GA",
+          "recommendationOfferingId": "021d60de-795e-468a-953b-cb0067f8542e"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.network/virtualnetworks/vnet-centralus"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.network/virtualnetworks/vnet-centralus/providers/Microsoft.Advisor/recommendations/3885bd80a5beccb592b4c14d8f88ec3fcdede14ca7796260588bda3bcaa8cc6a",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "3885bd80a5beccb592b4c14d8f88ec3fcdede14ca7796260588bda3bcaa8cc6a"
+    },
+    {
+      "properties": {
+        "category": "OperationalExcellence",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.COMPUTE/VIRTUALMACHINES",
+        "impactedValue": "streaming",
+        "lastUpdated": "2026-05-23T22:52:24.1500218Z",
+        "recommendationTypeId": "2881ca3a-070d-40fb-9471-83783ff487c0",
+        "shortDescription": {
+          "problem": "Enable VM Insights for virtual machines",
+          "solution": "Enable VM Insights for virtual machines"
+        },
+        "extendedProperties": {
+          "recommendationSubCategory": "MonitoringAndAlerting",
+          "maturityLevel": "Preview",
+          "recommendationOfferingId": "115d243e-eb2b-44e7-a8c8-9ebdff425825"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/pruebas/providers/microsoft.compute/virtualmachines/streaming/providers/Microsoft.Advisor/recommendations/e2dedab20fcd3d08ef0b7b038b51357d237ee1eae673cd6d3acf22d8eef33d9d",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "e2dedab20fcd3d08ef0b7b038b51357d237ee1eae673cd6d3acf22d8eef33d9d"
+    },
+    {
+      "properties": {
+        "category": "HighAvailability",
+        "impact": "Medium",
+        "impactedField": "MICROSOFT.NETWORK/VIRTUALNETWORKS",
+        "impactedValue": "vnet-extractor",
+        "lastUpdated": "2026-09-06T00:30:47.3579630Z",
+        "recommendationTypeId": "56f0c458-521d-4b8b-a704-c0a099483d19",
+        "shortDescription": {
+          "problem": "Use NAT gateway for outbound connectivity",
+          "solution": "Use NAT gateway for outbound connectivity"
+        },
+        "extendedProperties": {
+          "region": "australiaeast",
+          "recommendationSubCategory": "Scalability",
+          "recommendationCostImplication": "None",
+          "maturityLevel": "GA",
+          "recommendationOfferingId": "021d60de-795e-468a-953b-cb0067f8542e"
+        },
+        "resourceMetadata": {
+          "resourceId": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/rg-proyecto-grado-free/providers/microsoft.network/virtualnetworks/vnet-extractor"
+        }
+      },
+      "id": "/subscriptions/e44b10e0-cdae-4525-b479-b9ad9454f0d1/resourcegroups/rg-proyecto-grado-free/providers/microsoft.network/virtualnetworks/vnet-extractor/providers/Microsoft.Advisor/recommendations/faaa343696f9211120599b2365836c30d2eb3182fb8578c7bcd54fce04023c0c",
+      "type": "Microsoft.Advisor/recommendations",
+      "name": "faaa343696f9211120599b2365836c30d2eb3182fb8578c7bcd54fce04023c0c"
+    }
+  ]
+}
