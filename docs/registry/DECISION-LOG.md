@@ -21,3 +21,10 @@
 | DEC-017 | 2026-09-01 | General | Reuniones los domingos 10:00 a.m. | MTG-001 | Acordada | 01-governance/meetings/MTG-001.md |
 | DEC-018 | 2026-09-01 | General | Prioridades MVP backend/ML | MTG-001 | Acordada | 01-governance/meetings/MTG-001.md |
 | DEC-019 | 2026-09-01 | General | Reentrenamiento con mínimo de datos nuevos | MTG-001 | Acordada | 01-governance/meetings/MTG-001.md |
+| DEC-020 | 2026-09-12 | General | Continuar el proyecto con modificaciones en histórico, workloads, costos y métricas | EXP-001, LAB-001 | Adoptada | registry/DECISION-LOG.md |
+| DEC-021 | 2026-09-12 | General | Entregar una versión beta al profesor antes de la entrega formal | MTG-002 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-022 | 2026-09-12 | Arquitectura | Separar la persistencia en una base de aplicación y otra de IA/recolección | MTG-002, ADR-002 | Adoptada | 01-governance/ADR-002-two-postgresql-databases.md |
+| DEC-023 | 2026-09-12 | Arquitectura | Usar PostgreSQL local en la fase inicial | MTG-002, REQ-007 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-024 | 2026-09-12 | General | Mantener las recomendaciones sin aplicación automática | MTG-002, REQ-004 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-025 | 2026-09-12 | General | Priorizar problema, justificación, objetivos, usuarios, alcance y antecedentes para el primer avance | MTG-002, REQ-005 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-026 | 2026-09-12 | General | Mantener el sprint o retrospectiva los domingos a las 10:00 a. m. | MTG-002 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
