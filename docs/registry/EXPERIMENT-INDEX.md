@@ -10,6 +10,7 @@
 | ID | Título | Fecha | Estado | Relacionados |
 |---|---|---|---|---|
 | RES-001 | Antecedentes de software similar y estudio del estándar FOCUS | 2026-09-28 | Borrador | MTG-001 (TASK-004), DEC-007, DEC-020, DEC-027, REQ-004, REQ-005, EXP-001, LAB-001 |
+| RES-002 | Precios y métricas reales de Azure SQL Database | 2026-09-28 | Borrador | MTG-001 (TASK-006), LAB-001, EXP-001, DATA-001, REQ-002, REQ-003, REQ-006, RES-001 |
 
 ## Interpretación del índice
 

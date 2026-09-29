@@ -23,4 +23,5 @@
 | DEC-025 | Decision | Prioridad del primer avance académico | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | DEC-026 | Decision | Sprint dominical a las 10:00 a. m. | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | RES-001 | Research | Antecedentes de software similar y estudio del estándar FOCUS | 2026-09-28 | Equipo del proyecto | Borrador | 02-research/RES-001-antecedentes-software-similar-estandar-focus.md |
+| RES-002 | Research | Precios y métricas reales de Azure SQL Database | 2026-09-28 | Jesús / Equipo del proyecto | Borrador | 02-research/RES-002-precios-metricas-azure-sql.md |
 | DEC-027 | Decision | Adoptar FOCUS como formato de normalización de datos de costo/uso en la capa de ingesta | 2026-09-28 | Equipo del proyecto | Propuesta | registry/DECISION-LOG.md |
