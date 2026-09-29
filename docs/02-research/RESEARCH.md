@@ -1,4 +1,6 @@
-# RES-XXX — Registro de investigación
+# RES-XXX — Registro de investigación (PLANTILLA)
+
+> **Nota:** Esta es la plantilla para nuevos registros de investigación. El registro activo de la investigación de antecedentes y del estándar FOCUS es [`RES-001-antecedentes-software-similar-estandar-focus.md`](RES-001-antecedentes-software-similar-estandar-focus.md).
 
 - **Fecha:**
 - **Investigador:**

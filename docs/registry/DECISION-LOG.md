@@ -28,3 +28,4 @@
 | DEC-024 | 2026-09-12 | General | Mantener las recomendaciones sin aplicación automática | MTG-002, REQ-004 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
 | DEC-025 | 2026-09-12 | General | Priorizar problema, justificación, objetivos, usuarios, alcance y antecedentes para el primer avance | MTG-002, REQ-005 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
 | DEC-026 | 2026-09-12 | General | Mantener el sprint o retrospectiva los domingos a las 10:00 a. m. | MTG-002 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-027 | 2026-09-28 | Arquitectura | Adoptar FOCUS como formato de normalización de datos de costo/uso en la capa de ingesta | RES-001 | Propuesta | 02-research/RES-001-antecedentes-software-similar-estandar-focus.md |
