@@ -55,11 +55,11 @@ export function RecommendationSummary() {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button size="lg" render={<Link href="/dashboard/recommendations" />}>
+            <Button size="lg" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
               Review scenario
               <ArrowRight />
             </Button>
-            <Button size="lg" variant="outline" render={<Link href="/dashboard/recommendations" />}>
+            <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
               <FileSearch />
               View evidence
             </Button>

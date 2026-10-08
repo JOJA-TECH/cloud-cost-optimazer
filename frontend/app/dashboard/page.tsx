@@ -56,7 +56,7 @@ export default function OverviewPage() {
                 <span className="font-medium tabular-nums text-foreground">{item.value}</span>
               </div>
             ))}
-            <Button variant="outline" size="sm" className="w-full" render={<Link href="/dashboard/diagnostics" />}>
+            <Button variant="outline" size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/diagnostics" />}>
               View diagnostics
               <ArrowRight />
             </Button>
@@ -104,7 +104,7 @@ export default function OverviewPage() {
               Projected CPU p99 at target capacity stays near 58% — below saturation, with headroom
               for observed peaks.
             </div>
-            <Button size="sm" className="w-full" render={<Link href="/dashboard/scenarios" />}>
+            <Button size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/scenarios" />}>
               Compare scenarios
               <ArrowRight />
             </Button>

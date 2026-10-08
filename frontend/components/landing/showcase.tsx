@@ -90,7 +90,7 @@ export function Showcase() {
       </div>
 
       <div className="mt-8 flex justify-center">
-        <Button size="lg" className="h-11 px-5 text-sm" render={<Link href="/dashboard" />}>
+        <Button size="lg" className="h-11 px-5 text-sm" nativeButton={false} render={<Link href="/dashboard" />}>
           Open the live dashboard
           <ArrowRight />
         </Button>

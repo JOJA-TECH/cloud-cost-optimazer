@@ -37,10 +37,10 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button variant="ghost" size="lg" render={<Link href="/dashboard" />}>
+          <Button variant="ghost" size="lg" nativeButton={false} render={<Link href="/dashboard" />}>
             Sign in
           </Button>
-          <Button size="lg" render={<Link href="/dashboard" />}>
+          <Button size="lg" nativeButton={false} render={<Link href="/dashboard" />}>
             Explore platform
             <ArrowRight />
           </Button>
@@ -70,10 +70,10 @@ export function SiteHeader() {
               </Link>
             ))}
             <div className="mt-2 flex flex-col gap-2">
-              <Button variant="outline" size="lg" render={<Link href="/dashboard" />}>
+              <Button variant="outline" size="lg" nativeButton={false} render={<Link href="/dashboard" />}>
                 Sign in
               </Button>
-              <Button size="lg" render={<Link href="/dashboard" />}>
+              <Button size="lg" nativeButton={false} render={<Link href="/dashboard" />}>
                 Explore platform
                 <ArrowRight />
               </Button>

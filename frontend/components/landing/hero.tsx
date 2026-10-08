@@ -35,7 +35,7 @@ export function Hero() {
             which capacity option delivers the best balance between cost, performance, and risk.
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="h-11 px-5 text-sm" render={<Link href="/dashboard" />}>
+            <Button size="lg" className="h-11 px-5 text-sm" nativeButton={false} render={<Link href="/dashboard" />}>
               Explore the platform
               <ArrowRight />
             </Button>
@@ -43,6 +43,7 @@ export function Hero() {
               size="lg"
               variant="outline"
               className="h-11 px-5 text-sm"
+              nativeButton={false}
               render={<Link href="#how-it-works" />}
             >
               See how it works

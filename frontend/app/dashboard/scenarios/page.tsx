@@ -127,7 +127,7 @@ export default function ScenariosPage() {
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
-                  <Button size="sm" render={<Link href="/dashboard/recommendations" />}>
+                  <Button size="sm" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
                     Review recommendation
                     <ArrowRight />
                   </Button>
@@ -136,7 +136,7 @@ export default function ScenariosPage() {
                       <Play />
                       Simulate
                     </Button>
-                    <Button size="sm" variant="outline" render={<Link href="/dashboard/recommendations" />}>
+                    <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
                       <FileSearch />
                       Evidence
                     </Button>
