@@ -1,0 +1,21 @@
+[Unit]
+Description=CCO workload generator
+After=network-online.target cco-migrate.service
+Wants=network-online.target
+Requires=cco-migrate.service
+Documentation=file:/opt/cco/app/docs/OPERATIONS.md
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cco/app
+EnvironmentFile=/opt/cco/.env
+ExecStart=/opt/cco/venv/bin/python -m src.workload.runner --service
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=180
+MemoryMax=320M
+# Do not restart a workload that was stopped on purpose.
+ExecCondition=/bin/bash -c 'grep -q "^AUTO_START=true" /opt/cco/.env'
+
+[Install]
+WantedBy=multi-user.target

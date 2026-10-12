@@ -1,0 +1,19 @@
+[Unit]
+Description=CCO metric collector and sync
+After=network-online.target cco-migrate.service
+Wants=network-online.target
+Requires=cco-migrate.service
+Documentation=file:/opt/cco/app/docs/OPERATIONS.md
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cco/app
+EnvironmentFile=/opt/cco/.env
+ExecStart=/opt/cco/venv/bin/python -m src.metrics.collector --service
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=180
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

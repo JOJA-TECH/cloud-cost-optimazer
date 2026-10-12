@@ -1,0 +1,18 @@
+[Unit]
+Description=CCO experiment supervisor (budget watchdog)
+After=network-online.target cco-collector.service
+Wants=network-online.target
+Documentation=file:/opt/cco/app/docs/OPERATIONS.md
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cco/app
+EnvironmentFile=/opt/cco/.env
+ExecStart=/opt/cco/venv/bin/python -m src.shutdown --supervise
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=180
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

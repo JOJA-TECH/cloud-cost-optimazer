@@ -1,0 +1,15 @@
+# Cloud Cost Optimizer - collector runtime dependencies.
+# Installed on the VM by cloud-init (`pip install -r requirements.txt`).
+
+# Config loading
+python-dotenv==1.0.*
+
+# Supabase (PostgreSQL) analytical persistence
+psycopg2-binary==2.9.*
+
+# Azure SQL (system under test) via ODBC (msodbcsql18 on the VM)
+pyodbc==5.*
+
+# Azure Monitor control-plane reads via managed identity
+azure-identity==1.*
+azure-monitor-query==1.*
