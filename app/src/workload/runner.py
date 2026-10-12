@@ -247,7 +247,7 @@ class WorkloadRunner:
                 multiplier = patterns.shape_value(phase.workload_class, fraction)
                 effective_rate = max(1.0, ops_per_min * multiplier)
 
-                for i in range(batch):
+                for _ in range(batch):
                     if stop_event.is_set():
                         break
                     key, _ = patterns.pick_operation(rng, phase.workload_class)

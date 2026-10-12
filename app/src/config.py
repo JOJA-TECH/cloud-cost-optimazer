@@ -8,11 +8,15 @@ cloud-init with mode 0600.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import FrozenSet, Optional
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dotenv is optional for import-time use
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 ENV_PATH = Path(os.environ.get("CCO_ENV_FILE", ".env"))
 

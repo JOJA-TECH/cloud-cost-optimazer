@@ -27,8 +27,8 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import Config, from_env, load_env_file
 from . import db_azure, db_supabase
+from .config import Config, from_env, load_env_file
 
 logger = logging.getLogger(__name__)
 

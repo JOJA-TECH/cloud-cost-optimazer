@@ -9,12 +9,12 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
-from typing import Iterator, Optional
-
-import psycopg2
-import psycopg2.extras
+from typing import TYPE_CHECKING, Iterator
 
 from .config import Config
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    import psycopg2
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,30 @@ class SupabaseConnectionError(RuntimeError):
     pass
 
 
-def connect(cfg: Config, timeout: int = 15) -> psycopg2.extensions.connection:
+def _psycopg2():
+    """Import psycopg2 lazily so the package imports without the driver."""
+    try:
+        import psycopg2
+        import psycopg2.extras  # noqa: F401
+        return psycopg2
+    except ImportError as exc:
+        raise SupabaseConnectionError("psycopg2 is not installed") from exc
+
+
+def connect(cfg: Config, timeout: int = 15) -> "psycopg2.extensions.connection":
+    pg = _psycopg2()
     dsn = cfg.supabase_dsn()
     try:
-        conn = psycopg2.connect(dsn)
+        conn = pg.connect(dsn)
         conn.autocommit = False
         return conn
-    except psycopg2.Error as exc:
+    except pg.Error as exc:
         logger.error("Supabase connection failed: %s", exc)
         raise SupabaseConnectionError(str(exc)) from exc
 
 
 @contextmanager
-def transaction(cfg: Config) -> Iterator[psycopg2.extensions.connection]:
+def transaction(cfg: Config) -> Iterator["psycopg2.extensions.connection"]:
     conn = connect(cfg)
     try:
         yield conn
@@ -82,6 +93,7 @@ def insert_dict_on_conflict(
 
 
 def query(conn, sql: str, params: tuple = ()) -> list[dict]:
+    psycopg2 = _psycopg2()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
         return list(cur.fetchall())

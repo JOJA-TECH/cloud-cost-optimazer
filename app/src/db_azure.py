@@ -10,13 +10,23 @@ pyodbc + "ODBC Driver 18 for SQL Server" (installed by cloud-init).
 from __future__ import annotations
 
 import logging
-from typing import Optional
-
-import pyodbc
+from typing import TYPE_CHECKING, Optional
 
 from .config import Config
 
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    import pyodbc
+
 logger = logging.getLogger(__name__)
+
+
+def _pyodbc():
+    """Import pyodbc lazily so the package imports without the ODBC driver."""
+    try:
+        import pyodbc
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise AzureSQLConnectionError("pyodbc is not installed") from exc
+    return pyodbc
 
 
 class AzureSQLConnectionError(RuntimeError):
@@ -62,7 +72,8 @@ def connect(
     admin: bool = False,
     database: Optional[str] = None,
     timeout: int = 30,
-) -> pyodbc.Connection:
+) -> "pyodbc.Connection":
+    pyodbc = _pyodbc()
     connection_string = build_connection_string(
         cfg, admin=admin, database=database, timeout=timeout
     )
@@ -75,11 +86,11 @@ def connect(
         raise AzureSQLConnectionError(str(exc)) from exc
 
 
-def connect_admin(cfg: Config, database: Optional[str] = None) -> pyodbc.Connection:
+def connect_admin(cfg: Config, database: Optional[str] = None) -> "pyodbc.Connection":
     return connect(cfg, admin=True, database=database)
 
 
-def execute(conn: pyodbc.Connection, sql: str, params: tuple = ()) -> list[pyodbc.Row]:
+def execute(conn, sql: str, params: tuple = ()) -> "list[pyodbc.Row]":
     with conn.cursor() as cursor:
         cursor.execute(sql, params)
         if cursor.description:
@@ -87,7 +98,7 @@ def execute(conn: pyodbc.Connection, sql: str, params: tuple = ()) -> list[pyodb
         return []
 
 
-def execute_many(conn: pyodbc.Connection, sql: str, params_list: list[tuple]) -> int:
+def execute_many(conn, sql: str, params_list: "list[tuple]") -> int:
     with conn.cursor() as cursor:
         cursor.fast_executemany = True
         cursor.executemany(sql, params_list)
@@ -96,7 +107,7 @@ def execute_many(conn: pyodbc.Connection, sql: str, params_list: list[tuple]) ->
         return rows
 
 
-def scalar(conn: pyodbc.Connection, sql: str, params: tuple = ()) -> Optional[object]:
+def scalar(conn, sql: str, params: tuple = ()) -> Optional[object]:
     with conn.cursor() as cursor:
         cursor.execute(sql, params)
         row = cursor.fetchone()
