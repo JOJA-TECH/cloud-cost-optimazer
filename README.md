@@ -22,10 +22,10 @@ dataset survives even when the VM is stopped or the Azure side is destroyed.
 ├── app/                    # Python application executed on the VM
 │   ├── src/                # config, db clients, workload, metrics, sync, telegram
 │   ├── migrations/         # azure_sql (T-SQL) and supabase (SQL) migrations
+│   ├── docs/               # ARCHITECTURE, COSTS, DATASET, OPERATIONS
 │   └── tests/
 ├── systemd/                # systemd unit templates installed on the VM
-├── scripts/                # bootstrap, deploy, validate, cost-check, destroy
-└── docs/                   # ARCHITECTURE, COSTS, DATASET, OPERATIONS
+└── scripts/                # bootstrap, deploy, validate, cost-check, destroy
 ```
 
 ## Status legend (never claim what was not proven)
@@ -39,7 +39,7 @@ dataset survives even when the VM is stopped or the Azure side is destroyed.
 | actually deployed | resources exist and are running |
 
 This branch is **implemented in code** and **validated locally** only. No
-`terraform apply` and no push are performed. See `docs/OPERATIONS.md`.
+`terraform apply` and no push are performed. See `app/docs/OPERATIONS.md`.
 
 ## Quick start
 
