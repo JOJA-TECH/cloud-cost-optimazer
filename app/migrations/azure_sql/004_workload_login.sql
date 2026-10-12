@@ -19,5 +19,10 @@ END
 GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES, EXECUTE
     ON SCHEMA::loadtest TO [__AZURE_SQL_WORKLOAD_USER__];
 
+-- The collector reads aggregate server state via sys.dm_db_resource_stats and
+-- sys.dm_exec_sessions; that requires VIEW DATABASE STATE (aggregate only, no
+-- user row data).
+GRANT VIEW DATABASE STATE TO [__AZURE_SQL_WORKLOAD_USER__];
+
 -- Belt and braces: deny broad catalog access that is not required.
 DENY VIEW DEFINITION TO [__AZURE_SQL_WORKLOAD_USER__];
