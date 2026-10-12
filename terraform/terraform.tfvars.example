@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars, state files or real secrets.
+# ---------------------------------------------------------------------------
+
+# --- Azure identity ---
+subscription_id = "00000000-0000-0000-0000-000000000000"
+tenant_id       = "00000000-0000-0000-0000-000000000000"
+location        = "eastus"
+resource_prefix = "cco-lab"
+
+# --- VM access ---
+admin_username       = "cco-admin"
+admin_ssh_public_key = "ssh-rsa AAAA...replace-with-your-public-key..."
+admin_cidr           = "203.0.113.7/32" # your office/home public IP /32
+
+# --- Azure SQL (system under test) ---
+sql_admin_username    = "cco_sql_admin"
+sql_admin_password    = "REPLACE-STRONG-PASSWORD"
+sql_workload_username = "cco_workload"
+sql_workload_password = "REPLACE-STRONG-WORKLOAD-PASSWORD"
+sql_min_capacity      = 0.5
+sql_max_capacity      = 1.0
+
+# --- Supabase (external PostgreSQL) ---
+supabase_db_host     = "db.xxxxxxxxxxxxxxxx.supabase.co"
+supabase_db_port     = 5432
+supabase_db_name     = "postgres"
+supabase_db_user     = "postgres"
+supabase_db_password = "REPLACE-SUPABASE-PASSWORD"
+
+# --- Telegram ---
+telegram_bot_token        = "123456:REPLACE-WITH-BOTFATHER-TOKEN"
+telegram_allowed_chat_ids = ["123456789"]
+
+# --- VM size and lifecycle ---
+vm_size                  = "Standard_B1s"
+experiment_duration_hours = 336
+monthly_budget_usd       = 20
+max_experiment_hours     = 336
+auto_stop_after_hours    = 360
+budget_alert_emails      = ["you@example.com"]
+
+# --- Application source ---
+app_git_repo_url = "https://github.com/Oyhs-co/cloud-cost-optimazer.git"
+app_git_ref      = "dataset-metrics-collector"
+
+capture_raw_interval_seconds = 60
+enable_public_ip             = true
+enable_budget                = true

@@ -1,0 +1,46 @@
+# --- Terraform ---
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+terraform/tfplan
+terraform/tfplan.*
+*.tfplan
+# Secrets: never commit real values
+terraform/terraform.tfvars
+terraform/*.auto.tfvars
+!terraform/terraform.tfvars.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- App runtime secrets & local state ---
+app/.env
+app/*.env
+!app/.env.example
+*.spool
+*.spool.jsonl
+spool/
+reports/
+manifest.json
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
