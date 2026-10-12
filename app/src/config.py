@@ -148,6 +148,21 @@ class Config:
         """Logical server name without the .database.windows.net suffix."""
         return self.azure_sql_server.split(".")[0]
 
+    def resource_uid(self) -> str:
+        """Stable, deterministic public id for the monitored resource.
+
+        Derived from the ARM resource id so the same Azure resource always maps
+        to the same UUID without storing any extra secret.
+        """
+        import hashlib
+        import uuid
+
+        base = self.azure_monitor_resource_id() or (
+            f"{self.azure_sql_server}/{self.azure_sql_database}"
+        )
+        digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:32]
+        return str(uuid.UUID(digest))
+
     def has_required_secrets(self) -> bool:
         required = [
             self.azure_sql_server,
