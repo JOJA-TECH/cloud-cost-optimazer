@@ -54,6 +54,13 @@ systemctl --no-pager --lines=0 status cco-migrate.service || true
 
 systemctl restart cco-collector.service cco-telegram-bot.service cco-supervisor.service
 systemctl --no-pager --lines=0 status cco-collector.service || true
+
+# The workload generator has Requires=cco-migrate, so restarting migrations
+# stops it. Bring it back only when the experiment is meant to auto-start.
+if grep -q '^AUTO_START=true' "\${APP_DIR}/.env" 2>/dev/null; then
+  systemctl restart cco-workload.service
+  systemctl --no-pager --lines=0 status cco-workload.service || true
+fi
 REMOTE
 
 echo "[deploy] done"
