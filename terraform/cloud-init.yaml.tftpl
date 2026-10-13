@@ -194,7 +194,9 @@ runcmd:
   - [bash, -lc, "install -d -m 0755 ${app_dir}"]
   - [bash, -lc, "install -d -m 0700 ${app_dir}/spool"]
   - [bash, -lc, "curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg"]
-  - [bash, -lc, "curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list -o /etc/apt/sources.list.d/mssql-release.list"]
+  # Write the repo file explicitly with signed-by so apt trusts the keyring above
+  # (the upstream prod.list omits it and apt then fails with NO_PUBKEY).
+  - [bash, -lc, "echo 'deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main' > /etc/apt/sources.list.d/mssql-release.list"]
   - [bash, -lc, "apt-get update"]
   - [bash, -lc, "ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y msodbcsql18"]
   - [bash, -lc, "python3 -m venv ${app_dir}/venv"]

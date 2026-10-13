@@ -43,6 +43,7 @@ IF EXISTS (SELECT 1 FROM sys.triggers WHERE name = N'trg_workload_control_guard'
 BEGIN
     DROP TRIGGER loadtest.trg_workload_control_guard;
 END
+GO
 
 CREATE TRIGGER loadtest.trg_workload_control_guard
 ON loadtest.workload_control
@@ -93,6 +94,7 @@ BEGIN
     FROM inserted i
     JOIN deleted d ON d.experiment_uid = i.experiment_uid;
 END
+GO
 
 -- --------------------------------------------------------------------------
 -- Seed query templates (append-only, keyed).
@@ -117,26 +119,26 @@ BEGIN
     INSERT INTO loadtest.query_templates (template_key, operation_type, sql_template, comment_text) VALUES
     (N'point_lookup', N'SELECT',
      N'SELECT TOP (1) fe.event_id, fe.created_at_utc, fe.operation_type '
-     N'FROM loadtest.fact_events fe WHERE fe.experiment_uid = @experiment_uid '
-     N'ORDER BY fe.created_at_utc DESC',
+     + N'FROM loadtest.fact_events fe WHERE fe.experiment_uid = @experiment_uid '
+     + N'ORDER BY fe.created_at_utc DESC',
      N'Cheap point lookup refreshing a hot page.'),
     (N'range_scan', N'SELECT',
      N'SELECT COUNT_BIG(*) FROM loadtest.fact_events fe '
-     N'WHERE fe.experiment_uid = @experiment_uid '
-     N'AND fe.created_at_utc BETWEEN @start_utc AND @end_utc',
+     + N'WHERE fe.experiment_uid = @experiment_uid '
+     + N'AND fe.created_at_utc BETWEEN @start_utc AND @end_utc',
      N'Indexed range scan over the experiment window.'),
     (N'insert_event', N'INSERT',
      N'INSERT INTO loadtest.fact_events (experiment_uid, operation_type, '
-     N'payload_size_bytes, batch_id, worker_id) '
-     N'VALUES (@experiment_uid, @operation_type, @payload_size_bytes, @batch_id, @worker_id)',
+     + N'payload_size_bytes, batch_id, worker_id) '
+     + N'VALUES (@experiment_uid, @operation_type, @payload_size_bytes, @batch_id, @worker_id)',
      N'Transactional insert driving log buffer writes.'),
     (N'update_row', N'UPDATE',
      N'UPDATE TOP (1) loadtest.fact_events '
-     N'SET payload_size_bytes = payload_size_bytes + 1 '
-     N'WHERE experiment_uid = @experiment_uid',
+     + N'SET payload_size_bytes = payload_size_bytes + 1 '
+     + N'WHERE experiment_uid = @experiment_uid',
      N'Point update generating log buffer traffic.'),
     (N'aggregate', N'SELECT',
      N'SELECT experiment_uid, COUNT_BIG(*) AS n, AVG(payload_size_bytes) AS avg_size '
-     N'FROM loadtest.fact_events GROUP BY experiment_uid',
+     + N'FROM loadtest.fact_events GROUP BY experiment_uid',
      N'Small aggregate used by cpu_intensive runs.');
 END

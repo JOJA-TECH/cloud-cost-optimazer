@@ -123,6 +123,31 @@ def _prepare(columns: List[str], row: dict) -> list:
     return values
 
 
+def _ensure_collector_runs(conn, reading_rows: List[dict]) -> None:
+    """Register collector_run rows referenced by readings.
+
+    ``start_collector_run`` can fail (e.g. a transient outage) while the
+    readings still get spooled. Without this, the foreign key on
+    ``raw.metric_reading.collector_run_uid`` would block the flush forever once
+    the store recovers, so a minimal registry row is recreated idempotently.
+    """
+    referenced: dict = {}
+    for row in reading_rows:
+        uid = row.get("collector_run_uid")
+        if uid and uid not in referenced:
+            referenced[uid] = row
+    for uid, row in referenced.items():
+        db_supabase.query(
+            conn,
+            "insert into ops.collector_run "
+            "(collector_run_uid, experiment_uid, source, started_at_utc, status, "
+            " rows_observed, rows_written, request_metadata_json) "
+            "values (%s, %s, %s, now(), 'ok', 0, 0, '{}'::jsonb) "
+            "on conflict (collector_run_uid) do nothing",
+            (uid, row.get("experiment_uid"), row.get("source") or "collector"),
+        )
+
+
 def _insert_rows(conn, table: str, columns: List[str], rows: List[dict]) -> int:
     if not rows:
         return 0
@@ -166,6 +191,7 @@ def persist(
     try:
         with db_supabase.transaction(cfg) as conn:
             written = 0
+            _ensure_collector_runs(conn, reading_rows)
             written += _insert_rows(conn, "raw.metric_reading", READING_COLUMNS, reading_rows)
             written += _insert_rows(conn, "raw.metric_sample", SAMPLE_COLUMNS, sample_rows)
         result.rows_written = written
@@ -205,6 +231,8 @@ def flush_spool(cfg) -> dict:
         )
         try:
             with db_supabase.transaction(cfg) as conn:
+                if table == "raw.metric_reading":
+                    _ensure_collector_runs(conn, rows)
                 written = _insert_rows(conn, table, columns, rows)
         except Exception:  # noqa: BLE001 - leave the file for the next attempt
             break

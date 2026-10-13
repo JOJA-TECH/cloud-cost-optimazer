@@ -34,6 +34,7 @@ output "sql_server_fqdn" {
 
 output "sql_server_admin_login" {
   value       = azurerm_mssql_server.main.administrator_login
+  sensitive   = true
   description = "Azure SQL admin login (name only, never the password)."
 }
 

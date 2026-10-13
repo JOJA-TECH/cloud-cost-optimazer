@@ -179,7 +179,7 @@ class WorkloadRunner:
         )
         return True, (time.monotonic() - start) * 1000.0
 
-    OPS: Dict[str, object] = {}
+    OPS: Dict[str, str] = {}
 
     # -- phase bookkeeping -----------------------------------------------------
     def _register_workload_run(self, phase: PhaseConfig) -> str:
@@ -221,7 +221,7 @@ class WorkloadRunner:
     # -- worker loop -----------------------------------------------------------
     def _worker(self, run_uid: str, phase: PhaseConfig, stop_event: threading.Event,
                 stats: dict, worker_id: int):
-        rng = random.Random(seed_for(self.cfg) + run_uid.encode() + bytes([worker_id]))
+        rng = random.Random(f"{seed_for(self.cfg)}:{run_uid}:{worker_id}")
         conn = db_azure.connect(self.cfg)
         try:
             ops_per_min = 15.0 * phase.intensity * phase.concurrency
@@ -251,7 +251,8 @@ class WorkloadRunner:
                     if stop_event.is_set():
                         break
                     key, _ = patterns.pick_operation(rng, phase.workload_class)
-                    handler = self.OPS.get(key)
+                    name = self.OPS.get(key)
+                    handler = getattr(self, name, None) if name else None
                     if handler is None:
                         continue
                     try:
@@ -364,14 +365,15 @@ class WorkloadRunner:
         self._stop_requested.set()
 
 
-# Operation registry: template_key (from loadtest.query_templates) -> handler.
-# All handlers are bounded and touch only the loadtest schema.
+# Operation registry: template_key (from loadtest.query_templates) -> handler
+# method name, resolved per instance so the method stays bound. All handlers are
+# bounded and touch only the loadtest schema.
 WorkloadRunner.OPS = {
-    "point_lookup": WorkloadRunner._op_point_lookup,
-    "range_scan": WorkloadRunner._op_range_scan,
-    "insert_event": WorkloadRunner._op_insert,
-    "update_row": WorkloadRunner._op_update,
-    "aggregate": WorkloadRunner._op_aggregate,
+    "point_lookup": "_op_point_lookup",
+    "range_scan": "_op_range_scan",
+    "insert_event": "_op_insert",
+    "update_row": "_op_update",
+    "aggregate": "_op_aggregate",
 }
 
 

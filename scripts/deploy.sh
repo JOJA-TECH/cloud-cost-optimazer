@@ -10,6 +10,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="${APP_DIR:-/opt/cco}"
 SSH_USER="${SSH_USER:-cco-admin}"
+SSH_KEY="${SSH_KEY:-${HOME}/.ssh/cco_vm_rsa}"
+
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+if [[ -f "${SSH_KEY}" ]]; then
+  SSH_OPTS+=(-i "${SSH_KEY}" -o IdentitiesOnly=yes)
+else
+  echo "[deploy] warning: SSH key ${SSH_KEY} not found; using the ssh-agent/default keys" >&2
+fi
 
 HOST="${1:-}"
 if [[ -z "${HOST}" ]]; then
@@ -19,24 +27,33 @@ fi
 TARGET="${HOST}"
 [[ "${TARGET}" == *"@"* ]] || TARGET="${SSH_USER}@${HOST}"
 
+# /opt/cco is root-owned and the services run as root, so both the file sync and
+# the remote steps require sudo (cco-admin has passwordless sudo).
 echo "[deploy] syncing app/ to ${TARGET}:${APP_DIR}/app"
-rsync -az --delete \
+rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
+  --rsync-path="sudo rsync" --chown=root:root \
   --exclude '__pycache__' --exclude '.pytest_cache' --exclude '.ruff_cache' \
   --exclude '.env' --exclude 'spool' \
   "${REPO_ROOT}/app/" "${TARGET}:${APP_DIR}/app/"
 
-echo "[deploy] installing dependencies and restarting services"
-ssh "${TARGET}" bash -s <<REMOTE
+echo "[deploy] installing dependencies, applying migrations and restarting services"
+ssh "${SSH_OPTS[@]}" "${TARGET}" sudo bash -s <<REMOTE
 set -euo pipefail
 APP_DIR="${APP_DIR}"
+mkdir -p "\${APP_DIR}/app"
 if [[ ! -x "\${APP_DIR}/venv/bin/python" ]]; then
   python3 -m venv "\${APP_DIR}/venv"
 fi
-"\${APP_DIR}/venv/bin/pip" install --upgrade pip
-"\${APP_DIR}/venv/bin/pip" install -r "\${APP_DIR}/app/requirements.txt"
-sudo systemctl daemon-reload
-sudo systemctl restart cco-collector.service cco-telegram-bot.service cco-supervisor.service
-sudo systemctl --no-pager --lines=0 status cco-collector.service || true
+"\${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip
+"\${APP_DIR}/venv/bin/pip" install --quiet -r "\${APP_DIR}/app/requirements.txt"
+systemctl daemon-reload
+
+# Migrations must succeed before the collector starts writing rows.
+systemctl restart cco-migrate.service
+systemctl --no-pager --lines=0 status cco-migrate.service || true
+
+systemctl restart cco-collector.service cco-telegram-bot.service cco-supervisor.service
+systemctl --no-pager --lines=0 status cco-collector.service || true
 REMOTE
 
 echo "[deploy] done"

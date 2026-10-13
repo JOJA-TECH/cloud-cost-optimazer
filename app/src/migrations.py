@@ -68,6 +68,28 @@ def _read_azure_migration(cfg: Config, path: Path) -> str:
     return sql
 
 
+def _split_azure_batches(sql: str) -> list[str]:
+    """Split a T-SQL file on lines containing only ``GO``.
+
+    Statements such as CREATE TRIGGER/VIEW/PROCEDURE must be the first (and
+    only) statement in a batch, so the files use ``GO`` separators.
+    """
+    batches: list[str] = []
+    current: list[str] = []
+    for line in sql.splitlines():
+        if line.strip().upper() == "GO":
+            batch = "\n".join(current).strip()
+            if batch:
+                batches.append(batch)
+            current = []
+        else:
+            current.append(line)
+    tail = "\n".join(current).strip()
+    if tail:
+        batches.append(tail)
+    return batches
+
+
 def apply_azure_sql(cfg: Config) -> list[str]:
     _bootstrap_azure(cfg)
     conn = db_azure.connect_admin(cfg)
@@ -86,7 +108,8 @@ def apply_azure_sql(cfg: Config) -> list[str]:
             sql = _read_azure_migration(cfg, path)
             conn.autocommit = False
             try:
-                db_azure.execute(conn, sql)
+                for batch in _split_azure_batches(sql):
+                    db_azure.execute(conn, batch)
                 db_azure.execute(
                     conn,
                     f"INSERT INTO {AZURE_MARKER} (name, checksum) VALUES (?, ?)",

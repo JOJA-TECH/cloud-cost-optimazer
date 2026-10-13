@@ -69,7 +69,7 @@ def insert_dict(conn, table: str, data: dict) -> int:
     )
     with conn.cursor() as cur:
         cur.execute(sql, values)
-    return max(cur.rowcount, 0)
+        return max(cur.rowcount, 0)
 
 
 def insert_dict_on_conflict(
@@ -89,13 +89,20 @@ def insert_dict_on_conflict(
     )
     with conn.cursor() as cur:
         cur.execute(sql, values)
-    return max(cur.rowcount, 0)
+        return max(cur.rowcount, 0)
 
 
 def query(conn, sql: str, params: tuple = ()) -> list[dict]:
+    """Run a statement and return rows.
+
+    Write statements (INSERT/UPDATE/DELETE) have no result set and would make
+    ``fetchall()`` raise psycopg2's "no results to fetch", so they return [].
+    """
     psycopg2 = _psycopg2()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
+        if cur.description is None:
+            return []
         return list(cur.fetchall())
 
 
