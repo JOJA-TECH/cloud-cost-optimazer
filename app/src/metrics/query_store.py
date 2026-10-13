@@ -24,7 +24,7 @@ QUERY_STORE_QUERY = (
     "SELECT TOP (20) "
     " CAST(qsrs.avg_duration / 1000.0 AS float) AS avg_duration_ms, "
     " qsrs.count_executions, "
-    " qsrs.last_execution_time "
+    " CAST(qsrs.last_execution_time AS datetime2) AS last_execution_time "
     "FROM sys.query_store_runtime_stats qsrs "
     "JOIN sys.query_store_plan qsp ON qsp.plan_id = qsrs.plan_id "
     "ORDER BY qsrs.last_execution_time DESC"

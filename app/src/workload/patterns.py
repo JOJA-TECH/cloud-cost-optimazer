@@ -101,6 +101,26 @@ def shape_value(workload_class: str, fraction: float) -> float:
     return _clamp(fn(fraction)) if fn else 0.5
 
 
+def next_intensity_factor(
+    rng: random.Random,
+    current: float,
+    jitter: float,
+    step: float = 0.25,
+) -> float:
+    """Bounded random walk of an intensity multiplier around 1.0.
+
+    With ``jitter`` = 0 the factor stays at 1.0 (deterministic, the default).
+    Otherwise it drifts within ``[1 - jitter, 1 + jitter]`` so the offered load
+    varies naturally while remaining reproducible for a given seed.
+    """
+    if jitter <= 0:
+        return 1.0
+    low = 1.0 - jitter
+    high = 1.0 + jitter
+    value = current + rng.uniform(-step, step)
+    return min(high, max(low, value))
+
+
 def operation_distribution(workload_class: str) -> Dict[str, float]:
     """Copy of the operation mix (template_key -> weight)."""
     return dict(_MIX.get(workload_class, _MIX["mixed"]))

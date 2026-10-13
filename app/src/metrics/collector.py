@@ -150,6 +150,12 @@ def _setup_logging(verbose: bool = False) -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+    # The Azure SDK logs every HTTP request/response at INFO; keep our own INFO
+    # signal readable unless we are explicitly debugging.
+    for noisy in ("azure", "azure.core", "azure.identity", "azure.monitor.query"):
+        logging.getLogger(noisy).setLevel(
+            logging.DEBUG if verbose else logging.WARNING
+        )
 
 
 def main() -> int:

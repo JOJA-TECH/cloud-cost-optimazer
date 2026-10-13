@@ -78,6 +78,16 @@ write_files:
       AUTO_START=false
       MAX_STORAGE_PERCENT=80
 
+      # --- Workload load control ---
+      WORKLOAD_INTENSITY=0.7
+      WORKLOAD_INTENSITY_JITTER=0.0
+
+      # --- Azure control plane (Azure Monitor reads via managed identity) ---
+      AZURE_SQL_RESOURCE_ID=${azure_sql_resource_id}
+      AZURE_SUBSCRIPTION_ID=${azure_subscription_id}
+      AZURE_RESOURCE_GROUP=${azure_resource_group}
+      AZURE_LOCATION=${azure_location}
+
   - path: /etc/systemd/system/cco-migrate.service
     owner: root:root
     permissions: '0644'

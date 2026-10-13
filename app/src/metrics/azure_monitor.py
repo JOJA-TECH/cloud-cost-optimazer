@@ -21,7 +21,6 @@ PLATFORM_METRICS = [
     "cpu_percent",
     "physical_data_read_percent",
     "log_write_percent",
-    "dtu_consumption_percent",
     "storage_percent",
     "storage",
     "workers_percent",

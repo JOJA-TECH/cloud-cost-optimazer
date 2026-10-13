@@ -68,6 +68,11 @@ resource "azurerm_linux_virtual_machine" "vm" {
     experiment_duration_hours = var.experiment_duration_hours
     max_experiment_hours      = var.max_experiment_hours
     auto_stop_after_hours     = var.auto_stop_after_hours
+
+    azure_sql_resource_id = azurerm_mssql_database.loadtest.id
+    azure_subscription_id = var.subscription_id
+    azure_resource_group  = local.name.resource_group
+    azure_location        = var.location
   }))
 
   lifecycle {

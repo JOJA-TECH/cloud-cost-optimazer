@@ -73,7 +73,7 @@ def default_schedule(cfg: Config) -> List[PhaseConfig]:
             {
                 "workload_class": "mixed",
                 "duration_seconds": cfg.experiment_duration_hours * 3600,
-                "intensity": 0.7,
+                "intensity": cfg.workload_intensity,
                 "concurrency": 1,
                 "batch_size": 10,
             },
@@ -226,6 +226,7 @@ class WorkloadRunner:
         try:
             ops_per_min = 15.0 * phase.intensity * phase.concurrency
             batch = max(1, phase.batch_size)
+            intensity_factor = 1.0
 
             while not stop_event.is_set() and not self._stop_requested.is_set():
                 status = self.controller.azure_status()
@@ -245,7 +246,10 @@ class WorkloadRunner:
                 elapsed = time.monotonic() - stats["started_at"]
                 fraction = min(1.0, elapsed / max(1.0, phase.duration_seconds))
                 multiplier = patterns.shape_value(phase.workload_class, fraction)
-                effective_rate = max(1.0, ops_per_min * multiplier)
+                intensity_factor = patterns.next_intensity_factor(
+                    rng, intensity_factor, self.cfg.workload_intensity_jitter
+                )
+                effective_rate = max(1.0, ops_per_min * multiplier * intensity_factor)
 
                 for _ in range(batch):
                     if stop_event.is_set():

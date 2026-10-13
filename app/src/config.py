@@ -104,6 +104,10 @@ class Config:
     auto_stop_after_hours: int = 360
     final_flush_timeout_seconds: int = 120
 
+    # Workload load control
+    workload_intensity: float = 0.7
+    workload_intensity_jitter: float = 0.0
+
     # Resilience
     supabase_retry_max_attempts: int = 8
     supabase_retry_base_seconds: int = 5
@@ -214,6 +218,8 @@ def from_env() -> Config:
         max_experiment_hours=_env_int("MAX_EXPERIMENT_HOURS", 336),
         auto_stop_after_hours=_env_int("AUTO_STOP_AFTER_HOURS", 360),
         final_flush_timeout_seconds=_env_int("FINAL_FLUSH_TIMEOUT_SECONDS", 120),
+        workload_intensity=_env_float("WORKLOAD_INTENSITY", 0.7),
+        workload_intensity_jitter=_env_float("WORKLOAD_INTENSITY_JITTER", 0.0),
         supabase_retry_max_attempts=_env_int("SUPABASE_RETRY_MAX_ATTEMPTS", 8),
         supabase_retry_base_seconds=_env_int("SUPABASE_RETRY_BASE_SECONDS", 5),
         local_spool_max_mb=_env_int("LOCAL_SPOOL_MAX_MB", 500),
@@ -250,4 +256,6 @@ class ConfigSafety:
             "max_experiment_hours": config.max_experiment_hours,
             "auto_stop_after_hours": config.auto_stop_after_hours,
             "auto_start": config.auto_start,
+            "workload_intensity": config.workload_intensity,
+            "workload_intensity_jitter": config.workload_intensity_jitter,
         }
