@@ -61,21 +61,28 @@ def collect_once(cfg: Config, collector_run_uid: str) -> writer.WriteResult:
     start = end - dt.timedelta(seconds=cfg.capture_raw_interval_seconds)
 
     readings: List[MetricReading] = []
-    readings.extend(azure_monitor.fetch(cfg, start, end, cfg.capture_raw_interval_seconds))
+    rejected: List[dict] = []
+    readings.extend(
+        azure_monitor.fetch(
+            cfg, start, end, cfg.capture_raw_interval_seconds, rejected=rejected
+        )
+    )
     readings.extend(sql_diagnostics.fetch(cfg))
     readings.extend(query_store.fetch(cfg))
 
-    observations, intensity = workload_observations.drain(cfg, start, end)
+    observations, workload_stats = workload_observations.drain(cfg, start, end)
     readings.extend(observations)
-    if intensity is not None:
-        readings.append(intensity)
+    readings.extend(workload_stats)
 
     intervals, samples = _apply_quality(readings)
     logger.info(
-        "cycle: %d interval readings, %d samples", len(intervals), len(samples)
+        "cycle: %d interval readings, %d samples, %d rejected",
+        len(intervals), len(samples), len(rejected),
     )
 
-    result = writer.persist(cfg, collector_run_uid, intervals, samples)
+    result = writer.persist(
+        cfg, collector_run_uid, intervals, samples, rejected=rejected
+    )
     if result.error:
         logger.warning("persist error: %s", result.error)
     return result

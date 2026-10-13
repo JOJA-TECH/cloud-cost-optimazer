@@ -11,11 +11,16 @@ import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+# Catalog version: bump whenever a code, unit or bound changes so stored rows
+# and features are always attributable to an exact contract revision.
+METRIC_CATALOG_VERSION = "2026.10.2"
+
 # Canonical metric code -> (unit, min, max, participates_in_features)
 METRIC_CATALOG: Dict[str, tuple] = {
     "cpu_percent": ("percent", 0.0, 100.0, True),
     "storage_percent": ("percent", 0.0, 100.0, True),
     "storage_used_bytes": ("bytes", 0.0, None, True),
+    "storage_capacity_bytes": ("bytes", 0.0, None, True),
     "data_io_percent": ("percent", 0.0, 100.0, True),
     "log_write_percent": ("percent", 0.0, 100.0, True),
     "memory_percent": ("percent", 0.0, 100.0, True),
@@ -24,8 +29,15 @@ METRIC_CATALOG: Dict[str, tuple] = {
     "workers_percent": ("percent", 0.0, 100.0, True),
     "deadlock_count": ("count", 0.0, None, True),
     "query_duration_avg_ms": ("milliseconds", 0.0, None, True),
-    "query_duration_sample_ms": ("milliseconds", 0.0, None, True),
+    # Client-side latency of one workload operation (may span several queries).
+    "workload_operation_latency_ms": ("milliseconds", 0.0, None, True),
     "workload_intensity": ("ops_per_min", 0.0, None, True),
+    # Workload outcome counters (offered vs completed).
+    "offered_operations": ("count", 0.0, None, True),
+    "successful_operations": ("count", 0.0, None, True),
+    "failed_operations": ("count", 0.0, None, True),
+    "error_rate": ("ratio", 0.0, 1.0, True),
+    "throughput_ops_per_second": ("ops_per_second", 0.0, None, True),
     "dtu_consumption_percent": ("percent", 0.0, 100.0, False),
 }
 
@@ -52,10 +64,15 @@ NORMALIZATION_MAP: Dict[str, str] = {
     "avg_duration_ms": "query_duration_avg_ms",
     # Workload generator self-observation
     "ops_per_min": "workload_intensity",
-    "operation_duration_ms": "query_duration_sample_ms",
+    "operation_duration_ms": "workload_operation_latency_ms",
+    "offered_ops": "offered_operations",
+    "successful_ops": "successful_operations",
+    "failed_ops": "failed_operations",
+    "error_rate": "error_rate",
+    "throughput_ops_per_second": "throughput_ops_per_second",
 }
 
-PERCENT_UNITS = {"percent", "milliseconds", "bytes", "count", "ops_per_min"}
+PERCENT_UNITS = {"percent", "ratio", "milliseconds", "bytes", "count", "ops_per_min", "ops_per_second"}
 
 
 @dataclass
@@ -70,6 +87,10 @@ class MetricReading:
     source_payload: Dict[str, Any] = field(default_factory=dict)
     quality_status: str = "usable"
     quality_warnings: list = field(default_factory=list)
+    catalog_version: str = METRIC_CATALOG_VERSION
+    source_granularity_seconds: Optional[int] = None
+    coverage_start_utc: Optional[dt.datetime] = None
+    coverage_end_utc: Optional[dt.datetime] = None
 
     def as_dict(self) -> dict:
         return {
@@ -83,6 +104,10 @@ class MetricReading:
             "source_payload": self.source_payload,
             "quality_status": self.quality_status,
             "quality_warnings": self.quality_warnings,
+            "catalog_version": self.catalog_version,
+            "source_granularity_seconds": self.source_granularity_seconds,
+            "coverage_start_utc": self.coverage_start_utc,
+            "coverage_end_utc": self.coverage_end_utc,
         }
 
 
@@ -94,6 +119,20 @@ def canonical_metric(raw_name: str) -> Optional[str]:
     if normalized in METRIC_CATALOG:
         return normalized
     return NORMALIZATION_MAP.get(normalized)
+
+
+def classify(raw_name: str) -> tuple[Optional[str], Optional[str]]:
+    """Return ``(canonical_code, None)`` or ``(None, rejection_reason)``.
+
+    Callers persist the reason to ``ops.metric_rejection`` so provider changes
+    are visible instead of silently dropped.
+    """
+    code = canonical_metric(raw_name)
+    if code is not None:
+        return code, None
+    if not raw_name or not raw_name.strip():
+        return None, "empty_metric_name"
+    return None, "unknown_metric"
 
 
 def unit_for(metric_code: str) -> str:

@@ -50,6 +50,11 @@ def build_metric_reading_row(
 ) -> Dict[str, Any]:
     resource_uid = cfg.resource_uid()
     bucket = _floor_to_interval(reading.observed_at_utc, reading.interval_seconds)
+    granularity = reading.source_granularity_seconds or reading.interval_seconds
+    coverage_end = reading.coverage_end_utc or reading.observed_at_utc
+    coverage_start = reading.coverage_start_utc or (
+        coverage_end - dt.timedelta(seconds=granularity)
+    )
     return {
         "experiment_uid": cfg.experiment_uid,
         "workload_run_uid": workload_run_uid,
@@ -65,6 +70,10 @@ def build_metric_reading_row(
         "source_payload_json": reading.source_payload or {},
         "quality_status": reading.quality_status,
         "quality_warnings": reading.quality_warnings or [],
+        "catalog_version": reading.catalog_version,
+        "source_granularity_seconds": granularity,
+        "coverage_start_utc": coverage_start,
+        "coverage_end_utc": coverage_end,
     }
 
 

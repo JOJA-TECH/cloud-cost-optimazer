@@ -1,7 +1,9 @@
 from src.metrics.quality import (
     compute_missing_fraction,
+    coverage_by_metric,
     evaluate_reading,
     percentiles_from_values,
+    window_quality,
 )
 
 
@@ -46,3 +48,22 @@ def test_compute_missing_fraction():
     assert compute_missing_fraction(60, 60) == 0.0
     assert compute_missing_fraction(30, 60) == 0.5
     assert compute_missing_fraction(0, 60) == 1.0
+
+
+def test_coverage_by_metric_covers_catalog():
+    coverage = coverage_by_metric({"cpu_percent": 60}, 60)
+    assert coverage["cpu_percent"] == 0.0
+    assert coverage["data_io_percent"] == 1.0
+
+
+def test_window_quality_missing_mandatory_is_not_available():
+    coverage = coverage_by_metric({"cpu_percent": 60}, 60)
+    status, warnings = window_quality(coverage)
+    assert status == "not_available"
+    assert "mandatory_metric_missing" in warnings
+
+
+def test_window_quality_full_coverage_is_usable():
+    counts = {code: 60 for code in coverage_by_metric({}, 60)}
+    status, _ = window_quality(coverage_by_metric(counts, 60))
+    assert status == "usable"

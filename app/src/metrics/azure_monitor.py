@@ -45,6 +45,7 @@ def fetch(
     window_start: dt.datetime,
     window_end: dt.datetime,
     granularity_seconds: int = 60,
+    rejected: Optional[List[dict]] = None,
 ) -> List[MetricReading]:
     resource_id = cfg.azure_monitor_resource_id()
     if not resource_id:
@@ -70,6 +71,18 @@ def fetch(
         for metric in response.metrics:
             code = canonical_metric(metric.name)
             if not code:
+                if rejected is not None:
+                    rejected.append(
+                        {
+                            "source": "azure_monitor",
+                            "raw_metric_name": metric.name,
+                            "raw_unit": getattr(metric, "unit", None),
+                            "observed_at_utc": window_end,
+                            "payload_json": {"raw_metric": metric.name},
+                            "reason": "unknown_metric",
+                        }
+                    )
+                logger.warning("dropping unknown Azure Monitor metric %r", metric.name)
                 continue
             for series in metric.timeseries:
                 for point in series.data:
@@ -89,6 +102,7 @@ def fetch(
                             source="azure_monitor",
                             source_record_id=None,
                             source_payload={"raw_metric": metric.name},
+                            source_granularity_seconds=granularity_seconds,
                         )
                     )
     except Exception as exc:  # noqa: BLE001 - monitoring must never break capture

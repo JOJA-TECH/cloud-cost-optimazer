@@ -123,6 +123,7 @@ class Config:
     azure_subscription_id: str = ""
     azure_resource_group: str = ""
     azure_location: str = ""
+    azure_sql_max_size_gb: int = 5
 
     # Supabase connection string used by psycopg2/asyncpg or the pooler.
     def supabase_dsn(self) -> str:
@@ -170,6 +171,10 @@ class Config:
         )
         digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:32]
         return str(uuid.UUID(digest))
+
+    def storage_capacity_bytes(self) -> int:
+        """Configured maximum storage (bytes) used to validate storage metrics."""
+        return int(self.azure_sql_max_size_gb) * 1024 * 1024 * 1024
 
     def has_required_secrets(self) -> bool:
         required = [
@@ -230,6 +235,7 @@ def from_env() -> Config:
         azure_subscription_id=_env("AZURE_SUBSCRIPTION_ID"),
         azure_resource_group=_env("AZURE_RESOURCE_GROUP"),
         azure_location=_env("AZURE_LOCATION"),
+        azure_sql_max_size_gb=_env_int("AZURE_SQL_MAX_SIZE_GB", 5),
     )
 
 
@@ -258,4 +264,5 @@ class ConfigSafety:
             "auto_start": config.auto_start,
             "workload_intensity": config.workload_intensity,
             "workload_intensity_jitter": config.workload_intensity_jitter,
+            "azure_sql_max_size_gb": config.azure_sql_max_size_gb,
         }

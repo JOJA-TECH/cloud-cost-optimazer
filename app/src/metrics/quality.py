@@ -17,7 +17,12 @@ from typing import Iterable, Optional, Tuple
 from .normalizer import METRIC_CATALOG, bounds_for, canonical_metric
 
 QUALITY_STATUSES = ("usable", "degraded", "not_available", "invalid")
-PERCENTILE_METHODS = ("exact_sample", "weighted_histogram", "not_available")
+PERCENTILE_METHODS = (
+    "exact_sample",
+    "empirical_interval_quantile",
+    "weighted_histogram",
+    "not_available",
+)
 
 DEGRADED_TOLERANCE = 0.05
 
@@ -55,6 +60,53 @@ def compute_missing_fraction(observed: int, expected: int) -> float:
         return 0.0
     missing = max(0, expected - observed)
     return round(min(1.0, missing / expected), 4)
+
+
+# Metrics a usable hourly window must cover, and optional ones that only degrade.
+MANDATORY_METRIC_CODES = (
+    "cpu_percent",
+    "data_io_percent",
+    "log_write_percent",
+    "workload_intensity",
+)
+OPTIONAL_METRIC_CODES = (
+    "memory_percent",
+    "sessions_count",
+    "workers_percent",
+    "storage_used_bytes",
+)
+
+
+def coverage_by_metric(counts: dict, expected: int) -> dict:
+    """Missing fraction per catalog metric code for one window."""
+    return {
+        code: compute_missing_fraction(int(counts.get(code, 0)), expected)
+        for code in METRIC_CATALOG
+    }
+
+
+def window_quality(
+    coverage: dict,
+    *,
+    mandatory=MANDATORY_METRIC_CODES,
+    optional=OPTIONAL_METRIC_CODES,
+    min_coverage: float = 0.7,
+) -> Tuple[str, list]:
+    """Classify a window from its per-metric coverage.
+
+    - ``not_available``: a mandatory metric has no readings at all;
+    - ``degraded``: mandatory or optional coverage is below ``min_coverage``;
+    - ``usable``: mandatory metrics are covered and optional ones are dense.
+    """
+    warnings: list[str] = []
+    max_missing = 1.0 - min_coverage
+    if any(coverage.get(code, 1.0) >= 1.0 for code in mandatory):
+        return "not_available", ["mandatory_metric_missing"]
+    if any(coverage.get(code, 1.0) > max_missing for code in mandatory):
+        return "degraded", ["mandatory_coverage_low"]
+    if any(coverage.get(code, 0.0) > max_missing for code in optional):
+        warnings.append("optional_coverage_low")
+    return ("degraded" if warnings else "usable"), warnings
 
 
 def percentiles_from_values(values: Iterable[float], points=(50.0, 95.0, 99.0)) -> dict:

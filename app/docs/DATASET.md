@@ -28,34 +28,50 @@ denied `VIEW DEFINITION`.
 - `collector_run` — one row per collection cycle (`ok`/`partial`/`error`,
   rows observed/written, error message).
 - `schema_migrations` — applied migration hashes.
+- `metric_rejection` — unknown provider metrics (raw name, unit, reason,
+  catalog version); captured once per experiment/source/name/version instead of
+  being silently dropped.
 
 ### `raw` (append-only)
 - `metric_reading` — interval aggregates. Columns: `metric_code`,
   `observed_at_utc`, `interval_seconds`, `value`, `unit`, `source`,
   `source_record_id`, `source_payload_json`, `quality_status`,
-  `quality_warnings`. Unique:
-  `(experiment_uid, resource_uid, metric_code, observed_at_utc, source)`.
+  `quality_warnings`, plus provenance `catalog_version`,
+  `source_granularity_seconds`, `coverage_start_utc`, `coverage_end_utc`.
+  Unique: `(experiment_uid, resource_uid, metric_code, observed_at_utc, source)`.
 - `metric_sample` — individual observations (the exact-percentile source).
   Unique on the same columns plus `source_sample_id`.
 
 ### `feat`
 - `metric_hourly` — one row per `(experiment, resource, period_start_utc)`.
-  Includes `cpu_avg/p50/p95/p99/max`, IO, log, sessions, workers, storage,
-  `workload_intensity`, `deadlock_count`, `latency_p95_ms`, plus `sample_count`,
-  `missing_fraction`, `quality_status` and `quality_warnings`. Percentiles are
-  `NULL` when only aggregates were available.
-- `v_training_base` (view) — joins hourly features with the workload class for
-  model training.
+  CPU (`cpu_avg/max/p50/p95/p99` + methods), IO/log/memory, split sessions
+  (`sessions_avg_count`, `sessions_utilization_avg_pct`), workers, storage
+  (`storage_used_pct`, `storage_used_bytes`, `storage_capacity_bytes`,
+  `storage_growth_bytes`), workload outcomes (`workload_intensity`,
+  `offered/successful/failed_operations`, `error_rate`,
+  `throughput_ops_per_second`, `deadlock_count`),
+  `workload_operation_latency_p95_ms`, plus provenance (`canonical_sources`,
+  `catalog_version`) and quality (`sample_count`, `missing_fraction`,
+  `coverage_json`, `quality_status`, `quality_warnings`).
+- `v_training_base` (view) — hourly features joined with next-hour targets and
+  an `is_trainable` flag (`quality_status = 'usable'`).
 
 ### Metric catalog
 
-Canonical codes and bounds live in `src/metrics/normalizer.py`
-(`METRIC_CATALOG`). Raw provider names are mapped through `NORMALIZATION_MAP`;
-unknown names are dropped, never stored.
+Canonical codes, units and bounds live in `src/metrics/normalizer.py`
+(`METRIC_CATALOG`) and are versioned by `METRIC_CATALOG_VERSION`. Raw provider
+names are mapped through `NORMALIZATION_MAP`; unknown names are written to
+`ops.metric_rejection` and never stored as metrics.
 
-Exact percentile policy: `exact_sample` when individual samples exist,
-`not_available` otherwise. Query Store aggregates are persisted as readings and
-are explicitly never used to fabricate p95/p99.
+Metrics present in more than one source are **not** averaged together; the
+aggregator selects a canonical source by priority (Azure Monitor > SQL DMVs >
+Query Store > workload self) and records it in
+`feat.metric_hourly.canonical_sources`.
+
+Percentile methods are explicit: CPU percentiles are
+`empirical_interval_quantile` (60 s readings, not internal moments); the
+workload operation latency p95 is `exact_sample`. Query Store aggregates are
+persisted as readings and are never used to fabricate p95/p99.
 
 ## Correlation
 

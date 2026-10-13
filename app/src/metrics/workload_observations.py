@@ -70,13 +70,14 @@ def drain(
     cfg: Config,
     window_start: dt.datetime,
     window_end: dt.datetime,
-) -> Tuple[List[MetricReading], Optional[MetricReading]]:
+) -> Tuple[List[MetricReading], List[MetricReading]]:
     directory = obs_dir(cfg)
     if not directory.exists():
-        return [], None
+        return [], []
 
     samples: List[MetricReading] = []
-    count = 0
+    offered = 0
+    successful = 0
     now = time.time()
     for path in sorted(directory.glob("obs-*.jsonl")):
         try:
@@ -96,7 +97,9 @@ def drain(
             observed = _parse_ts(record.get("ts", ""))
             if observed is None:
                 continue
-            count += 1
+            offered += 1
+            if record.get("ok"):
+                successful += 1
             duration = record.get("duration_ms")
             if duration is None:
                 continue
@@ -116,16 +119,27 @@ def drain(
         except OSError:
             pass
 
-    intensity: Optional[MetricReading] = None
-    if count:
+    stats: List[MetricReading] = []
+    if offered:
+        failed = offered - successful
         window_seconds = max(1.0, (window_end - window_start).total_seconds())
-        ops_per_min = count * 60.0 / window_seconds
-        intensity = make_reading(
-            "ops_per_min",
-            ops_per_min,
-            window_end,
-            cfg.capture_raw_interval_seconds,
-            "workload_self",
-            source_payload={"operations": count},
-        )
-    return samples, intensity
+
+        def _stat(raw_name: str, value: float, payload: dict) -> None:
+            reading = make_reading(
+                raw_name,
+                value,
+                window_end,
+                cfg.capture_raw_interval_seconds,
+                "workload_self",
+                source_payload=payload,
+            )
+            if reading is not None:
+                stats.append(reading)
+
+        _stat("ops_per_min", offered * 60.0 / window_seconds, {"operations": offered})
+        _stat("offered_ops", float(offered), {"operations": offered})
+        _stat("successful_ops", float(successful), {"operations": offered})
+        _stat("failed_ops", float(failed), {"operations": offered})
+        _stat("error_rate", failed / offered, {"operations": offered})
+        _stat("throughput_ops_per_second", successful / window_seconds, {"operations": offered})
+    return samples, stats

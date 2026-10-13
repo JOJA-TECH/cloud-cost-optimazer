@@ -73,6 +73,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
     azure_subscription_id = var.subscription_id
     azure_resource_group  = local.name.resource_group
     azure_location        = var.location
+    azure_sql_max_size_gb = local.sql_max_size_gb
   }))
 
   lifecycle {

@@ -25,12 +25,14 @@ logger = logging.getLogger(__name__)
 
 READING_TABLE = "raw.metric_reading"
 SAMPLE_TABLE = "raw.metric_sample"
+REJECTION_TABLE = "ops.metric_rejection"
 
 READING_COLUMNS = [
     "experiment_uid", "workload_run_uid", "collector_run_uid", "resource_uid",
     "metric_code", "observed_at_utc", "interval_seconds", "value", "unit",
     "source", "source_record_id", "source_payload_json", "quality_status",
-    "quality_warnings",
+    "quality_warnings", "catalog_version", "source_granularity_seconds",
+    "coverage_start_utc", "coverage_end_utc",
 ]
 
 SAMPLE_COLUMNS = [
@@ -38,7 +40,12 @@ SAMPLE_COLUMNS = [
     "observed_at_utc", "value", "unit", "source", "source_sample_id",
 ]
 
-JSONB_COLUMNS = {"source_payload_json"}
+REJECTION_COLUMNS = [
+    "experiment_uid", "source", "raw_metric_name", "raw_unit",
+    "observed_at_utc", "payload_json", "reason", "catalog_version",
+]
+
+JSONB_COLUMNS = {"source_payload_json", "payload_json"}
 
 
 @dataclass
@@ -117,7 +124,7 @@ def _prepare(columns: List[str], row: dict) -> list:
     values = []
     for column in columns:
         value = row.get(column)
-        if column in ("source_payload_json",):
+        if column in JSONB_COLUMNS:
             value = Json(value or {})
         values.append(value)
     return values
@@ -176,6 +183,7 @@ def persist(
     readings: Iterable,
     samples: Iterable = (),
     workload_run_uid: Optional[str] = None,
+    rejected: Optional[List[dict]] = None,
 ) -> WriteResult:
     reading_rows = [
         build_metric_reading_row(cfg, collector_run_uid, r, workload_run_uid)
@@ -213,7 +221,43 @@ def persist(
             "Supabase write failed, spooled %d rows (%s MB pending): %s",
             observed, status.mb, exc,
         )
+    if rejected:
+        result.notes.append(f"rejected_unknown={persist_rejections(cfg, rejected)}")
     return result
+
+
+def persist_rejections(cfg, rejected: List[dict]) -> int:
+    """Record unknown provider metrics in ops.metric_rejection (best-effort).
+
+    Deduplicated per (experiment, source, raw name, catalog version) so a
+    provider rename is captured once instead of on every cycle.
+    """
+    if not rejected:
+        return 0
+    from ..metrics.normalizer import METRIC_CATALOG_VERSION
+
+    rows = [
+        {
+            "experiment_uid": cfg.experiment_uid,
+            "source": r.get("source") or "unknown",
+            "raw_metric_name": r.get("raw_metric_name"),
+            "raw_unit": r.get("raw_unit"),
+            "observed_at_utc": r.get("observed_at_utc"),
+            "payload_json": r.get("payload_json") or {},
+            "reason": r.get("reason") or "unknown_metric",
+            "catalog_version": METRIC_CATALOG_VERSION,
+        }
+        for r in rejected
+        if r.get("raw_metric_name")
+    ]
+    if not rows:
+        return 0
+    try:
+        with db_supabase.transaction(cfg) as conn:
+            return _insert_rows(conn, REJECTION_TABLE, REJECTION_COLUMNS, rows)
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not block capture
+        logging.getLogger(__name__).warning("cannot persist metric rejections: %s", exc)
+        return 0
 
 
 def flush_spool(cfg) -> dict:

@@ -87,6 +87,7 @@ write_files:
       AZURE_SUBSCRIPTION_ID=${azure_subscription_id}
       AZURE_RESOURCE_GROUP=${azure_resource_group}
       AZURE_LOCATION=${azure_location}
+      AZURE_SQL_MAX_SIZE_GB=${azure_sql_max_size_gb}
 
   - path: /etc/systemd/system/cco-migrate.service
     owner: root:root
