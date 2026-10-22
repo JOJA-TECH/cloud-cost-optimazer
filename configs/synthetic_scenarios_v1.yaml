@@ -1,0 +1,179 @@
+# =============================================================================
+# Synthetic scenario configurations (version 1)
+# =============================================================================
+# Each scenario defines a reproducible workload intensity curve λ(t) in
+# operations per minute. The noise is added with the configured seed and
+# distribution.
+#
+# The scenarios implement the mandatory types from the plan:
+#   low_stable, high_stable, periodic, bursty, spike, increasing, decreasing, mixed
+# =============================================================================
+
+scenarios:
+  # ---------------------------------------------------------------------------
+  # Low stable: constant low intensity with small noise
+  # ---------------------------------------------------------------------------
+  - scenario_id: low_stable_01
+    scenario_type: low_stable
+    seed: 43
+    base_intensity_ops_min: 50.0
+    noise_distribution: truncated_normal
+    noise_scale: 5.0
+    min_intensity_ops_min: 0.0
+    max_intensity_ops_min: 200.0
+    concurrency: 2
+    batch_size: 50
+    horizon_hours: 168
+
+  - scenario_id: low_stable_02
+    scenario_type: low_stable
+    seed: 44
+    base_intensity_ops_min: 80.0
+    noise_distribution: truncated_normal
+    noise_scale: 8.0
+    min_intensity_ops_min: 10.0
+    max_intensity_ops_min: 300.0
+    concurrency: 1
+    batch_size: 25
+    horizon_hours: 168
+
+  # ---------------------------------------------------------------------------
+  # High stable: constant high intensity
+  # ---------------------------------------------------------------------------
+  - scenario_id: high_stable_01
+    scenario_type: high_stable
+    seed: 45
+    base_intensity_ops_min: 800.0
+    noise_distribution: truncated_normal
+    noise_scale: 30.0
+    min_intensity_ops_min: 500.0
+    max_intensity_ops_min: 1500.0
+    concurrency: 4
+    batch_size: 100
+    horizon_hours: 168
+
+  # ---------------------------------------------------------------------------
+  # Periodic: sinusoidal variation around a base
+  # ---------------------------------------------------------------------------
+  - scenario_id: periodic_01
+    scenario_type: periodic
+    seed: 46
+    base_intensity_ops_min: 200.0
+    amplitude_ops_min: 100.0
+    period_minutes: 360.0
+    noise_distribution: truncated_normal
+    noise_scale: 10.0
+    min_intensity_ops_min: 0.0
+    max_intensity_ops_min: 500.0
+    concurrency: 2
+    batch_size: 50
+    horizon_hours: 168
+
+  - scenario_id: periodic_02
+    scenario_type: periodic
+    seed: 47
+    base_intensity_ops_min: 400.0
+    amplitude_ops_min: 200.0
+    period_minutes: 720.0
+    noise_distribution: truncated_normal
+    noise_scale: 15.0
+    min_intensity_ops_min: 100.0
+    max_intensity_ops_min: 800.0
+    concurrency: 3
+    batch_size: 75
+    horizon_hours: 168
+
+  # ---------------------------------------------------------------------------
+  # Bursty: alternating burst and idle phases
+  # ---------------------------------------------------------------------------
+  - scenario_id: bursty_01
+    scenario_type: bursty
+    seed: 48
+    base_intensity_ops_min: 200.0
+    noise_scale: 10.0
+    params:
+      burst_length_min: 30
+      idle_length_min: 60
+      burst_intensity: 800.0
+      idle_intensity: 50.0
+    horizon_hours: 168
+    concurrency: 2
+    batch_size: 50
+
+  # ---------------------------------------------------------------------------
+  # Spike: sudden intensity peaks
+  # ---------------------------------------------------------------------------
+  - scenario_id: spike_01
+    scenario_type: spike
+    seed: 49
+    base_intensity_ops_min: 100.0
+    params:
+      spikes:
+        - center_min: 1440   # day 1
+          width_min: 15
+          amplitude: 500.0
+        - center_min: 4320   # day 3
+          width_min: 20
+          amplitude: 700.0
+        - center_min: 7200   # day 5
+          width_min: 10
+          amplitude: 600.0
+    noise_distribution: truncated_normal
+    noise_scale: 15.0
+    min_intensity_ops_min: 0.0
+    max_intensity_ops_min: 1500.0
+    horizon_hours: 168
+    concurrency: 2
+    batch_size: 50
+
+  # ---------------------------------------------------------------------------
+  # Increasing: sustained growth
+  # ---------------------------------------------------------------------------
+  - scenario_id: increasing_01
+    scenario_type: increasing
+    seed: 50
+    base_intensity_ops_min: 50.0
+    params:
+      rate_per_hour: 10.0
+      max_intensity: 800.0
+    noise_distribution: truncated_normal
+    noise_scale: 8.0
+    horizon_hours: 168
+    concurrency: 2
+    batch_size: 50
+
+  # ---------------------------------------------------------------------------
+  # Decreasing: sustained decline
+  # ---------------------------------------------------------------------------
+  - scenario_id: decreasing_01
+    scenario_type: decreasing
+    seed: 51
+    base_intensity_ops_min: 800.0
+    params:
+      rate_per_hour: 8.0
+      min_intensity: 50.0
+    noise_distribution: truncated_normal
+    noise_scale: 8.0
+    horizon_hours: 168
+    concurrency: 2
+    batch_size: 50
+
+  # ---------------------------------------------------------------------------
+  # Mixed: periodic + spikes
+  # ---------------------------------------------------------------------------
+  - scenario_id: mixed_01
+    scenario_type: mixed
+    seed: 52
+    base_intensity_ops_min: 150.0
+    amplitude_ops_min: 80.0
+    period_minutes: 360.0
+    params:
+      spikes:
+        - center_min: 2880   # day 2
+          width_min: 10
+          amplitude: 400.0
+    noise_distribution: truncated_normal
+    noise_scale: 12.0
+    horizon_hours: 168
+    concurrency: 2
+    batch_size: 50

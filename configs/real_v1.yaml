@@ -1,0 +1,63 @@
+# =============================================================================
+# Real data experiment configuration (version 1)
+# =============================================================================
+
+experiment_uid: ""           # filled from .env EXPERIMENT_UID
+resource_uid: ""             # filled from .env RESOURCE_UID
+resource_name: "cco-lab-sql-database"
+resource_sku_code: "GP_S_Gen5_2"
+resource_compute_model: "serverless"
+resource_vcores: 2.0
+resource_region_code: "australiaeast"
+resource_provider: "azure"
+
+random_seed: 42
+
+target: "target_cpu_avg_next1h"
+secondary_targets:
+  - "target_workload_next1h"
+  - "target_storage_next1h"
+
+period_type: "1h"
+
+split:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+
+artifacts_dir: "artifacts"
+
+local_dsn: ""                # built from POSTGRES_* env vars
+source_dsn: ""               # filled from .env SOURCE_DSN
+source_sslmode: "require"
+
+postgres_port: 55432
+postgres_db: "cco_forecasting"
+postgres_user: "cco_forecasting"
+postgres_password: ""        # from .env
+
+# Feature engineering customization (optional)
+features:
+  required:
+    - "cpu_avg"
+    - "workload_intensity"
+  optional:
+    - "cpu_max"
+    - "data_io_avg"
+    - "log_write_avg"
+    - "memory_percent"
+    - "sessions_count"
+    - "sessions_percent"
+    - "workers_avg"
+    - "storage_used_pct"
+    - "storage_used_bytes"
+    - "storage_growth_bytes"
+    - "deadlock_count"
+    - "latency_p95_ms"
+  lags:
+    cpu_avg: [1, 2, 3]
+    workload_intensity: [1]
+    storage_growth_bytes: [1]
+  rollings:
+    cpu_avg: [3, 6]
+    workload_intensity: [3]
