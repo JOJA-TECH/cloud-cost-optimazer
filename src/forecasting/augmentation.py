@@ -13,7 +13,7 @@ degrading the real test set.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+import warnings
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -23,7 +23,7 @@ import pandas as pd
 from forecasting.config import Settings
 from forecasting.db import connect
 from forecasting.evaluation import evaluate, grouped_evaluation
-from forecasting.extraction import extract_training_base
+from forecasting.extraction import extract_training_base, temporal_split
 from forecasting.features import (
     FeatureSpec,
     add_derived_features,
@@ -33,7 +33,6 @@ from forecasting.features import (
 )
 from forecasting.models import (
     ModelSpec,
-    build_estimator,
     default_catalogue,
     fit_model,
     predict_model,
@@ -77,57 +76,55 @@ def run_augmentation_experiments(
     real_modeling = build_modeling_frame(real_frame, target, spec)
     real_modeling = real_modeling[real_modeling[target].notna()].reset_index(drop=True)
 
-    # Synthetic frame (no targets) - only use for training features
+    # Split REAL data first (temporal split on real data only)
+    splits_real = temporal_split(real_modeling, train=0.7, validation=0.15, test=0.15)
+    train_real = splits_real["train"].frame
+    val_real = splits_real["validation"].frame
+    test_real = splits_real["test"].frame
+
+    # Synthetic frame (no targets) - prepare features only for training
     if not synthetic_frame.empty:
         synth_modeling = add_derived_features(synthetic_frame, spec)
-        # Synthetic data doesn't have target columns, so we can't build_modeling_frame
-        # Instead, we prepare the feature columns that match the real modeling frame
         feature_cols = feature_columns(synth_modeling, spec)
         synth_features = synth_modeling[feature_cols].copy()
-        # Add a dummy target column for compatibility (will be dropped for validation/test)
+        # Add dummy target for concatenation compatibility
         synth_features[target] = np.nan
-        combined_train = pd.concat([real_modeling, synth_features], ignore_index=True)
+        # Combined train = real train + synthetic features
+        combined_train = pd.concat([train_real, synth_features], ignore_index=True)
     else:
-        combined_train = real_modeling.copy()
+        combined_train = train_real.copy()
 
     # Calibrated frame: real + response-model-generated curves for observed workloads
-    # (Simplified: use real_modeling as calibrated for now; full calibration is future work)
-    calibrated_frame = real_modeling.copy()
+    # (Simplified: use real train for now; full calibration is future work)
+    calibrated_train = train_real.copy()
 
-    # --- temporal split (same for all experiments) ---
-    from forecasting.extraction import temporal_split
-
-    splits_real = temporal_split(real_modeling, train=0.7, validation=0.15, test=0.15)
-    splits_combined = temporal_split(combined_train, train=0.7, validation=0.15, test=0.15)
-    splits_calibrated = temporal_split(calibrated_frame, train=0.7, validation=0.15, test=0.15)
-
-    # Test set is always the real test set
-    test_frame = splits_real["test"].frame
+    # Validation and test are ALWAYS real-only
+    val_frame = val_real
+    test_frame = test_real
 
     # --- run experiments ---
     seed = settings.random_seed
 
     results: dict[str, Any] = {}
 
-    for name, train_split, val_split in [
-        ("A_real_only", splits_real["train"].frame, splits_real["validation"].frame),
-        ("B_real_plus_synthetic", splits_combined["train"].frame, splits_combined["validation"].frame),
-        ("C_real_plus_calibrated", splits_calibrated["train"].frame, splits_calibrated["validation"].frame),
+    for name, train_split in [
+        ("A_real_only", train_real),
+        ("B_real_plus_synthetic", combined_train),
+        ("C_real_plus_calibrated", calibrated_train),
     ]:
         print(f"[augmentation] Running {name}...")
         metrics = _run_experiment(
             train_split,
-            val_split,
+            val_frame,
             test_frame,
             target,
             spec,
             seed,
-            settings,
         )
         results[name] = metrics
 
     # --- verdict ---
-    verdict = _compare_experiments(results, settings)
+    verdict = _compare_experiments(results)
     summary = {
         "experiments": results,
         "verdict": verdict,
@@ -150,9 +147,17 @@ def _run_experiment(
     target: str,
     spec: FeatureSpec,
     seed: int,
-    settings: Settings,
 ) -> dict[str, Any]:
     """Train and evaluate one experiment."""
+    # Suppress pandas warnings about downcasting
+    warnings.filterwarnings("ignore", category=FutureWarning)
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    # Drop rows where target is NaN (synthetic rows have dummy NaN target)
+    train_frame = train_frame[train_frame[target].notna()].reset_index(drop=True)
+    val_frame = val_frame[val_frame[target].notna()].reset_index(drop=True)
+    test_frame = test_frame[test_frame[target].notna()].reset_index(drop=True)
+
     columns = feature_columns(train_frame, spec)
     train_imputed, imputation_report = impute_optional(train_frame, train_frame, columns)
     val_imputed, _ = impute_optional(train_frame, val_frame, columns)
@@ -207,12 +212,24 @@ def _run_experiment(
     }
 
 
-def _compare_experiments(results: dict[str, Any], settings: Settings) -> dict[str, Any]:
+def _compare_experiments(results: dict[str, Any]) -> dict[str, Any]:
     """Determine if augmentation helps."""
     # Primary: compare test MAE of the best model across experiments
-    maes = {name: res["test_metrics"].get(name, {}).get("mae", float("inf")) for name in results}
-    # Actually we want the best model's MAE per experiment
-    exp_maes = {name: min(m.get("mae", float("inf")) for m in res["test_metrics"].values()) for name, res in results.items()}
+    # results[name]["test_metrics"] has model_name -> metrics dict
+    exp_maes = {}
+    for name, res in results.items():
+        test_metrics = res.get("test_metrics", {})
+        if test_metrics:
+            # Get the best model's MAE (minimum across all models tested)
+            best_mae = min(
+                m.get("mae", float("inf")) 
+                for m in test_metrics.values() 
+                if isinstance(m, dict)
+            )
+            exp_maes[name] = best_mae
+        else:
+            exp_maes[name] = float("inf")
+    
     baseline_a = exp_maes.get("A_real_only", float("inf"))
     baseline_b = exp_maes.get("B_real_plus_synthetic", float("inf"))
     baseline_c = exp_maes.get("C_real_plus_calibrated", float("inf"))
@@ -261,22 +278,3 @@ def _resolve_resource_id(conn, settings: Settings) -> int:
         if not match.empty:
             return int(match.iloc[0]["resource_id"])
     return int(frame.iloc[0]["resource_id"])
-
-
-def extract_hourly_features(conn, resource_id: int) -> pd.DataFrame:
-    from forecasting.db import read_frame
-
-    frame = read_frame(
-        conn,
-        """
-        select f.*, f.period_end_utc
-        from feat.feature_snapshot f
-        where f.resource_id = %s and f.period_type = '1h'
-        order by f.period_start_utc
-        """,
-        (resource_id,),
-    )
-    if frame.empty:
-        return frame
-    frame["period_start_utc"] = pd.to_datetime(frame["period_start_utc"], utc=True)
-    return frame.reset_index(drop=True)

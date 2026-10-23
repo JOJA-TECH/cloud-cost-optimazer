@@ -234,7 +234,9 @@ def impute_optional(
         else:
             out[flag] = out[flag].fillna(0).astype(int)
         if column in train_frame.columns:
-            median = train_frame[column].median(skipna=True)
+            # Convert to numeric to handle Decimal from DB
+            train_series = pd.to_numeric(train_frame[column], errors="coerce")
+            median = train_series.median(skipna=True)
         else:
             median = np.nan
         missing = out[column].isna()
