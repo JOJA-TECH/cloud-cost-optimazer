@@ -7,10 +7,14 @@ Metric policy (fixed by the plan):
   to zero, where MAPE explodes;
 * ``MASE`` is reported when the in-sample naive scale is computable.
 
-Prediction intervals are the **empirical quantiles of the training
-residuals**. They are reported with their empirical coverage on the real test
-set: until that coverage is measured, an interval is not "reliable", it is
-simply a calibrated offset.
+Prediction intervals: the primary construction is conformal (see
+``conformal.py``) — split conformal and jackknife+ with finite-sample
+correction. The :func:`residual_interval` in this module (plain empirical
+quantiles of the validation residuals, no correction and no guarantee) is
+kept as a legacy reference so its measured coverage can be compared against
+the conformal constructions. Intervals are reported with their empirical
+coverage on the real test set: until that coverage is measured, an interval
+is not "reliable", it is simply a calibrated offset.
 """
 
 from __future__ import annotations

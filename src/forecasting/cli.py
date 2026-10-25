@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from . import baselines as bl
+from . import conformal as cf
 from . import evaluation as ev
 from . import features as ft
 from . import models as md
@@ -390,16 +391,80 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     pred_test = md.predict_model(final_model, X_test)
     test_metrics[best_name] = ev.evaluate(y_test.to_numpy(), pred_test, scale=scale)
 
-    # --- prediction intervals (from validation residuals, no test leakage) --
+    # --- prediction intervals: conformal, calibrated without the test set ---
+    # Three conformal constructions are calibrated, all with the test set
+    # untouched:
+    #   * split conformal (exact): validation residuals of the model fitted on
+    #     train only; with n=6 the rank saturates to the max, so it is the
+    #     conservative reference;
+    #   * jackknife+ nominal: leave-one-out scores over the 36 rows of the
+    #     final fit, computed at 1-alpha (formal guarantee 1-2*alpha);
+    #   * jackknife+ guaranteed: same scores computed at 1-alpha/2 so the
+    #     formal 1-2*alpha' bound reaches the requested coverage. It is the
+    #     primary interval: same formal guarantee as split conformal with
+    #     roughly half the width.
     residuals_validation = (
         y_validation.to_numpy(dtype=float) - validation_predictions[best_name]
     )
-    interval = ev.residual_interval(residuals_validation, coverage=float(args.coverage))
-    lower, upper = interval.apply(pred_test)
+    coverage_level = float(args.coverage)
+
+    legacy_interval = ev.residual_interval(residuals_validation, coverage=coverage_level)
+    split_interval = cf.split_conformal_interval(residuals_validation, coverage=coverage_level)
+    legacy_lower, legacy_upper = legacy_interval.apply(pred_test)
+    legacy_stats = ev.interval_metrics(y_test.to_numpy(), legacy_lower, legacy_upper)
+
+    jackknife_nominal: cf.ConformalInterval | None = None
+    jackknife_guaranteed: cf.ConformalInterval | None = None
+    if len(X_combined) >= 12:
+
+        def _fit_predict(
+            X_tr: pd.DataFrame, y_tr: pd.Series, X_new: pd.DataFrame
+        ) -> np.ndarray:
+            return md.predict_model(md.fit_model(best_spec, X_tr, y_tr), X_new)
+
+        loo_scores = cf.jackknife_plus_scores(_fit_predict, X_combined, y_combined)
+        jackknife_nominal = cf.jackknife_plus_interval(loo_scores, coverage=coverage_level)
+        guaranteed_level = 1.0 - (1.0 - coverage_level) / 2.0
+        jackknife_guaranteed = cf.jackknife_plus_interval(loo_scores, coverage=guaranteed_level)
+
+    # Primary band: guaranteed jackknife+ when available, split conformal otherwise.
+    primary_interval = jackknife_guaranteed if jackknife_guaranteed is not None else split_interval
+    lower, upper = primary_interval.apply(pred_test)
     interval_stats = ev.interval_metrics(y_test.to_numpy(), lower, upper)
     test_metrics[best_name].update(interval_stats)
-    validation_interval = ev.residual_interval(
-        np.concatenate([residuals_validation]), coverage=float(args.coverage)
+
+    nan_band = (np.full(len(pred_test), np.nan), np.full(len(pred_test), np.nan))
+    split_lower, split_upper = split_interval.apply(pred_test)
+    split_stats = ev.interval_metrics(y_test.to_numpy(), split_lower, split_upper)
+    nominal_lower, nominal_upper = (
+        jackknife_nominal.apply(pred_test) if jackknife_nominal is not None else nan_band
+    )
+    nominal_stats = (
+        ev.interval_metrics(y_test.to_numpy(), nominal_lower, nominal_upper)
+        if jackknife_nominal is not None
+        else {}
+    )
+
+    print(
+        f"[train-real] primary interval ({primary_interval.method}, construction level "
+        f"{primary_interval.nominal_coverage:.0%}): half width ±{primary_interval.half_width:.4f} "
+        f"(rank {primary_interval.finite_sample_rank}/{primary_interval.n_scores}), "
+        f"test coverage={interval_stats['interval_coverage']:.2%}"
+    )
+    print(
+        f"[train-real] split conformal (exact): half width ±{split_interval.half_width:.4f} "
+        f"(rank {split_interval.finite_sample_rank}/{split_interval.n_scores}), "
+        f"test coverage={split_stats['interval_coverage']:.2%}"
+    )
+    if jackknife_nominal is not None:
+        print(
+            f"[train-real] jackknife+ nominal (guarantee 1-2a={max(0.0, 1 - 2 * (1 - coverage_level)):.0%}): "
+            f"half width ±{jackknife_nominal.half_width:.4f}, "
+            f"test coverage={nominal_stats['interval_coverage']:.2%}"
+        )
+    print(
+        f"[train-real] legacy empirical quantiles: test coverage="
+        f"{legacy_stats['interval_coverage']:.2%}"
     )
 
     # --- statistical validation -------------------------------------------
@@ -441,13 +506,45 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "baselines_compared": list(baseline_specs),
             "imputation": imputation_report,
             "prediction_interval": {
-                "method": "empirical_quantiles_of_validation_residuals",
-                "nominal_coverage": interval.coverage,
-                "lower_offset": interval.lower_offset,
-                "upper_offset": interval.upper_offset,
-                "n_residuals": interval.n_residuals,
+                "primary_method": primary_interval.method,
+                **primary_interval.as_dict(),
+                "formal_guarantee_level": coverage_level,
                 "measured_coverage_on_test": interval_stats["interval_coverage"],
+                "mean_interval_width": interval_stats["mean_interval_width"],
             },
+            "prediction_interval_alternates": {
+                "split_conformal_exact": {
+                    **split_interval.as_dict(),
+                    "measured_coverage_on_test": split_stats["interval_coverage"],
+                    "mean_interval_width": split_stats["mean_interval_width"],
+                },
+                "jackknife_plus_nominal": (
+                    {
+                        **jackknife_nominal.as_dict(),
+                        "formal_guarantee_level": max(0.0, 1.0 - 2.0 * (1.0 - coverage_level)),
+                        "measured_coverage_on_test": nominal_stats.get("interval_coverage"),
+                        "mean_interval_width": nominal_stats.get("mean_interval_width"),
+                    }
+                    if jackknife_nominal is not None
+                    else None
+                ),
+                "empirical_validation_residuals": {
+                    "method": "empirical_quantiles_of_validation_residuals",
+                    "nominal_coverage": legacy_interval.coverage,
+                    "lower_offset": legacy_interval.lower_offset,
+                    "upper_offset": legacy_interval.upper_offset,
+                    "half_width": max(
+                        abs(legacy_interval.lower_offset), abs(legacy_interval.upper_offset)
+                    ),
+                    "n_residuals": legacy_interval.n_residuals,
+                    "measured_coverage_on_test": legacy_stats["interval_coverage"],
+                },
+            },
+            "interval_caveat": (
+                "Las garantias conformales suponen intercambiabilidad entre los puntos de "
+                "calibracion y los de test; en series temporales es una aproximacion. Por "
+                "eso la cobertura medida en test se reporta siempre junto a la nominal."
+            ),
             "leakage_check": leakage,
             "git": git_context,
         },
@@ -484,6 +581,12 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             f"pred_{best_name}": pred_test,
             "y_lower": lower,
             "y_upper": upper,
+            "y_lower_split_conformal": split_lower,
+            "y_upper_split_conformal": split_upper,
+            "y_lower_jackknife_nominal": nominal_lower,
+            "y_upper_jackknife_nominal": nominal_upper,
+            "y_lower_empirical": legacy_lower,
+            "y_upper_empirical": legacy_upper,
         }
     )
     for name in baseline_specs:
@@ -593,6 +696,48 @@ def _real_model_readme(
             f"| {name} | {metrics.get('mae', float('nan')):.4f} | {metrics.get('rmse', float('nan')):.4f} | "
             f"{metrics.get('smape', float('nan')):.2f} | {metrics.get('mase', float('nan')):.4f} |"
         )
+    interval = metadata.get("prediction_interval", {})
+    if interval:
+        nominal = float(interval.get("formal_guarantee_level", 0.0))
+        measured = interval.get("measured_coverage_on_test")
+        measured_text = f"{float(measured):.0%}" if isinstance(measured, (int, float)) else "n/d"
+        lines += [
+            "",
+            "## Intervalo de predicción",
+            "",
+            f"- Método primario: `{interval.get('primary_method', 'n/d')}`.",
+            f"- Garantía formal: cobertura ≥ {nominal:.0%} bajo intercambiabilidad — "
+            f"cobertura medida en test: {measured_text} (n={metadata.get('test_rows', 'n/d')}).",
+            f"- Semiancho: ±{float(interval.get('half_width', float('nan'))):.4f} "
+            f"(nivel de construcción {float(interval.get('nominal_coverage', 0.0)):.0%}, "
+            f"rango {interval.get('finite_sample_rank', 'n/d')}/"
+            f"{interval.get('n_calibration_scores', 'n/d')}).",
+            "",
+            "### Comparación de construcciones conformales",
+            "",
+            "| método | semiancho | cobertura medida | notas |",
+            "|---|---|---|---|",
+        ]
+        rows = [("primario", interval)]
+        for name, block in (metadata.get("prediction_interval_alternates") or {}).items():
+            if isinstance(block, dict):
+                rows.append((name, block))
+        for name, block in rows:
+            width = block.get("half_width")
+            coverage = block.get("measured_coverage_on_test")
+            lines.append(
+                f"| {name} | "
+                f"±{float(width):.4f} | "
+                f"{float(coverage):.0%} | "
+                f"{block.get('guarantee', block.get('method', ''))} |"
+                if isinstance(width, (int, float)) and isinstance(coverage, (int, float))
+                else f"| {name} | n/d | n/d | {block.get('method', '')} |"
+            )
+        lines += [
+            "",
+            "> La garantía conformal supone intercambiabilidad entre calibración y test;",
+            "> en series temporales es una aproximación, por eso se reporta la cobertura medida.",
+        ]
     lines += [
         "",
         "> Este modelo es un forecast experimental del recurso observado. No es un",

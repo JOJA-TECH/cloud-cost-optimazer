@@ -36,8 +36,8 @@ Objetivo: Construir un canal de predicción experimental para una base de datos 
 
 | Fase | Objetivo | Estado |
 |---|---|---|
-| **Fase A** | Modelo de predicción utilizando exclusivamente datos reales | ✅ Completado |
-| **Fase B** | Generación de escenarios sintéticos + experimentos de aumento | ✅ Completado |
+| **Fase A** | Modelo de predicción utilizando exclusivamente datos reales | Completado |
+| **Fase B** | Generación de escenarios sintéticos + experimentos de aumento | Completado |
 
 **Rama de trabajo:** `forecasting` (aislada de `origin/database`, esquema mínimo)  
 **Último commit:** `0980a66` — canal `evaluate-augmentation` completado  
@@ -70,6 +70,7 @@ forecasting/                         # raíz de la rama (repositorio)
 │   ├─ validation.py                          # comprobaciones: UTC, granularidad, duplicados, nulos, rangos, cobertura, cambios de workload/configuración
 │   ├─ features.py                            # lag/rolling/calendario + imputación mediana de train + banderas de ausentes
 │   ├─ baselines.py                           # naive_last, MA(3), seasonal_naive(24h)
+│   ├─ conformal.py                           # split conformal + jackknife+ con corrección de muestra finita
 │   ├─ models.py                              # Pipeline sklearn (imputador + escalador + LR/Ridge/RF/GB) + metadatos
 │   ├─ evaluation.py                          # MAE/RMSE/sMAPE/MASE, intervalos empíricos, evaluación agrupada, validación estadística
 │   ├─ augmentation.py                        # 3 experimentos A/B/C
@@ -163,7 +164,15 @@ Métricas calculadas en el conjunto de prueba:
 * **sMAPE** (Error Porcentual Medio Absoluto Simétrico)  
 * **MASE** (Error Medio Absoluto Escalado respecto al naive último)  
 
-Intervalos de predicción: percentiles empíricos 10.º y 90.º de los residuales de validación (objetivo‑predicción) → cobertura nominal 80 %.  
+Intervalos de predicción (módulo `conformal.py`): tres construcciones conformales con corrección de muestra finita, calibradas **sin tocar el conjunto de prueba**:
+
+* **jackknife+ garantizado (método primario)** – scores de no conformidad leave‑one‑out `|y_i − f₋ᵢ(x_i)|` sobre las 36 filas de train+validación, construido al nivel 1−α/2 (90%) para que la garantía formal de jackknife+ (1−2α) alcance la cobertura solicitada (80%). Semiancho ±5.04.
+* **Split conformal exacto** – residuos absolutos de validación del modelo ajustado solo en train; el semiancho es el k‑ésimo estadístico de orden con `k = ⌈(n+1)·(1−α)⌉` (con n=6 satura al máximo). Semiancho ±9.18. Garantía exacta ≥80% bajo intercambiabilidad.
+* **jackknife+ nominal** – mismos 36 scores construidos al 80% directo (garantía formal 1−2α = 60%). Semiancho ±3.32. Se reporta como referencia de eficiencia.
+
+El método anterior (cuantiles empíricos 10/90 de residuos de validación, sin corrección ni garantía) se conserva como referencia legacy en los artefactos.
+
+> **Caveat honesto:** las garantías conformales suponen intercambiabilidad entre calibración y prueba; en series temporales es una aproximación. Por eso la cobertura medida en test se reporta siempre junto a la nominal, y el conjunto de prueba es diminuto (7 puntos), por lo que la medición tiene varianza altísima (cada punto = 14.3 pp).  
 
 Validación estadística (solo significativa con suficientes puntos de validación; aquí n=6, entonces algunas pruebas aparecen como N/A):  
 * Prueba ADF sobre la serie objetivo → estacionariedad (p=0.011).  
@@ -181,8 +190,18 @@ Validación estadística (solo significativa con suficientes puntos de validaci�
 | seasonal_naive (24h) | 4.603 | 5.607 | 45.7% | 1.96 |
 | **Random Forest** | **3.455** | **4.052** | **23.2%** | **1.47** |
 
-*El Random Forest supera a todos los baselines en MAE y RMSE.*  
-Cobertura del intervalo de predicción en el conjunto de prueba de 7 puntos: **29 %** (variación esperada debido al tamaño diminuto del conjunto de prueba).  
+*El Random Forest supera a todos los baselines en MAE y RMSE.*
+
+**Cobertura de intervalos en el conjunto de prueba (7 puntos):**
+
+| Construcción | Semiancho | Cobertura medida | Garantía formal |
+|---|---:|---:|---|
+| **jackknife+ garantizado (primario)** | ±5.04 | **71.4 %** (5/7) | ≥80 % (1−2α con construcción a 90 %) |
+| split conformal exacto (n=6) | ±9.18 | 100.0 % (7/7) | ≥80 % exacta |
+| jackknife+ nominal | ±3.32 | 57.1 % (4/7) | ≥60 % |
+| empírico legacy (método anterior) | [−2.20, +5.72] | 28.6 % (2/7) | ninguna |
+
+El método primario (jackknife+ garantizado) logra la cobertura solicitada con **menos de la mitad del ancho** del split conformal exacto: la medición de 71.4 % sobre 7 puntos es consistente con la garantía marginal ≥80 % dado el error de muestreo (±14.3 pp por punto). El método empírico anterior sub‑cubría sistemáticamente (29 %), que era el problema que motivó la migración a conformal.
 
 ---  
 
@@ -296,7 +315,7 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
   - `real_model/model_metadata.json` – hiperparámetros, lista de características, divisiones, hash de git, prueba de fuga, etc.  
   - `real_model/feature_dictionary.csv` – 39 características con tipo (requerida/opcional/derivada/bandera).  
   - `real_model/*_metrics.json` – métricas de entrenamiento/validación/prueba para LR, Ridge, RF, GB.  
-  - `real_model/predictions_test.csv` – periodo, objetivo, predicciones de cada modelo + predicciones de baselines + límites inferior/superior 80 %.  
+  - `real_model/predictions_test.csv` – periodo, objetivo, predicciones de cada modelo + predicciones de baselines + cuatro bandas de intervalo: `y_lower/y_upper` (jackknife+ garantizado, primario), `*_split_conformal` (exacto), `*_jackknife_nominal` y `*_empirical` (legacy).
   - `real_model/residuals_test.csv` – residuales de cada modelo.  
   - `real_model/statistical_validation.json` – ADF, Ljung‑Box, Jarque‑Bera, Breusch‑Pagan, recuento de valores atípicos.  
   - `real_model/test_metrics_by_group.json` – métricas divididas por clase de carga, banda de intensidad, banda pico, bandera de calidad.  
@@ -318,12 +337,13 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
 
 | Archivo de prueba                         | Aprobado/Fallido |
 |-------------------------------------------|------------------|
-| `tests/test_extraction.py`                | 5/5 ✅ |
-| `tests/test_features.py`                  | 9/9 ✅ |
-| `tests/test_baselines.py`                 | 5/5 ✅ |
-| `tests/test_no_future_leakage.py`         | 4/4 ✅ |
-| `tests/test_temporal_split.py`            | 3/3 ✅ |
-| **Total**                                 | **26/26 ✅** *(el conteo anterior de 25 aumentó a 26 tras una incorporación reciente)*  
+| `tests/test_extraction.py`                | 4/4 |
+| `tests/test_features.py`                  | 9/9 |
+| `tests/test_baselines.py`                 | 5/5 |
+| `tests/test_conformal.py`                 | 12/12 |
+| `tests/test_no_future_leakage.py`         | 4/4 |
+| `tests/test_temporal_split.py`            | 3/3 |
+| **Total**                                 | **37/37** *(incluye 12 pruebas nuevas del módulo conformal: rangos con corrección de muestra finita, garantía de cobertura Monte Carlo, scores jackknife+)*
 
 Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna falla.  
 
@@ -335,7 +355,7 @@ Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna fal
 |---|-------------|----------------------|
 | 1 | **Único SKU y experimento** – solo se observó un SKU de Azure SQL (GP_S_Gen5_2 serverless, 2 vCores) y un único experimento (`ae94000e…`). | Limita la generalización; trabajos futuros deberían incorporar múltiples SKUs y experimentos. |
 | 2 | **Historia corta** – ~46 ventanas horarias (≈2 días) de datos útiles tras la limpieza. | Los resultados presentan alta varianza; sería preferible usar validación walk‑forward expansiva con más datos. |
-| 3 | **Cobertura baja de intervalos de predicción** – 29 % en el conjunto de prueba de 7 puntos (nominal 80 %). | Debido al tamaño diminuto del conjunto de prueba; se necesita más datos para calibrar confiablemente. Considerar predicción conforme o regresión cuantil. |
+| 3 | **Cobertura baja de intervalos de predicción — RESUELTO** – el método empírico anterior cubría 29 % (nominal 80 %). | Mitigado con predicción conforme (`conformal.py`): jackknife+ garantizado como primario (garantía formal ≥80 %, semiancho ±5.04, cobertura medida 71.4 % en 7 puntos) y split conformal exacto como referencia conservadora (100 % medido). La varianza de la medición sigue alta por el tamaño del test; se necesita más datos para medir cobertura con precisión. |
 | 4 | **Escasez de latencia p95 ms** – solo presente en la primera mitad de la ventana observada; la segunda mitad se obliga a imputar/bandera. | Puede reducir la utilidad de esta característica; explorar métricas de latencia alternativas o suavizado. |
 | 5 | **Valor medio de IO de datos ≈ 0** – la métrica es prácticamente cero durante todo el periodo, aportando poca señal. | Podría descartarse o sustituirse por una métrica de I/O más informativa si estuviera disponible. |
 | 6 | **Experimento C (calibrado) marcador de posición** – actualmente usa entrenamiento real como sustituto de «sintético curva‑ajustada» por falta de implementación verdadera de generación de curva alineada con la carga de trabajo. | Próximo paso: generar curvas sintéticas usando la **intensidad de carga de trabajo realmente observada** del período real (debería producir características idénticas a los datos reales, sirviendo como comprobación de cordura). |
@@ -348,9 +368,9 @@ Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna fal
 ## Próximos Pasos (Hoja de Ruta)  
 
 | Prioridad | Tarea | Descripción |
-|-----------|-------|-------------|
+|-----------|-------|--------------|
 | **Alta** | **Completar el experimento C calibrado** – generar características sintéticas usando la **intensidad de carga de trabajo realmente observada** del período real (en lugar del marcador de posición). Verificar que el MAE de prueba permanezca idéntico al del Experimento A (comprobación de cordura). |
-| **Alta** | **Mejorar los intervalos de predicción** – aplicar predicción conforme o regresión cuantil para alcanzar cobertura nominal (≥80 %). |
+| ~~Alta~~ | ~~Mejorar los intervalos de predicción~~ | **Completado** – migrado a predicción conforme: jackknife+ garantizado (primario), split conformal exacto (referencia) y jackknife+ nominal (eficiencia), con corrección de muestra finita y garantías formales documentadas. Ver §3.5–3.6. |
 | **Media** | **Aprendizaje de transferencia / transferencia cross‑SKU** – si llega un segundo recurso real, experimentar con adaptación de dominio (p.ej., afinar RF en el SKU origen, probar en el SKU destino). |
 | **Media** | **Selección automática de características** – usar importancia de características del RF o SHAP para reducir a ≤15 características manteniendo el rendimiento; disminuye riesgo de sobreajuste. |
 | **Media** | **Ajuste de hiperparámetros** – ejecutar Optuna o búsqueda en cuadrícula para RF/GB (n_estimators, max_depth, learning_rate) dentro de las restricciones de la división temporal. |
@@ -475,7 +495,7 @@ Todos los pasos son idempotentes; volver a ejecutarlos no duplicará datos graci
 | Conjunto de baselines | naive_last, MA(3), seasonal_naive(24h) | Simple, interpretable, tal como solicita el especificación. |
 | Portafolio de modelos | LR → Ridge → RF → GBM (creciente complejidad) | Permite observar si la no linealidad mejora el desempeño; RF resultó vencedor. |
 | Criterio de selección | MAE de validación, volver a entrenar en entrenamiento + validación, evaluar en prueba | Práctica estándar para evitar sobreajuste al conjunto de validación. |
-| Intervalos de predicción | Cuantiles empíricos de residuales de validación | Libre de supuestos de distribución, fácil de calcular, sin asumir normalidad. |
+| Intervalos de predicción | Predicción conforme con corrección de muestra finita: jackknife+ garantizado (primario, 1−α/2), split conformal exacto y jackknife+ nominal; el método empírico se conserva como legacy | Garantía formal de cobertura bajo intercambiabilidad, exacta en muestra finita; el jackknife+ garantizado alcanza la misma garantía que el split conformal con ~la mitad del ancho al usar 36 scores LOO en lugar de 6 residuos de validación. La cobertura medida siempre se reporta junto a la nominal. |
 | Generación sintética | Modelo de respuesta (intensidad de carga → métricas) + muestreo bootstrap de residuales | Preserva la distribución conjunta y permite escenarios controlados. |
 | Procedencia | Columnas obligatorias por fila almacenadas junto a los datos sintéticos | Asegura trazabilidad y evita mezcla con datos reales (`raw.*`). |
 | Lógica de aumento | Conjunto de prueba siempre real únicamente; aceptación si B/C mejora MAE de validación **sin** empeorar MAE de prueba | Evaluación honesta del valor añadido por los datos sintéticos. |
