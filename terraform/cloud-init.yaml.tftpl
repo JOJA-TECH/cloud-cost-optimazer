@@ -129,8 +129,6 @@ write_files:
       TimeoutStopSec=180
       MemoryMax=320M
       # Do not restart a workload that was stopped on purpose.
-      ExecCondition=/bin/bash -c 'grep -q "^AUTO_START=true" ${app_dir}/.env'
-
       [Install]
       WantedBy=multi-user.target
 
@@ -211,13 +209,12 @@ runcmd:
   - [bash, -lc, "apt-get update"]
   - [bash, -lc, "ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y msodbcsql18"]
   - [bash, -lc, "python3 -m venv ${app_dir}/venv"]
-  - [bash, -lc, "if [ -n '${app_git_repo_url}' ]; then if [ ! -d ${app_dir}/app/.git ]; then git clone --depth 1 --branch '${app_git_ref}' '${app_git_repo_url}' ${app_dir}/app; fi; else echo 'app_git_repo_url empty: copy app/ to ${app_dir}/app manually'; fi"]
+  - [bash, -lc, "if [ -n '${app_git_repo_url}' ]; then rm -rf ${app_dir}/source ${app_dir}/app; git clone --depth 1 --branch '${app_git_ref}' '${app_git_repo_url}' ${app_dir}/source; install -d -m 0755 ${app_dir}/app; cp -a ${app_dir}/source/app/. ${app_dir}/app/; else echo 'app_git_repo_url empty: copy app/ to ${app_dir}/app manually'; fi"]
   - [bash, -lc, "if [ -f ${app_dir}/app/requirements.txt ]; then ${app_dir}/venv/bin/pip install --upgrade pip && ${app_dir}/venv/bin/pip install -r ${app_dir}/app/requirements.txt; fi"]
   - [bash, -lc, "chown -R root:root ${app_dir}/app 2>/dev/null || true"]
   - [bash, -lc, "systemctl daemon-reload"]
-  - [bash, -lc, "systemctl enable cco-migrate.service cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
+  - [bash, -lc, "systemctl enable cco-migrate.service cco-workload.service cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
   - [bash, -lc, "systemctl start cco-migrate.service || true"]
-  - [bash, -lc, "systemctl start cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
-  - [bash, -lc, "if grep -q '^AUTO_START=true' ${app_dir}/.env; then systemctl start cco-workload.service; else echo 'AUTO_START=false: workload not started (use Telegram /start)'; fi"]
+  - [bash, -lc, "systemctl start cco-workload.service cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
 
 final_message: "CCO collector VM ready. Control the experiment with the Telegram bot. AUTO_START is false by default."

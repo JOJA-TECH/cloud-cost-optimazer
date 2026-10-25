@@ -15,7 +15,6 @@ RestartSec=10
 TimeoutStopSec=180
 MemoryMax=320M
 # Do not restart a workload that was stopped on purpose.
-ExecCondition=/bin/bash -c 'grep -q "^AUTO_START=true" /opt/cco/.env'
 
 [Install]
 WantedBy=multi-user.target
