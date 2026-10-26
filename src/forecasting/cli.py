@@ -32,6 +32,7 @@ from . import evaluation as ev
 from . import features as ft
 from . import models as md
 from . import selection as sel
+from . import tuning as tn
 from . import validation as va
 from .config import (
     CONFIG_DIR,
@@ -332,12 +333,10 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     # The design matrix is wider than long (39 candidates vs 36 calibration
     # rows), so columns are pruned before any model is fitted. The test split
     # is never read here: the window ends where the test set begins.
+    calibration_frame = pd.concat([train_imputed, validation_imputed], ignore_index=True)
+    X_calibration, y_calibration = md.build_matrix(calibration_frame, usable_columns, target)
     max_features = int(getattr(args, "max_features", 0) or 0)
     if max_features > 0:
-        calibration_frame = pd.concat([train_imputed, validation_imputed], ignore_index=True)
-        X_calibration, y_calibration = md.build_matrix(
-            calibration_frame, usable_columns, target
-        )
         selected_columns, selection_report = sel.select_features(
             X_calibration,
             y_calibration,
@@ -370,33 +369,68 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     X_train, y_train = md.build_matrix(train_imputed, selected_columns, target)
     X_validation, y_validation = md.build_matrix(validation_imputed, selected_columns, target)
     X_test, y_test = md.build_matrix(test_imputed, selected_columns, target)
+    X_calib, y_calib = md.build_matrix(calibration_frame, selected_columns, target)
 
     scale = ev.naive_scale(train[target])
 
-    # --- candidate models --------------------------------------------------
+    # --- walk-forward model selection over the calibration window -----------
+    # A single 6-point validation split makes the ranking nearly arbitrary;
+    # the selection now averages the MAE of expanding-window folds over the
+    # whole calibration window (the last fold equals the classic split).
+    # The same CV drives a small bias-oriented hyperparameter grid.
+    cv_splits = int(getattr(args, "cv_splits", 0) or 0)
+    if cv_splits <= 0:
+        cv_splits = 5
+    # Keep the split geometry feasible: at least one training row must remain
+    # before the first test block (see tuning.evaluation_points).
+    cv_splits = max(2, min(cv_splits, len(X_calib) // 2 - 1))
+    if len(X_calib) < 8:
+        raise RuntimeError(
+            "calibration window too small for walk-forward CV: "
+            f"{len(X_calib)} rows (need at least 8)"
+        )
+
+    tune_catalogue = tn.grid_catalogue(seed)
+    cv_results = tn.evaluate_candidates(tune_catalogue, X_calib, y_calib, n_splits=cv_splits)
+    n_eval_points = tn.evaluation_points(len(X_calib), cv_splits)
+    print(
+        f"[train-real] walk-forward CV: {len(tune_catalogue)} candidates, "
+        f"{cv_splits} folds, {n_eval_points} evaluation points over "
+        f"{len(X_calib)} calibration rows"
+    )
+    for result in cv_results[:5]:
+        folds = " ".join(f"{score:.2f}" for score in result.fold_maes)
+        print(
+            f"[train-real]   {result.spec.name:28s} CV MAE={result.mean_mae:.4f}  folds=[{folds}]"
+        )
+    if len(cv_results) > 5:
+        print(f"[train-real]   ... and {len(cv_results) - 5} more candidates (cv_results.csv)")
+    best_cv = cv_results[0]
+    best_spec = best_cv.spec
+    best_name = best_spec.name
+    print(
+        f"[train-real] selected model (walk-forward CV MAE): {best_name} "
+        f"({best_cv.mean_mae:.4f})"
+    )
+
+    # --- selected model on the classic split (continuity metrics) -----------
+    # The model fitted on train only feeds the split-conformal calibration
+    # residuals on validation; its train/val numbers stay comparable with
+    # the previous runs.
     train_metrics: dict[str, Any] = {}
     validation_metrics: dict[str, Any] = {}
-    fitted: dict[str, md.Pipeline] = {}
-    validation_predictions: dict[str, np.ndarray] = {}
-
-    for spec_model in catalogue:
-        if len(X_train) < 5:
-            break
-        model = md.fit_model(spec_model, X_train, y_train)
-        fitted[spec_model.name] = model
-        pred_train = md.predict_model(model, X_train)
-        pred_validation = md.predict_model(model, X_validation)
-        validation_predictions[spec_model.name] = pred_validation
-        train_metrics[spec_model.name] = ev.evaluate(
-            y_train.to_numpy(), pred_train, scale=scale
-        )
-        validation_metrics[spec_model.name] = ev.evaluate(
-            y_validation.to_numpy(), pred_validation, scale=scale
-        )
-        print(
-            f"[train-real] {spec_model.name:20s} train MAE={train_metrics[spec_model.name]['mae']:.4f} "
-            f"val MAE={validation_metrics[spec_model.name]['mae']:.4f}"
-        )
+    split_model = md.fit_model(best_spec, X_train, y_train)
+    pred_train_selected = md.predict_model(split_model, X_train)
+    pred_validation = md.predict_model(split_model, X_validation)
+    validation_predictions: dict[str, np.ndarray] = {best_name: pred_validation}
+    train_metrics[best_name] = ev.evaluate(y_train.to_numpy(), pred_train_selected, scale=scale)
+    validation_metrics[best_name] = ev.evaluate(
+        y_validation.to_numpy(), pred_validation, scale=scale
+    )
+    print(
+        f"[train-real] {best_name:28s} train MAE={train_metrics[best_name]['mae']:.4f} "
+        f"val MAE={validation_metrics[best_name]['mae']:.4f} (classic split, for continuity)"
+    )
 
     # --- baseline metrics --------------------------------------------------
     for name in baseline_specs:
@@ -414,16 +448,6 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         truth = test[target].to_numpy(dtype=float)
         pred = test[f"pred_{name}"].to_numpy(dtype=float)
         test_metrics[name] = ev.evaluate(truth, pred, scale=scale)
-
-    # --- model selection on the validation split ---------------------------
-    if not validation_metrics:
-        raise RuntimeError("no model could be fitted: not enough training rows")
-    best_name = min(
-        (m for m in validation_metrics if m in fitted),
-        key=lambda m: validation_metrics[m]["mae"],
-    )
-    best_spec = next(s for s in catalogue if s.name == best_name)
-    print(f"[train-real] selected model (validation MAE): {best_name}")
 
     # Refit on train + validation: the test set is touched only here.
     combined = pd.concat([train_imputed, validation_imputed], ignore_index=True)
@@ -543,7 +567,19 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "target": target,
             "period_type": settings.period_type,
             "split_strategy": "temporal_70_15_15",
-            "selected_on": "validation_mae",
+            "selected_on": "walk_forward_cv_mae",
+            "model_selection": {
+                "protocol": "expanding_window_walk_forward",
+                "n_splits": cv_splits,
+                "n_calibration_rows": int(len(X_calib)),
+                "n_evaluation_points": int(n_eval_points),
+                "n_candidates": len(cv_results),
+                "criterion": "mean MAE across expanding-window folds (test set untouched)",
+                "selected_model": best_name,
+                "selected_cv_mae": best_cv.mean_mae,
+                "grid": tn.grid_description(),
+                "top5": [result.as_row() for result in cv_results[:5]],
+            },
             "baselines_compared": list(baseline_specs),
             "imputation": imputation_report,
             "feature_selection": {
@@ -632,6 +668,10 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     _write_json(output_dir / "train_metrics.json", train_metrics)
     _write_json(output_dir / "validation_metrics.json", validation_metrics)
     _write_json(output_dir / "test_metrics.json", test_metrics)
+    _write_frame(
+        output_dir / "cv_results.csv",
+        pd.DataFrame([result.as_row() for result in cv_results]),
+    )
 
     predictions_frame = pd.DataFrame(
         {
@@ -740,10 +780,18 @@ def _real_model_readme(
     manifest: dict[str, Any],
     metadata: dict[str, Any],
 ) -> str:
+    selection = metadata.get("model_selection", {})
+    selection_text = (
+        f"por walk-forward CV de {selection.get('n_splits', '?')} folds "
+        f"({selection.get('n_evaluation_points', '?')} puntos de evaluación) "
+        f"sobre train+validación, test intacto"
+        if selection
+        else "por MAE en validación temporal"
+    )
     lines = [
         "# Modelo real (Fase A)",
         "",
-        f"- Modelo seleccionado: `{model_name}` (por MAE en validación temporal).",
+        f"- Modelo seleccionado: `{model_name}` ({selection_text}).",
         f"- Target: `{target}` (CPU promedio de la ventana siguiente, +1h).",
         f"- Filas del dataset: {manifest['row_count']}.",
         f"- Periodo: {manifest['period_start_utc']} → {manifest['period_end_utc']}.",
@@ -1022,6 +1070,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=15,
         help="feature selection cap (variance+collinearity prune, permutation ranking); 0 disables",
     )
+    p_train.add_argument(
+        "--cv-splits",
+        type=int,
+        default=5,
+        help="expanding-window folds for walk-forward model selection and tuning",
+    )
     p_train.set_defaults(func=cmd_train_real)
 
     p_scen = sub.add_parser("generate-scenarios", help="generate the synthetic scenarios")
@@ -1039,6 +1093,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--period-type", default=None)
     p_all.add_argument("--coverage", type=float, default=0.80)
     p_all.add_argument("--max-features", type=int, default=15)
+    p_all.add_argument("--cv-splits", type=int, default=5)
     p_all.set_defaults(func=cmd_run_all)
 
     return parser
