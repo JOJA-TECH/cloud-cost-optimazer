@@ -41,7 +41,7 @@ Objetivo: Construir un canal de predicción experimental para una base de datos 
 
 **Rama de trabajo:** `forecasting` (aislada de `origin/database`, esquema mínimo)  
 **Último commit:** `0980a66` — canal `evaluate-augmentation` completado  
-**Pruebas:** 25/25 aprobadas  
+**Pruebas:** 46/46 aprobadas  
 
 ---  
 
@@ -71,6 +71,7 @@ forecasting/                         # raíz de la rama (repositorio)
 │   ├─ features.py                            # lag/rolling/calendario + imputación mediana de train + banderas de ausentes
 │   ├─ baselines.py                           # naive_last, MA(3), seasonal_naive(24h)
 │   ├─ conformal.py                           # split conformal + jackknife+ con corrección de muestra finita
+│   ├─ selection.py                           # poda varianza/colinearidad + ranking por permutación (TimeSeriesSplit)
 │   ├─ models.py                              # Pipeline sklearn (imputador + escalador + LR/Ridge/RF/GB) + metadatos
 │   ├─ evaluation.py                          # MAE/RMSE/sMAPE/MASE, intervalos empíricos, evaluación agrupada, validación estadística
 │   ├─ augmentation.py                        # 3 experimentos A/B/C
@@ -122,6 +123,18 @@ Columnas base obtenidas de `feat.v_training_base` (véase diccionario más abajo
 
 La estrategia de bandera de ausentes permite que el modelo distinga entre un valor imputado y uno observado, evitando sesgo silencioso.  
 
+### 3.2.1 Selección de Características (`selection.py`)
+
+Con 36 filas de calibración (train+validación) frente a 37 columnas usables, la matriz es **más ancha que larga** — receta de sobreajuste. Antes de ajustar cualquier modelo se ejecuta una selección de tres etapas, usando **solo la ventana de calibración** (el conjunto de prueba nunca participa):
+
+1. **Poda por varianza** – columnas constantes en la ventana (14 eliminadas): `data_io_avg` (limitación #5), `sessions_percent`, `deadlock_count` y 11 banderas `feature_missing_*` de métricas totalmente observadas.
+2. **Poda por colinearidad** – columnas duplicadas exactas o negativas perfectas de otra conservada, |corr| ≥ 0.999 (1 eliminada): `cpu_max` ← gemela de `cpu_avg`.
+3. **Ranking por permutación** – las 22 supervivientes se ordenan por degradación de MAE al permutar cada columna, promediada sobre pliegues expansivos (`TimeSeriesSplit`, 3 folds) y sobre los 4 modelos candidatos; se conservan las mejores con importancia estrictamente positiva, con tope `--max-features` (por defecto 15) y piso de 3.
+
+**Resultado: 37 → 12 características** (`cpu_avg`, `workload_intensity`, `log_write_avg`, `memory_percent`, `sessions_count`, `storage_used_pct`, `storage_used_bytes`, `cpu_avg_lag_1h/2h/3h`, `cpu_avg_rolling_6h`, `workload_intensity_rolling_3h`). Hallazgos del ranking: `storage_used_bytes` (0.90) y `memory_percent` (0.65) dominan; `day_of_week` tiene importancia exactamente 0 (con 2 días de historia no puede discriminar); las características de calendario (`hour_sin/cos`, `is_peak_hour`) obtuvieron importancia **negativa** — permutarlas mejoraba el MAE, es decir, estaban dañando.
+
+**Evidencia de equivalencia (sin tocar test):** un walk‑forward de 5 pliegues sobre la ventana de calibración da MAE medio 2.498 (12 características) vs 2.442 (37) — delta 2%, empate estadístico; la versión reducida gana 3/5 pliegues. La selección se justifica por parsimonia y reducción de riesgo de sobreajuste (ratio características/filas baja de ~1.0 a 0.33), no por ganancia de precisión. Ver §3.6 para la lectura honesta del test.
+
 ### 3.3 División Temporal (`extraction.py`)  
 
 División estricta cronológica—**sin mezclar**.  
@@ -150,7 +163,7 @@ Etapas del Pipeline:
 3. Estimador (arriba).  
 
 Procedimiento de selección:  
-1. Ajustar cada pipeline en **entrenamiento**.  
+1. Ajustar cada pipeline en **entrenamiento** (con las 12 características seleccionadas, §3.2.1; configurable con `--max-features`, 0 la desactiva).  
 2. Evaluar en **validación** usando MAE.  
 3. Elegir el modelo con menor MAE en validación (en nuestro caso, Random Forest).  
 4. **Reajustar** dicho modelo en **entrenamiento + validación**.  
@@ -166,9 +179,9 @@ Métricas calculadas en el conjunto de prueba:
 
 Intervalos de predicción (módulo `conformal.py`): tres construcciones conformales con corrección de muestra finita, calibradas **sin tocar el conjunto de prueba**:
 
-* **jackknife+ garantizado (método primario)** – scores de no conformidad leave‑one‑out `|y_i − f₋ᵢ(x_i)|` sobre las 36 filas de train+validación, construido al nivel 1−α/2 (90%) para que la garantía formal de jackknife+ (1−2α) alcance la cobertura solicitada (80%). Semiancho ±5.04.
-* **Split conformal exacto** – residuos absolutos de validación del modelo ajustado solo en train; el semiancho es el k‑ésimo estadístico de orden con `k = ⌈(n+1)·(1−α)⌉` (con n=6 satura al máximo). Semiancho ±9.18. Garantía exacta ≥80% bajo intercambiabilidad.
-* **jackknife+ nominal** – mismos 36 scores construidos al 80% directo (garantía formal 1−2α = 60%). Semiancho ±3.32. Se reporta como referencia de eficiencia.
+* **jackknife+ garantizado (método primario)** – scores de no conformidad leave‑one‑out `|y_i − f₋ᵢ(x_i)|` sobre las 36 filas de train+validación, construido al nivel 1−α/2 (90%) para que la garantía formal de jackknife+ (1−2α) alcance la cobertura solicitada (80%). Semiancho ±5.07.
+* **Split conformal exacto** – residuos absolutos de validación del modelo ajustado solo en train; el semiancho es el k‑ésimo estadístico de orden con `k = ⌈(n+1)·(1−α)⌉` (con n=6 satura al máximo). Semiancho ±9.27. Garantía exacta ≥80% bajo intercambiabilidad.
+* **jackknife+ nominal** – mismos 36 scores construidos al 80% directo (garantía formal 1−2α = 60%). Semiancho ±4.06. Se reporta como referencia de eficiencia.
 
 El método anterior (cuantiles empíricos 10/90 de residuos de validación, sin corrección ni garantía) se conserva como referencia legacy en los artefactos.
 
@@ -181,27 +194,34 @@ Validación estadística (solo significativa con suficientes puntos de validaci�
 * Comprobaciones de coherencia de unidades (por ejemplo, `cpu_avg` ∈ [0,100]).  
 * **Prueba de fuga futura**: perturbar artificialmente una marca de tiempo futura y confirmar que las características derivadas del pasado **no cambian** (diferencia = 0.0).  
 
-### 3.6 Rendimiento Final en el Conjunto de Prueba  
+### 3.6 Rendimiento Final en el Conjunto de Prueba
 
-| Modelo          | MAE   | RMSE  | sMAPE | MASE |
-|----------------|------:|------:|------:|------:|
-| naive_last     | 5.819 | 6.300 | 37.7% | 2.48 |
-| moving_average (3h) | 3.608 | 4.521 | 23.6% | 1.54 |
-| seasonal_naive (24h) | 4.603 | 5.607 | 45.7% | 1.96 |
-| **Random Forest** | **3.455** | **4.052** | **23.2%** | **1.47** |
+Modelo entrenado con las 12 características seleccionadas (§3.2.1):
 
-*El Random Forest supera a todos los baselines en MAE y RMSE.*
+| Modelo          | MAE   | RMSE  | sMAPE | MASE | MAE validación |
+|----------------|------:|------:|------:|------:|------:|
+| naive_last     | 5.819 | 6.300 | 37.7% | 2.48 | 4.243 |
+| moving_average (3h) | 3.608 | 4.521 | 23.6% | 1.54 | 3.994 |
+| seasonal_naive (24h) | 4.603 | 5.607 | 45.7% | 1.96 | 4.705 |
+| **Random Forest** | **3.941** | **4.323** | **25.8%** | **1.68** | **2.926** |
+
+*El Random Forest sigue siendo el mejor modelo en validación (criterio de selección) con margen claro, pero en el test de 7 puntos cae por debajo del moving_average. Lectura honesta:*
+
+* **Validación (6 pts):** RF 2.926 vs mejor baseline 3.994 — RF gana con holgura; es el criterio por el que fue seleccionado.
+* **Test (7 pts):** RF 3.941 vs MA(3) 3.608 — el orden se invierte. Con 7 puntos la diferencia (0.33 MAE) está dominada por ruido; iterar para revertirla sería sobreajustar el test.
+* **Walk‑forward en calibración (36 pts, test intacto):** 12 características 2.498 vs 37 características 2.442 — empate estadístico (§3.2.1). Con 39 características el RF daba test MAE 3.455; con 12 da 3.941. Ni la validación ni el walk‑forward distinguen ambas versiones de forma fiable a este tamaño de muestra; se mantiene la versión reducida por parsimonia y menor riesgo de sobreajuste.
+* Los modelos lineales sí mejoraron de forma clara con la selección: linear_lags validación 7.635 → 4.058, ridge 6.551 → 3.509 (las 25+ columnas de ruido los dañaban más que a los árboles).
 
 **Cobertura de intervalos en el conjunto de prueba (7 puntos):**
 
 | Construcción | Semiancho | Cobertura medida | Garantía formal |
 |---|---:|---:|---|
-| **jackknife+ garantizado (primario)** | ±5.04 | **71.4 %** (5/7) | ≥80 % (1−2α con construcción a 90 %) |
-| split conformal exacto (n=6) | ±9.18 | 100.0 % (7/7) | ≥80 % exacta |
-| jackknife+ nominal | ±3.32 | 57.1 % (4/7) | ≥60 % |
+| **jackknife+ garantizado (primario)** | ±5.07 | **71.4 %** (5/7) | ≥80 % (1−2α con construcción a 90 %) |
+| split conformal exacto (n=6) | ±9.27 | 100.0 % (7/7) | ≥80 % exacta |
+| jackknife+ nominal | ±4.06 | 57.1 % (4/7) | ≥60 % |
 | empírico legacy (método anterior) | [−2.20, +5.72] | 28.6 % (2/7) | ninguna |
 
-El método primario (jackknife+ garantizado) logra la cobertura solicitada con **menos de la mitad del ancho** del split conformal exacto: la medición de 71.4 % sobre 7 puntos es consistente con la garantía marginal ≥80 % dado el error de muestreo (±14.3 pp por punto). El método empírico anterior sub‑cubría sistemáticamente (29 %), que era el problema que motivó la migración a conformal.
+El método primario (jackknife+ garantizado) logra la cobertura solicitada con casi **la mitad del ancho** del split conformal exacto: la medición de 71.4 % sobre 7 puntos es consistente con la garantía marginal ≥80 % dado el error de muestreo (±14.3 pp por punto). El método empírico anterior sub‑cubría sistemáticamente (29 %), que era el problema que motivó la migración a conformal. Los semianchos cambiaron marginalmente respecto a la versión de 39 características (±5.04/±9.18/±3.32 → ±5.07/±9.27/±4.06) porque los scores jackknife+ se recalculan con el modelo reducido.
 
 ---  
 
@@ -312,8 +332,10 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
 
 - **Modelo y evaluación de datos reales**  
   - `real_model/model.joblib` – Random Forest entrenado (entrenamiento + validación).  
-  - `real_model/model_metadata.json` – hiperparámetros, lista de características, divisiones, hash de git, prueba de fuga, etc.  
-  - `real_model/feature_dictionary.csv` – 39 características con tipo (requerida/opcional/derivada/bandera).  
+  - `real_model/model_metadata.json` – hiperparámetros, lista de características (las 12 seleccionadas), divisiones, hash de git, prueba de fuga, bloque `feature_selection`, etc.  
+  - `real_model/feature_dictionary.csv` – las 37 candidatas con tipo (requerida/opcional/derivada/bandera), bandera `selected` y `dropped_reason` (variance/collinear/ranking_cut).  
+  - `real_model/feature_selection.json` – reporte completo de la selección: podas, ranking de importancias por modelo, seleccionadas, notas.  
+  - `real_model/feature_importances.csv` – degradación de MAE por permutación, promediada por folds y modelos.  
   - `real_model/*_metrics.json` – métricas de entrenamiento/validación/prueba para LR, Ridge, RF, GB.  
   - `real_model/predictions_test.csv` – periodo, objetivo, predicciones de cada modelo + predicciones de baselines + cuatro bandas de intervalo: `y_lower/y_upper` (jackknife+ garantizado, primario), `*_split_conformal` (exacto), `*_jackknife_nominal` y `*_empirical` (legacy).
   - `real_model/residuals_test.csv` – residuales de cada modelo.  
@@ -341,9 +363,10 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
 | `tests/test_features.py`                  | 9/9 |
 | `tests/test_baselines.py`                 | 5/5 |
 | `tests/test_conformal.py`                 | 12/12 |
+| `tests/test_selection.py`                 | 9/9 |
 | `tests/test_no_future_leakage.py`         | 4/4 |
 | `tests/test_temporal_split.py`            | 3/3 |
-| **Total**                                 | **37/37** *(incluye 12 pruebas nuevas del módulo conformal: rangos con corrección de muestra finita, garantía de cobertura Monte Carlo, scores jackknife+)*
+| **Total**                                 | **46/46** *(conformal: rangos con corrección de muestra finita, garantía de cobertura Monte Carlo, scores jackknife+; selección: podas de varianza/colinearidad, ranking por permutación, piso mínimo)*
 
 Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna falla.  
 
@@ -357,7 +380,7 @@ Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna fal
 | 2 | **Historia corta** – ~46 ventanas horarias (≈2 días) de datos útiles tras la limpieza. | Los resultados presentan alta varianza; sería preferible usar validación walk‑forward expansiva con más datos. |
 | 3 | **Cobertura baja de intervalos de predicción — RESUELTO** – el método empírico anterior cubría 29 % (nominal 80 %). | Mitigado con predicción conforme (`conformal.py`): jackknife+ garantizado como primario (garantía formal ≥80 %, semiancho ±5.04, cobertura medida 71.4 % en 7 puntos) y split conformal exacto como referencia conservadora (100 % medido). La varianza de la medición sigue alta por el tamaño del test; se necesita más datos para medir cobertura con precisión. |
 | 4 | **Escasez de latencia p95 ms** – solo presente en la primera mitad de la ventana observada; la segunda mitad se obliga a imputar/bandera. | Puede reducir la utilidad de esta característica; explorar métricas de latencia alternativas o suavizado. |
-| 5 | **Valor medio de IO de datos ≈ 0** – la métrica es prácticamente cero durante todo el periodo, aportando poca señal. | Podría descartarse o sustituirse por una métrica de I/O más informativa si estuviera disponible. |
+| 5 | **Valor medio de IO de datos ≈ 0 — MITIGADO** – la métrica era prácticamente cero durante todo el periodo. | Eliminada automáticamente por la poda de varianza de la selección de características (§3.2.1); si en el futuro se dispone de una métrica de I/O informativa, la selección la admitirá por sí sola. |
 | 6 | **Experimento C (calibrado) marcador de posición** – actualmente usa entrenamiento real como sustituto de «sintético curva‑ajustada» por falta de implementación verdadera de generación de curva alineada con la carga de trabajo. | Próximo paso: generar curvas sintéticas usando la **intensidad de carga de trabajo realmente observada** del período real (debería producir características idénticas a los datos reales, sirviendo como comprobación de cordura). |
 | 7 | **Ausencia de validación externa** – ningún conjunto de reserva de otro período de tiempo o distinto recurso para probar aprendizaje de transferencia. | Plan: adquirir un segundo recurso o una ventana temporal posterior para validación cruzada. |
 | 8 | **Ruido sintético determinístico** – distribución Normal truncada con σ fijo; podría no capturar heterocedasticidad. | Futuro: modelar la varianza del ruido como función de la intensidad de carga de trabajo (por ejemplo, mediante GAMLSS). |
@@ -372,7 +395,7 @@ Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna fal
 | **Alta** | **Completar el experimento C calibrado** – generar características sintéticas usando la **intensidad de carga de trabajo realmente observada** del período real (en lugar del marcador de posición). Verificar que el MAE de prueba permanezca idéntico al del Experimento A (comprobación de cordura). |
 | ~~Alta~~ | ~~Mejorar los intervalos de predicción~~ | **Completado** – migrado a predicción conforme: jackknife+ garantizado (primario), split conformal exacto (referencia) y jackknife+ nominal (eficiencia), con corrección de muestra finita y garantías formales documentadas. Ver §3.5–3.6. |
 | **Media** | **Aprendizaje de transferencia / transferencia cross‑SKU** – si llega un segundo recurso real, experimentar con adaptación de dominio (p.ej., afinar RF en el SKU origen, probar en el SKU destino). |
-| **Media** | **Selección automática de características** – usar importancia de características del RF o SHAP para reducir a ≤15 características manteniendo el rendimiento; disminuye riesgo de sobreajuste. |
+| ~~Media~~ | ~~Selección automática de características~~ | **Completado** – podas de varianza/colinearidad + ranking por permutación promediado sobre folds expansivos y los 4 modelos candidatos (`selection.py`); 37 → 12 características con rendimiento equivalente en walk‑forward y menor riesgo de sobreajuste. Ver §3.2.1. |
 | **Media** | **Ajuste de hiperparámetros** – ejecutar Optuna o búsqueda en cuadrícula para RF/GB (n_estimators, max_depth, learning_rate) dentro de las restricciones de la división temporal. |
 | **Baja** | **Detección de deriva en línea** – implementar prueba Page‑Hinkley o KS sobre residuales entrantes para disparar re‑entrenamiento del modelo. |
 | **Baja** | **Documentación y divulgación** – redactar un `limitations.md` y un breve `README` orientado a consumidores de ciencia de datos. |
@@ -462,6 +485,7 @@ A continuación se lista alfabéticamente cada columna que puede aparecer en la 
 7. **Entrenar el modelo con datos reales** (Fase A):  
    ```bash
    ./scripts/train_real.sh
+   # opcional: --max-features 15 (tope de selección; 0 la desactiva) y --coverage 0.80
    ```  
    Los resultados aparecen en `artifacts/real_model/`.  
 8. **Generar escenarios sintéticos** (Fase B):  
@@ -495,6 +519,7 @@ Todos los pasos son idempotentes; volver a ejecutarlos no duplicará datos graci
 | Conjunto de baselines | naive_last, MA(3), seasonal_naive(24h) | Simple, interpretable, tal como solicita el especificación. |
 | Portafolio de modelos | LR → Ridge → RF → GBM (creciente complejidad) | Permite observar si la no linealidad mejora el desempeño; RF resultó vencedor. |
 | Criterio de selección | MAE de validación, volver a entrenar en entrenamiento + validación, evaluar en prueba | Práctica estándar para evitar sobreajuste al conjunto de validación. |
+| Selección de características | Poda de varianza y colinearidad + tope de 15 por ranking de permutación (promedio sobre 4 modelos y 3 folds expansivos), calibrado solo con train+validación | La matriz era más ancha que larga (37 columnas / 36 filas); la selección elimina ruido determinísticamente y reduce el ratio a 0.33 sin costo medible en walk‑forward. `--max-features 0` la desactiva. |
 | Intervalos de predicción | Predicción conforme con corrección de muestra finita: jackknife+ garantizado (primario, 1−α/2), split conformal exacto y jackknife+ nominal; el método empírico se conserva como legacy | Garantía formal de cobertura bajo intercambiabilidad, exacta en muestra finita; el jackknife+ garantizado alcanza la misma garantía que el split conformal con ~la mitad del ancho al usar 36 scores LOO en lugar de 6 residuos de validación. La cobertura medida siempre se reporta junto a la nominal. |
 | Generación sintética | Modelo de respuesta (intensidad de carga → métricas) + muestreo bootstrap de residuales | Preserva la distribución conjunta y permite escenarios controlados. |
 | Procedencia | Columnas obligatorias por fila almacenadas junto a los datos sintéticos | Asegura trazabilidad y evita mezcla con datos reales (`raw.*`). |

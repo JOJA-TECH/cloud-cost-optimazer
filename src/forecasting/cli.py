@@ -31,6 +31,7 @@ from . import conformal as cf
 from . import evaluation as ev
 from . import features as ft
 from . import models as md
+from . import selection as sel
 from . import validation as va
 from .config import (
     CONFIG_DIR,
@@ -325,14 +326,54 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         c for c in columns if not imputation_report["imputed"].get(c, {}).get("dropped")
     ]
 
-    X_train, y_train = md.build_matrix(train_imputed, usable_columns, target)
-    X_validation, y_validation = md.build_matrix(validation_imputed, usable_columns, target)
-    X_test, y_test = md.build_matrix(test_imputed, usable_columns, target)
+    catalogue = md.default_catalogue(seed)
+
+    # --- feature selection (calibration window: train + validation) --------
+    # The design matrix is wider than long (39 candidates vs 36 calibration
+    # rows), so columns are pruned before any model is fitted. The test split
+    # is never read here: the window ends where the test set begins.
+    max_features = int(getattr(args, "max_features", 0) or 0)
+    if max_features > 0:
+        calibration_frame = pd.concat([train_imputed, validation_imputed], ignore_index=True)
+        X_calibration, y_calibration = md.build_matrix(
+            calibration_frame, usable_columns, target
+        )
+        selected_columns, selection_report = sel.select_features(
+            X_calibration,
+            y_calibration,
+            catalogue,
+            max_features=max_features,
+            seed=seed,
+        )
+        print(
+            f"[train-real] feature selection: {len(usable_columns)} -> {len(selected_columns)} "
+            f"candidates (variance: {len(selection_report.dropped_variance)}, "
+            f"collinear: {len(selection_report.dropped_collinear)}, "
+            f"ranking cut: {max_features}, folds: {selection_report.n_folds})"
+        )
+    else:
+        selected_columns = list(usable_columns)
+        selection_report = sel.SelectionReport(
+            method="disabled",
+            max_features=0,
+            n_candidates=len(usable_columns),
+            n_rows_calibration=len(train_imputed) + len(validation_imputed),
+            n_folds=0,
+            dropped_variance=[],
+            dropped_collinear={},
+            importances=[],
+            selected=selected_columns,
+            notes=["Seleccion deshabilitada (--max-features <= 0)."],
+        )
+        print(f"[train-real] feature selection disabled: {len(selected_columns)} candidates")
+
+    X_train, y_train = md.build_matrix(train_imputed, selected_columns, target)
+    X_validation, y_validation = md.build_matrix(validation_imputed, selected_columns, target)
+    X_test, y_test = md.build_matrix(test_imputed, selected_columns, target)
 
     scale = ev.naive_scale(train[target])
 
     # --- candidate models --------------------------------------------------
-    catalogue = md.default_catalogue(seed)
     train_metrics: dict[str, Any] = {}
     validation_metrics: dict[str, Any] = {}
     fitted: dict[str, md.Pipeline] = {}
@@ -386,7 +427,7 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
 
     # Refit on train + validation: the test set is touched only here.
     combined = pd.concat([train_imputed, validation_imputed], ignore_index=True)
-    X_combined, y_combined = md.build_matrix(combined, usable_columns, target)
+    X_combined, y_combined = md.build_matrix(combined, selected_columns, target)
     final_model = md.fit_model(best_spec, X_combined, y_combined)
     pred_test = md.predict_model(final_model, X_test)
     test_metrics[best_name] = ev.evaluate(y_test.to_numpy(), pred_test, scale=scale)
@@ -476,19 +517,19 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     )
 
     # --- leakage evidence --------------------------------------------------
-    leakage = ev.leakage_report(modeling, usable_columns, len(modeling) - 2)
+    leakage = ev.leakage_report(modeling, selected_columns, len(modeling) - 2)
     print(f"[train-real] leakage check: {leakage.get('no_leakage')}")
 
     # --- artifacts ---------------------------------------------------------
     dataset_hash = ft.dataset_hash(modeling)
-    feature_hash = ft.feature_definition_hash(usable_columns, spec)
+    feature_hash = ft.feature_definition_hash(selected_columns, spec)
     git_context = _git_context()
 
     joblib.dump(final_model, output_dir / "model.joblib")
 
     metadata = md.model_metadata(
         best_spec,
-        usable_columns,
+        selected_columns,
         training_rows=len(train),
         validation_rows=len(validation),
         test_rows=len(test),
@@ -505,6 +546,11 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "selected_on": "validation_mae",
             "baselines_compared": list(baseline_specs),
             "imputation": imputation_report,
+            "feature_selection": {
+                **selection_report.as_dict(),
+                "n_selected": len(selected_columns),
+                "top_importances": selection_report.importances[:10],
+            },
             "prediction_interval": {
                 "primary_method": primary_interval.method,
                 **primary_interval.as_dict(),
@@ -551,6 +597,15 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     )
     _write_json(output_dir / "model_metadata.json", metadata)
 
+    def _drop_reason(column: str) -> str | None:
+        if column in selection_report.dropped_variance:
+            return "variance"
+        if column in selection_report.dropped_collinear:
+            return f"collinear:{selection_report.dropped_collinear[column]}"
+        if column not in selected_columns:
+            return "ranking_cut"
+        return None
+
     dictionary = pd.DataFrame(
         [
             {
@@ -559,11 +614,19 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
                 "optional": column in spec.optional,
                 "derived": column in spec.derived_names(),
                 "missing_indicator": f"feature_missing_{column}" in usable_columns,
+                "selected": column in selected_columns,
+                "dropped_reason": _drop_reason(column),
             }
             for column in usable_columns
         ]
     )
     _write_frame(output_dir / "feature_dictionary.csv", dictionary)
+    _write_json(output_dir / "feature_selection.json", selection_report.as_dict())
+    if selection_report.importances:
+        _write_frame(
+            output_dir / "feature_importances.csv",
+            pd.DataFrame(selection_report.importances),
+        )
     (output_dir / "feature_definition_hash.txt").write_text(feature_hash + "\n", encoding="utf-8")
 
     _write_json(output_dir / "train_metrics.json", train_metrics)
@@ -615,7 +678,8 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         "period_end_utc": str(modeling["period_start_utc"].max()),
         "split": split_summary(splits),
         "target": target,
-        "feature_list": usable_columns,
+        "feature_list": selected_columns,
+        "candidate_feature_list": usable_columns,
         "imputation": imputation_report,
         "table_row_counts": counts_of_local(settings),
     }
@@ -952,6 +1016,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--period-type", default=None)
     p_train.add_argument("--output-dir", default=None)
     p_train.add_argument("--coverage", type=float, default=0.80)
+    p_train.add_argument(
+        "--max-features",
+        type=int,
+        default=15,
+        help="feature selection cap (variance+collinearity prune, permutation ranking); 0 disables",
+    )
     p_train.set_defaults(func=cmd_train_real)
 
     p_scen = sub.add_parser("generate-scenarios", help="generate the synthetic scenarios")
@@ -968,6 +1038,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument("--target", default=None)
     p_all.add_argument("--period-type", default=None)
     p_all.add_argument("--coverage", type=float, default=0.80)
+    p_all.add_argument("--max-features", type=int, default=15)
     p_all.set_defaults(func=cmd_run_all)
 
     return parser
