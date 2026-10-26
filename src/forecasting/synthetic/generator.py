@@ -32,9 +32,47 @@ class ScenarioRunInfo:
     started_at_utc: str
     ended_at_utc: str
     row_count: int
+    workload_range: list[float] | None = None
+    observed_support_range: list[float] | None = None
+    within_observed_support: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def evaluate_workload_support(
+    curve: pd.DataFrame,
+    response_model: ResponseModel,
+    *,
+    feature: str = "workload_intensity",
+) -> dict[str, Any]:
+    """Compare the workload range of a scenario with the observed support.
+
+    The response model was fitted on a finite window of real data; scenario
+    curves outside that window are extrapolation without empirical support
+    and are flagged here so the manifests can carry the caveat.
+    """
+    observed = response_model.observed_support.get(feature)
+    if feature not in curve.columns:
+        values = pd.Series(dtype=float)
+    else:
+        values = pd.to_numeric(curve[feature], errors="coerce").dropna()
+    if values.empty or not observed:
+        return {
+            "scenario_min": None,
+            "scenario_max": None,
+            "observed_min": float(observed[0]) if observed else None,
+            "observed_max": float(observed[1]) if observed else None,
+            "within_observed_support": None,
+        }
+    low, high = float(values.min()), float(values.max())
+    return {
+        "scenario_min": low,
+        "scenario_max": high,
+        "observed_min": float(observed[0]),
+        "observed_max": float(observed[1]),
+        "within_observed_support": bool(low >= observed[0] and high <= observed[1]),
+    }
 
 
 def generate_one(
@@ -58,6 +96,16 @@ def generate_one(
 
     # 1. Build workload curve
     curve = build_workload_curve(config, step_minutes=60)  # hourly steps
+
+    # 1b. Support check: warn when the curve leaves the observed window.
+    support = evaluate_workload_support(curve, response_model)
+    if support["within_observed_support"] is False:
+        print(
+            f"[generate-scenarios] warning: scenario {config.scenario_id} workload "
+            f"[{support['scenario_min']:.0f}, {support['scenario_max']:.0f}] exceeds the "
+            f"observed support [{support['observed_min']:.0f}, {support['observed_max']:.0f}]: "
+            "extrapolation sin soporte empirico"
+        )
 
     # 2. Predict resource response
     predicted = response_model.predict(
@@ -101,6 +149,13 @@ def generate_one(
         started_at_utc=started,
         ended_at_utc=ended,
         row_count=len(predicted),
+        workload_range=[support["scenario_min"], support["scenario_max"]]
+        if support["scenario_min"] is not None
+        else None,
+        observed_support_range=[support["observed_min"], support["observed_max"]]
+        if support["observed_min"] is not None
+        else None,
+        within_observed_support=support["within_observed_support"],
     )
     return info, predicted
 

@@ -76,6 +76,7 @@ class ResponseModel:
     clipped_counts: dict[str, int] = field(default_factory=dict)
     residuals: dict[str, np.ndarray] = field(default_factory=dict)
     metadata_: dict[str, Any] = field(default_factory=dict)
+    observed_support: dict[str, list[float]] = field(default_factory=dict)
 
     @classmethod
     def fit(
@@ -114,6 +115,29 @@ class ResponseModel:
 
             X_train = X.loc[valid, [target.feature]]
             y_train = y.loc[valid]
+
+            # Observed support of the driving feature: any scenario outside
+            # this range is extrapolation without empirical support.
+            feature_values = X_train[target.feature]
+            if target.feature not in model.observed_support:
+                model.observed_support[target.feature] = [
+                    float(feature_values.min()),
+                    float(feature_values.max()),
+                ]
+
+            # Correlation feature<->target in the fitting window: quantifies
+            # how much signal the response model actually has to learn.
+            # (postgres numerics arrive as Decimal: force float64 first)
+            feature_array = feature_values.to_numpy(dtype=float)
+            target_array = y_train.to_numpy(dtype=float)
+            if feature_array.std() > 0 and target_array.std() > 0:
+                corr_pearson = float(np.corrcoef(feature_array, target_array)[0, 1])
+                corr_spearman = float(
+                    pd.Series(feature_array).corr(pd.Series(target_array), method="spearman")
+                )
+            else:
+                corr_pearson = float("nan")
+                corr_spearman = float("nan")
 
             # Try linear first, then tree ensemble if non-linear
             with warnings.catch_warnings():
@@ -170,6 +194,8 @@ class ResponseModel:
                 "in_sample_rmse": float(tree_rmse if kind == "gradient_boosting" else lin_rmse),
                 "n_obs": int(valid.sum()),
                 "n_clipped": n_clipped,
+                "corr_pearson_with_feature": corr_pearson,
+                "corr_spearman_with_feature": corr_spearman,
             }
 
         return model
@@ -225,6 +251,7 @@ class ResponseModel:
             "feature_names": self.feature_names,
             "clipped_counts": self.clipped_counts,
             "per_target": self.metadata_,
+            "observed_support": self.observed_support,
         }
 
 

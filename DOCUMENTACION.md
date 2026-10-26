@@ -21,12 +21,13 @@ Este documento describe el estado completo del canal de predicción implementado
    4.4 Experimentos de Aumento (A/B/C)  
    4.5 Veredicto  
 5. [Artefactos Generados](#artefactos-generados)  
-6. [Estado del Conjunto de Pruebas](#estado-del-conjunto-de-pruebas)  
-7. [Limitaciones y Problemas Conocidos](#limitaciones-y-problemas-conocidos)  
-8. [Próximos Pasos (Hoja de Ruta)](#próximos-pasos-hoja-de-ruta)  
-9. [Diccionario de Variables y Características](#diccionario-de-variables-y-características)  
-10. [Cómo Reproducir la Ejecución Completa](#cómo-reproducir-la-ejecución-completa)  
-11. [Resumen de Decisiones Técnicas](#resumen-de-decisiones-técnicas)  
+6. [Galería de Gráficas (Explicabilidad)](#galería-de-gráficas-explicabilidad)  
+7. [Estado del Conjunto de Pruebas](#estado-del-conjunto-de-pruebas)  
+8. [Limitaciones y Problemas Conocidos](#limitaciones-y-problemas-conocidos)  
+9. [Próximos Pasos (Hoja de Ruta)](#próximos-pasos-hoja-de-ruta)  
+10. [Diccionario de Variables y Características](#diccionario-de-variables-y-características)  
+11. [Cómo Reproducir la Ejecución Completa](#cómo-reproducir-la-ejecución-completa)  
+12. [Resumen de Decisiones Técnicas](#resumen-de-decisiones-técnicas)  
 
 ---  
 
@@ -41,7 +42,7 @@ Objetivo: Construir un canal de predicción experimental para una base de datos 
 
 **Rama de trabajo:** `forecasting` (aislada de `origin/database`, esquema mínimo)  
 **Último commit:** `0980a66` — canal `evaluate-augmentation` completado  
-**Pruebas:** 54/54 aprobadas  
+**Pruebas:** 73/73 aprobadas  
 
 ---  
 
@@ -73,6 +74,8 @@ forecasting/                         # raíz de la rama (repositorio)
 │   ├─ conformal.py                           # split conformal + jackknife+ con corrección de muestra finita
 │   ├─ selection.py                           # poda varianza/colinearidad + ranking por permutación (TimeSeriesSplit)
 │   ├─ tuning.py                              # walk-forward CV + cuadrícula de hiperparámetros orientada a bias
+│   ├─ transforms.py                          # representación diferenciada del objetivo (Δcpu reintegrado al nivel)
+│   ├─ plots.py                               # 10 gráficas PNG de explicabilidad (datos, modelo, incertidumbre)
 │   ├─ models.py                              # Pipeline sklearn (imputador + escalador + LR/Ridge/RF/GB) + metadatos
 │   ├─ evaluation.py                          # MAE/RMSE/sMAPE/MASE, intervalos empíricos, evaluación agrupada, validación estadística
 │   ├─ augmentation.py                        # 3 experimentos A/B/C
@@ -147,7 +150,7 @@ División estricta cronológica—**sin mezclar**.
 
 Si hubiera menos de 20 filas, se utilizaría automáticamente una ventana expansiva tipo walk‑forward.  
 
-### 3.4 Modelado y Selección (`models.py`, `tuning.py`)  
+### 3.4 Modelado y Selección (`models.py`, `tuning.py`, `transforms.py`)  
 
 Cuatro familias de algoritmos, cada una encapsulada en un `Pipeline` idéntico de scikit‑learn, exploradas mediante una **cuadrícula de 18 configuraciones** deliberadamente orientada hacia más bias (árboles menos profundos, hojas más grandes, tasas de aprendizaje menores), porque con 36 filas el riesgo es sobreajustar, no subajustar:
 
@@ -160,6 +163,8 @@ Cuatro familias de algoritmos, cada una encapsulada en un `Pipeline` idéntico d
 
 Se prefiere una cuadrícula determinista a Optuna: sin dependencias nuevas, auditable y reproducible; con 18 configuraciones el espacio no necesita nada más inteligente.
 
+**Representación del objetivo (`transforms.py`):** cada una de las 18 configuraciones compite en **dos representaciones** — nivel (`target_cpu_avg_next1h`) y **diferenciada** (Δ = target − `cpu_avg`(t), reintegrada al nivel como cpu_avg + Δ̂ para que todas compitan en la misma métrica). La diferenciación usa solo información de la fila actual (`cpu_avg` es una característica legítima), sin fuga. Total: **36 candidatas**. Con MASE ≈ 1.5 la serie es casi random‑walk, motivo de la hipótesis; el CV la evalúa en vez de asumirla.
+
 Etapas del Pipeline (sin cambios):  
 1. `SimpleImputer(strategy='median')` – ajustado **únicamente** con datos de entrenamiento.  
 2. `StandardScaler(with_mean=True, with_std=True)` – ajustado con datos de entrenamiento.  
@@ -167,8 +172,8 @@ Etapas del Pipeline (sin cambios):
 
 Procedimiento de selección (`tuning.py`):  
 1. Construir las 12 características seleccionadas (§3.2.1; `--max-features`, 0 la desactiva).  
-2. **Walk‑forward expansivo** sobre la ventana de calibración (train+validación, 36 filas): `TimeSeriesSplit(5)` evalúa cada configuración en **30 puntos fuera de muestra** — el último pliegue coincide exactamente con la división clásica train/validación. Una validación única de 6 puntos hacía la elección casi aleatoria; el MAE medio de los 5 pliegues es el criterio (`--cv-splits`, por defecto 5).  
-3. Elegir la configuración con menor MAE CV (en nuestro caso, `random_forest_d2_l4`: `max_depth=2`, `min_samples_leaf=4`, CV MAE 2.279).  
+2. **Walk‑forward expansivo** sobre la ventana de calibración (train+validación, 36 filas): `TimeSeriesSplit(5)` evalúa cada candidata en **30 puntos fuera de muestra** — el último pliegue coincide exactamente con la división clásica train/validación. Una validación única de 6 puntos hacía la elección casi aleatoria; el MAE medio de los 5 pliegues es el criterio (`--cv-splits`, por defecto 5).  
+3. Elegir la candidata con menor MAE CV (en nuestro caso, `random_forest_d2_l4` en nivel: `max_depth=2`, `min_samples_leaf=4`, CV MAE 2.279).  
 4. **Reajustar** dicha configuración en **entrenamiento + validación** (36 filas).  
 5. Finalmente, evaluar una sola vez en el conjunto **prueba** jamás visto antes.  
 
@@ -210,10 +215,11 @@ Modelo final: Random Forest `d2_l4` (`max_depth=2`, `min_samples_leaf=4`), 12 ca
 
 *Lectura honesta:*
 
-* **Criterios libres de test:** el modelo gana con holgura en validación (2.615 vs 3.994 del mejor baseline) y en walk‑forward CV (2.279; las 6 variantes de RF ocupan los 6 primeros puestos, la elección de familia es robusta). El ajuste de hiperparámetros mejoró el CV de 2.498 (config por defecto d3_l2) a 2.279 (−9%) sin leer el test.
+* **Criterios libres de test:** el modelo gana con holgura en validación (2.615 vs 3.994 del mejor baseline) y en walk‑forward CV (2.279; las 6 variantes de RF en nivel ocupan los 6 primeros puestos, la elección de familia es robusta). El ajuste de hiperparámetros mejoró el CV de 2.498 (config por defecto d3_l2) a 2.279 (−9%) sin leer el test.
 * **Test (7 pts):** RF 3.544 vs MA(3) 3.608 — vuelve a superar al baseline, pero la diferencia está dentro del ruido de 7 puntos; no se afirma superioridad fina sobre MA(3) en test.
 * **Progresión de las tres versiones** (CV calibración / test): 39 feats config por defecto 2.442 / 3.455 → 12 feats config por defecto 2.498 / 3.941 → 12 feats ajustado **2.279 / 3.544**. En el protocolo más fiable (CV de 30 puntos) el paquete completo es el mejor de los tres; las fluctuaciones del test son ruido de 7 puntos y no deben guiar decisiones.
 * Hallazgo del ranking CV: la regresión lineal sin regularización explota en pliegues con poco train (CV MAE 36.7); entre lineales gana `ridge_a10.0` (4.39) — la regularización fuerte domina, consistente con la filosofía de bias de la cuadrícula.
+* **Representación del objetivo:** la hipótesis del diferenciado (Δcpu) fue puesta a prueba compitiendo las 36 candidatas en el CV. Rechazada para árboles — RF nivel 2.279 vs diferenciado 2.985, GB 2.808 vs 3.304 — pero confirmada para ridge (4.391 → 3.175, −28%). El modelo final queda en nivel; la representación es una decisión data‑driven del CV, no un supuesto.
 
 **Cobertura de intervalos en el conjunto de prueba (7 puntos):**
 
@@ -239,6 +245,8 @@ Para cada una de las ocho métricas objetivo (CPU promedio, CPU máximo, IO de d
 * **Selección**: RMSE dentro de muestra sobre la agregación horaria de datos reales (el mismo índice de tiempo usado para crear características).  
 * **Residuales**: guardados; posteriormente se muestrean con reposición (bootstrap) para añadir estocasticidad a las generaciones sintéticas.  
 * **Recorte**: las predicciones se fuerzan a rangos físicamente plausibles (p.ej., CPU ∈ [0,100], tasa de error ∈ [0,1]) y se cuentan eventos de recorte para diagnóstico.  
+
+Diagnóstico de soporte y señal (limitación #10): al ajustarse, el modelo registra en sus metadatos el **rango observado** de `workload_intensity` ([70, 10230] en esta ventana) y la **correlación feature↔target** por métrica. En los datos reales todas son ≈ 0 (p. ej. `cpu_avg`: Pearson −0.12, Spearman +0.02; ningún target supera |0.26|): el modelo de respuesta se ajustó prácticamente sin señal carga→métrica. Cada escenario generado se compara contra ese rango y los que lo exceden quedan **marcados como extrapolación** (`within_observed_support=false` en el manifiesto y advertencia en consola) — 7 de los 10 escenarios de la configuración actual están fuera del soporte.
 
 Modelo pickleado + metadatos guardados en `artifacts/synthetic_v1/response_model.joblib`.  
 
@@ -311,7 +319,7 @@ Procedimiento para cada experimento:
 
 Porque las características sintéticas se derivan de un modelo de respuesta **ya ajustado con los mismos datos reales**, no aportan información nueva más allá de lo que el modelo pudo aprender del conjunto real de entrenamiento. Por consiguiente, el MAE de prueba permanece igual.  
 
-**Veredicto:** `reject_augmentation` – el aumento **no** mejoró el rendimiento de predicción, lo cual es la conclusión correcta y honesta.  
+**Veredicto:** `reject_augmentation` – el aumento **no** mejoró el rendimiento de predicción, lo cual es la conclusión correcta y honesta. La limitación #10 da la explicación mecanística: el modelo de respuesta se ajustó sin señal carga→métrica en la ventana real (correlaciones ≈ 0), así que las características sintéticas no aportaban información nueva que transferir.  
 
 ### 4.5 Salidas Sintéticas Adicionales  
 
@@ -339,7 +347,7 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
   - `real_model/feature_dictionary.csv` – las 37 candidatas con tipo (requerida/opcional/derivada/bandera), bandera `selected` y `dropped_reason` (variance/collinear/ranking_cut).  
   - `real_model/feature_selection.json` – reporte completo de la selección: podas, ranking de importancias por modelo, seleccionadas, notas.  
   - `real_model/feature_importances.csv` – degradación de MAE por permutación, promediada por folds y modelos.  
-  - `real_model/cv_results.csv` – las 18 configuraciones candidatas de la cuadrícula con el MAE de cada pliegue walk‑forward y el MAE CV medio, ordenadas de mejor a peor.  
+  - `real_model/cv_results.csv` – las 36 candidatas (18 configuraciones × 2 representaciones del objetivo) con el MAE de cada pliegue walk‑forward, el MAE CV medio y la columna `target_transform`, ordenadas de mejor a peor.  
   - `real_model/*_metrics.json` – métricas de entrenamiento/validación/prueba para LR, Ridge, RF, GB.  
   - `real_model/predictions_test.csv` – periodo, objetivo, predicciones de cada modelo + predicciones de baselines + cuatro bandas de intervalo: `y_lower/y_upper` (jackknife+ garantizado, primario), `*_split_conformal` (exacto), `*_jackknife_nominal` y `*_empirical` (legacy).
   - `real_model/residuals_test.csv` – residuales de cada modelo.  
@@ -357,6 +365,79 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
   - `augmentation_v1/response_model.joblib` (igual que el de sintéticos).  
   - `augmentation_v1/synthetic/*.csv` – matrices de características usadas en experimentos B/C.  
 
+- **Gráficas de explicabilidad**  
+  - `real_model/plots/*.png` – diez figuras generadas automáticamente por `train-real` (ver sección 6).  
+
+---  
+
+## Galería de Gráficas (Explicabilidad)
+
+Diez figuras PNG (150 dpi) se generan automáticamente al final de `train-real` con el módulo `plots.py` y se escriben en `artifacts/real_model/plots/`. La generación es *best effort*: si matplotlib falla, el entrenamiento no se interrumpe. Todas se reconstruyen con los datos en memoria de la ejecución — sin releer artefactos — por lo que siempre son consistentes con las métricas reportadas.
+
+> Los PNG no se commitean (como todo artefacto, ver §12): este documento los referencia con rutas relativas. En un clon fresco se regeneran con `./scripts/train_real.sh`.
+
+### 6.1 Serie horaria del objetivo y división temporal
+
+![Serie horaria de CPU con la division temporal 70/15/15](artifacts/real_model/plots/01_target_series.png)
+
+**Qué mirar:** la escala real del problema — la historia útil es corta (43 h) y el test son 7 puntos. Evidencia visual de por qué el test no puede ser el criterio de decisión (§3.6): cualquier diferencia entre modelos en esa ventana es ruido.
+
+### 6.2 Distribución del CPU observado
+
+![Distribucion del CPU promedio horario](artifacts/real_model/plots/02_target_distribution.png)
+
+**Qué mirar:** el rango operativo del SKU serverless y la forma de la carga observada (media/mediana/std anotados). El target tiene valores cercanos a cero en varias horas — motivo por el que se reporta sMAPE en lugar de MAPE (§3.5).
+
+### 6.3 Respuesta carga → CPU
+
+![Respuesta workload_intensity -> cpu_avg en escala logaritmica](artifacts/real_model/plots/03_workload_vs_cpu.png)
+
+**Qué mirar:** la relación `workload_intensity` → `cpu_avg` coloreada por hora pico/valle. El eje x es **logarítmico** porque la carga es bursty (la mayoría de horas en ~80‑300 más ráfagas de hasta 10230; en escala lineal todo se comprime contra el eje). Las correlaciones anotadas (Pearson −0.12, Spearman 0.02) son la evidencia visual de la **limitación #10**: en esta ventana el CPU está desacoplado de la carga, el modelo de respuesta de la Fase B (§4.1) se ajustó sin señal que aprender, y por eso los experimentos de aumento resultaron neutros (§4.5).
+
+### 6.4 Ausencias por métrica
+
+![Porcentaje de ausencias por metrica](artifacts/real_model/plots/04_missingness.png)
+
+**Qué mirar:** qué columnas requerían banderas `feature_missing_*` y cuáles estaban completas. Las métricas con 0 % de ausencias explican por qué 11 banderas fueron constantes y terminaron podadas por varianza (§3.2.1); las ausentes dejan bandera en lugar de cero silencioso.
+
+### 6.5 Correlación de las características seleccionadas
+
+![Correlacion de las 12 caracteristicas seleccionadas](artifacts/real_model/plots/05_correlation_heatmap.png)
+
+**Qué mirar:** pares redundantes que sobrevivieron (correlación alta pero < 0.999, p. ej. `storage_used_bytes` vs `storage_used_pct`) y la relativa independencia de `storage_used_bytes` y `memory_percent` — las dos características más importantes — lo cual es deseable: aportan señal no solapada.
+
+### 6.6 Importancias por permutación
+
+![Importancia por permutacion de la seleccion de caracteristicas](artifacts/real_model/plots/06_feature_importances.png)
+
+**Qué mirar:** `storage_used_bytes` (0.90) y `memory_percent` (0.65) dominan el ranking; `day_of_week` tiene importancia exactamente 0 (con 2 días de historia no puede discriminar) y las features de calendario (`hour_sin/cos`, `is_peak_hour`) obtuvieron importancia **negativa** — permutarlas mejoraba el MAE, es decir, estaban dañando. Las barras marcadas con `*` son las 12 seleccionadas.
+
+### 6.7 Predicciones del test con banda conformal
+
+![Predicciones del test con banda conformal y baselines](artifacts/real_model/plots/07_test_predictions.png)
+
+**Qué mirar:** la gráfica central de explicabilidad del modelo: cpu_avg real (+1h), predicción puntual del ganador, banda conformal primaria (garantía ≥80 %) y los tres baselines. Muestra a la vez la calidad del punto (RF vs MA(3)) y el ancho honesto de la incertidumbre; la cobertura medida (71 % con 5/7 puntos dentro) está en el título.
+
+### 6.8 Ranking walk-forward de las candidatas
+
+![Ranking walk-forward de las 36 candidatas](artifacts/real_model/plots/08_cv_results.png)
+
+**Qué mirar:** el veredicto de la selección con 30 puntos fuera de muestra (§3.4): las 6 variantes de RF en nivel dominan el ranking (elección de familia robusta); el color separa representaciones — el diferenciado perjudica a los árboles y ayuda a ridge, visible barra a barra. La ganadora (`random_forest_d2_l4`) lleva marco negro.
+
+### 6.9 Residuos del test por hora
+
+![Residuos del test por hora](artifacts/real_model/plots/09_test_residuals.png)
+
+**Qué mirar:** signo y magnitud del error (real − predicción) hora a hora, con el MAE anotado. Permite ver si los errores grandes se concentran en horas pico o valle — insumo para el análisis de deriva futura (§9).
+
+### 6.10 Comparación de construcciones de intervalo
+
+![Semiancho y cobertura medida por construccion de intervalo](artifacts/real_model/plots/10_interval_comparison.png)
+
+**Qué mirar:** el trade-off ancho/cobertura de las cuatro construcciones calibradas: primario jackknife+ garantizado (±5.20, 71 %), split conformal exacto (±10.38, 100 %), jackknife+ nominal (±3.84, 57 %) y empírico legacy (42.9 %). El primario logra la garantía formal ≥80 % con casi la mitad del ancho del exacto.
+
+> Las gráficas 6.1–6.6 explican los **datos** (por qué la selección eliminó lo que eliminó); 6.7, 6.9 y 6.10 explican el **modelo y su incertidumbre**; 6.8 explica la **decisión de selección**. Para la defensa, la secuencia sugerida es 6.1 → 6.4 → 6.6 → 6.8 → 6.7.
+
 ---  
 
 ## Estado del Conjunto de Pruebas  
@@ -369,9 +450,12 @@ Todos los artefactos residen bajo `artifacts/` (véase árbol en la sección ant
 | `tests/test_conformal.py`                 | 12/12 |
 | `tests/test_selection.py`                 | 9/9 |
 | `tests/test_tuning.py`                    | 8/8 |
+| `tests/test_transforms.py`               | 9/9 |
+| `tests/test_plots.py`                    | 6/6 |
+| `tests/test_response_support.py`         | 4/4 |
 | `tests/test_no_future_leakage.py`         | 4/4 |
 | `tests/test_temporal_split.py`            | 3/3 |
-| **Total**                                 | **54/54** *(conformal: rangos con corrección de muestra finita, garantía de cobertura Monte Carlo, scores jackknife+; selección: podas de varianza/colinearidad, ranking por permutación, piso mínimo; tuning: cuadrícula, walk-forward, conteo de puntos de evaluación, determinismo)*
+| **Total**                                 | **73/73** *(conformal: rangos con corrección de muestra finita, garantía de cobertura Monte Carlo, scores jackknife+; selección: podas de varianza/colinearidad, ranking por permutación, piso mínimo; tuning: cuadrícula, walk-forward, conteo de puntos de evaluación, determinismo; transforms: reconstrucción exacta del nivel, candidatas diferenciadas, retrocompatibilidad con specs; plots: render de figuras con datos sintéticos; response support: rango observado, correlaciones, detección de extrapolación)*
 
 Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna falla.  
 
@@ -390,6 +474,7 @@ Todas las pruebas se ejecutan con `PYTHONPATH=src pytest tests/ -v`. Ninguna fal
 | 7 | **Ausencia de validación externa** – ningún conjunto de reserva de otro período de tiempo o distinto recurso para probar aprendizaje de transferencia. | Plan: adquirir un segundo recurso o una ventana temporal posterior para validación cruzada. |
 | 8 | **Ruido sintético determinístico** – distribución Normal truncada con σ fijo; podría no capturar heterocedasticidad. | Futuro: modelar la varianza del ruido como función de la intensidad de carga de trabajo (por ejemplo, mediante GAMLSS). |
 | 9 | **Conjunto limitado de características** – solo latencia, memoria, sesiones, almacenamiento, IO; faltan e.g., tempdb, bloqueo, tendencias de interbloqueo (aunque el conteo de interbloqueo está presente). | Ampliar la ingeniería de características si llegan nuevas métricas. |  
+| 10 | **Desacople carga→métricas en la ventana observada** – la carga es bursty (mediana 165, p95 1668, máx 10230) y el CPU permanece bajo (máx 15.8%); la correlación workload↔`cpu_avg` es ≈ 0 (Pearson −0.12, Spearman +0.02) y ningún target del modelo de respuesta supera |0.26|. | **Fase A:** autodetectado por la selección — `workload_intensity` quedó con importancia 0.027 (puesto 8/12) y su lag con importancia negativa; el modelo predice desde `storage_used_bytes`/`memory_percent`. El techo es de generalización: sin evidencia si la carga cambia de régimen en producción. **Fase B:** el modelo de respuesta se ajustó sin señal carga→métrica, de modo que los escenarios sintéticos (7 de 10 fuera del rango observado [70, 10230]) extrapolan sin soporte empírico; explica el `reject_augmentation` de §4.5. Mitigado con el diagnóstico de soporte: rango observado + correlaciones por target en los metadatos del modelo y bandera `within_observed_support` por escenario (§4.1). Hipótesis no verificables con n=44: el SKU serverless escala absorbiendo la demanda, las ráfagas son sub‑horarias y el promedio horario las diluye, o el CPU está dominado por memoria/almacenamiento. |
 
 ---  
 
@@ -493,7 +578,7 @@ A continuación se lista alfabéticamente cada columna que puede aparecer en la 
    # opcional: --max-features 15 (tope de selección; 0 la desactiva),
    #           --cv-splits 5 (folds walk-forward), --coverage 0.80
    ```  
-   Los resultados aparecen en `artifacts/real_model/`.  
+   Los resultados aparecen en `artifacts/real_model/` y las diez gráficas de explicabilidad en `artifacts/real_model/plots/` (sección 6).  
 8. **Generar escenarios sintéticos** (Fase B):  
    ```bash
    ./scripts/generate_synthetic.sh
@@ -525,6 +610,7 @@ Todos los pasos son idempotentes; volver a ejecutarlos no duplicará datos graci
 | Conjunto de baselines | naive_last, MA(3), seasonal_naive(24h) | Simple, interpretable, tal como solicita el especificación. |
 | Portafolio de modelos | LR → Ridge → RF → GBM explorados con cuadrícula orientada a bias (18 configs) | Permite observar si la no linealidad mejora el desempeño; las 6 variantes de RF ocuparon los 6 primeros puestos del CV y `random_forest_d2_l4` resultó vencedor. |
 | Criterio de selección | MAE medio de walk‑forward CV (5 folds expansivos, 30 puntos) sobre train+validación; reentrenar en entrenamiento + validación y evaluar una sola vez en prueba | Una validación única de 6 puntos hacía la elección casi aleatoria; el CV usa 30 puntos fuera de muestra sin tocar el test y el último pliegue coincide con la división clásica (comparabilidad con ejecuciones anteriores). |
+| Representación del objetivo | Nivel y Δcpu compiten como candidatas en el mismo CV; el ganador queda en nivel | La serie es casi random‑walk (MASE ≈ 1.5), pero diferenciar ayuda a ridge (−28%) y daña a los árboles; la decisión es data‑driven y auditable en `cv_results.csv` en vez de un supuesto fijo. |
 | Selección de características | Poda de varianza y colinearidad + tope de 15 por ranking de permutación (promedio sobre 4 modelos y 3 folds expansivos), calibrado solo con train+validación | La matriz era más ancha que larga (37 columnas / 36 filas); la selección elimina ruido determinísticamente y reduce el ratio a 0.33 sin costo medible en walk‑forward. `--max-features 0` la desactiva. |
 | Intervalos de predicción | Predicción conforme con corrección de muestra finita: jackknife+ garantizado (primario, 1−α/2), split conformal exacto y jackknife+ nominal; el método empírico se conserva como legacy | Garantía formal de cobertura bajo intercambiabilidad, exacta en muestra finita; el jackknife+ garantizado alcanza la misma garantía que el split conformal con ~la mitad del ancho al usar 36 scores LOO en lugar de 6 residuos de validación. La cobertura medida siempre se reporta junto a la nominal. |
 | Generación sintética | Modelo de respuesta (intensidad de carga → métricas) + muestreo bootstrap de residuales | Preserva la distribución conjunta y permite escenarios controlados. |

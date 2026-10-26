@@ -390,27 +390,33 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             f"{len(X_calib)} rows (need at least 8)"
         )
 
-    tune_catalogue = tn.grid_catalogue(seed)
-    cv_results = tn.evaluate_candidates(tune_catalogue, X_calib, y_calib, n_splits=cv_splits)
+    level_index = (
+        selected_columns.index("cpu_avg") if "cpu_avg" in selected_columns else None
+    )
+    candidates = tn.candidate_catalogue(seed, level_index=level_index)
+    cv_results = tn.evaluate_candidates(candidates, X_calib, y_calib, n_splits=cv_splits)
     n_eval_points = tn.evaluation_points(len(X_calib), cv_splits)
+    n_diff = sum(1 for candidate in candidates if candidate.differenced)
     print(
-        f"[train-real] walk-forward CV: {len(tune_catalogue)} candidates, "
+        f"[train-real] walk-forward CV: {len(candidates)} candidates "
+        f"({len(candidates) - n_diff} level + {n_diff} differenced), "
         f"{cv_splits} folds, {n_eval_points} evaluation points over "
         f"{len(X_calib)} calibration rows"
     )
     for result in cv_results[:5]:
         folds = " ".join(f"{score:.2f}" for score in result.fold_maes)
         print(
-            f"[train-real]   {result.spec.name:28s} CV MAE={result.mean_mae:.4f}  folds=[{folds}]"
+            f"[train-real]   {result.candidate.name:32s} CV MAE={result.mean_mae:.4f}  folds=[{folds}]"
         )
     if len(cv_results) > 5:
         print(f"[train-real]   ... and {len(cv_results) - 5} more candidates (cv_results.csv)")
     best_cv = cv_results[0]
-    best_spec = best_cv.spec
-    best_name = best_spec.name
+    best_candidate = best_cv.candidate
+    best_spec = best_candidate.spec
+    best_name = best_candidate.name
     print(
         f"[train-real] selected model (walk-forward CV MAE): {best_name} "
-        f"({best_cv.mean_mae:.4f})"
+        f"({best_cv.mean_mae:.4f}, target={best_candidate.transform_name})"
     )
 
     # --- selected model on the classic split (continuity metrics) -----------
@@ -419,9 +425,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     # the previous runs.
     train_metrics: dict[str, Any] = {}
     validation_metrics: dict[str, Any] = {}
-    split_model = md.fit_model(best_spec, X_train, y_train)
-    pred_train_selected = md.predict_model(split_model, X_train)
-    pred_validation = md.predict_model(split_model, X_validation)
+    split_predictor = tn.fit_candidate(best_candidate.clone(), X_train, y_train)
+    pred_train_selected = tn.predict_candidate(split_predictor, X_train)
+    pred_validation = tn.predict_candidate(split_predictor, X_validation)
     validation_predictions: dict[str, np.ndarray] = {best_name: pred_validation}
     train_metrics[best_name] = ev.evaluate(y_train.to_numpy(), pred_train_selected, scale=scale)
     validation_metrics[best_name] = ev.evaluate(
@@ -452,8 +458,8 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     # Refit on train + validation: the test set is touched only here.
     combined = pd.concat([train_imputed, validation_imputed], ignore_index=True)
     X_combined, y_combined = md.build_matrix(combined, selected_columns, target)
-    final_model = md.fit_model(best_spec, X_combined, y_combined)
-    pred_test = md.predict_model(final_model, X_test)
+    final_model = tn.fit_candidate(best_candidate.clone(), X_combined, y_combined)
+    pred_test = tn.predict_candidate(final_model, X_test)
     test_metrics[best_name] = ev.evaluate(y_test.to_numpy(), pred_test, scale=scale)
 
     # --- prediction intervals: conformal, calibrated without the test set ---
@@ -485,7 +491,8 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         def _fit_predict(
             X_tr: pd.DataFrame, y_tr: pd.Series, X_new: pd.DataFrame
         ) -> np.ndarray:
-            return md.predict_model(md.fit_model(best_spec, X_tr, y_tr), X_new)
+            predictor = tn.fit_candidate(best_candidate.clone(), X_tr, y_tr)
+            return tn.predict_candidate(predictor, X_new)
 
         loo_scores = cf.jackknife_plus_scores(_fit_predict, X_combined, y_combined)
         jackknife_nominal = cf.jackknife_plus_interval(loo_scores, coverage=coverage_level)
@@ -568,14 +575,18 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "period_type": settings.period_type,
             "split_strategy": "temporal_70_15_15",
             "selected_on": "walk_forward_cv_mae",
+            "target_transform": best_candidate.transform_name,
             "model_selection": {
                 "protocol": "expanding_window_walk_forward",
                 "n_splits": cv_splits,
                 "n_calibration_rows": int(len(X_calib)),
                 "n_evaluation_points": int(n_eval_points),
                 "n_candidates": len(cv_results),
-                "criterion": "mean MAE across expanding-window folds (test set untouched)",
+                "n_differenced_candidates": int(n_diff),
+                "target_representations": ["level", "diff"],
+                "criterion": "mean MAE across expanding-window folds on the level scale (test set untouched)",
                 "selected_model": best_name,
+                "selected_target_transform": best_candidate.transform_name,
                 "selected_cv_mae": best_cv.mean_mae,
                 "grid": tn.grid_description(),
                 "top5": [result.as_row() for result in cv_results[:5]],
@@ -759,6 +770,57 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         encoding="utf-8",
     )
 
+    # --- explainability plots ------------------------------------------------
+    # Best effort: a plotting failure must never break the training run.
+    interval_summary = [
+        {
+            "label": "jackknife+ garantizado (primario)",
+            "half_width": primary_interval.half_width,
+            "coverage": interval_stats["interval_coverage"],
+        },
+        {
+            "label": "split conformal exacto",
+            "half_width": split_interval.half_width,
+            "coverage": split_stats["interval_coverage"],
+        },
+        {
+            "label": "jackknife+ nominal",
+            "half_width": jackknife_nominal.half_width if jackknife_nominal is not None else float("nan"),
+            "coverage": nominal_stats.get("interval_coverage"),
+        },
+        {
+            "label": "empirico legacy",
+            "half_width": max(abs(legacy_interval.lower_offset), abs(legacy_interval.upper_offset)),
+            "coverage": legacy_stats["interval_coverage"],
+        },
+    ]
+    try:
+        from . import plots as pl
+
+        written_plots = pl.generate_all(
+            output_dir,
+            modeling=modeling,
+            train=train,
+            validation=validation,
+            test=test,
+            target=target,
+            X_calib=X_combined,
+            selection_report=selection_report,
+            cv_results=cv_results,
+            y_test_true=y_test.to_numpy(dtype=float),
+            pred_test=pred_test,
+            lower=lower,
+            upper=upper,
+            baseline_predictions={
+                name: test[f"pred_{name}"].to_numpy(dtype=float) for name in baseline_specs
+            },
+            model_label=best_name,
+            interval_summary=interval_summary,
+        )
+        print(f"[train-real] {len(written_plots)} explainability plots written to {output_dir / 'plots'}")
+    except Exception as exc:  # noqa: BLE001 - plots are best effort
+        print(f"[train-real] warning: plots were not generated: {exc}")
+
     _register_lineage(settings=settings, metadata=metadata, manifest=manifest)
     print(f"[train-real] artifacts written to {output_dir}")
     return 0
@@ -793,6 +855,13 @@ def _real_model_readme(
         "",
         f"- Modelo seleccionado: `{model_name}` ({selection_text}).",
         f"- Target: `{target}` (CPU promedio de la ventana siguiente, +1h).",
+        "- Representación del objetivo: "
+        + (
+            "diferenciada (Δcpu, reintegrada al nivel)"
+            if metadata.get("target_transform") == "diff"
+            else "nivel (sin diferenciar)"
+        )
+        + " — ambas compitieron en el walk-forward CV.",
         f"- Filas del dataset: {manifest['row_count']}.",
         f"- Periodo: {manifest['period_start_utc']} → {manifest['period_end_utc']}.",
         f"- `dataset_hash`: `{manifest['dataset_hash']}`.",
