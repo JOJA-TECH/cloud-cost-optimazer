@@ -15,8 +15,9 @@ migration (``sql/create_forecasting_schema.sql``).
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 import pandas as pd
 import psycopg
@@ -24,7 +25,12 @@ from psycopg import sql as pgsql
 
 from .config import SQL_DIR, Settings, redact_dsn
 
-SCHEMA_BASELINE = Path(__file__).resolve().parents[2] / "databases" / "cco_data" / "cco_data_schema.sql"
+SCHEMA_BASELINE = (
+    Path(__file__).resolve().parents[2]
+    / "databases"
+    / "cco_data"
+    / "cco_data_schema.sql"
+)
 FORECASTING_MIGRATION = SQL_DIR / "create_forecasting_schema.sql"
 
 
@@ -32,7 +38,9 @@ class DatabaseError(RuntimeError):
     """Raised when a database operation cannot be completed."""
 
 
-def connect(dsn: str, *, read_only: bool = False, autocommit: bool = True) -> psycopg.Connection:
+def connect(
+    dsn: str, *, read_only: bool = False, autocommit: bool = True
+) -> psycopg.Connection:
     """Open a connection to ``dsn``.
 
     ``read_only=True`` forces a read-only transaction so the source database
@@ -62,7 +70,9 @@ def connection(
         conn.close()
 
 
-def query(conn: psycopg.Connection, statement: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
+def query(
+    conn: psycopg.Connection, statement: str, params: Sequence[Any] | None = None
+) -> list[dict[str, Any]]:
     """Run ``statement`` and return the rows as plain dictionaries."""
     with conn.cursor() as cur:
         cur.execute(statement, params or ())
@@ -158,7 +168,17 @@ def _executemany(
 
 
 def table_row_counts(
-    conn: psycopg.Connection, schemas: Sequence[str] = ("catalog", "core", "raw", "feat", "ml", "opt", "synthetic", "forecasting")
+    conn: psycopg.Connection,
+    schemas: Sequence[str] = (
+        "catalog",
+        "core",
+        "raw",
+        "feat",
+        "ml",
+        "opt",
+        "synthetic",
+        "forecasting",
+    ),
 ) -> pd.DataFrame:
     """Return the row count of every base table of the given schemas."""
     rows = query(

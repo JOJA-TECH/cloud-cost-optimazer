@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import pandas as pd
 import psycopg
@@ -208,14 +209,14 @@ class ImportReport:
 
 
 def _now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def _as_utc(value: Any) -> dt.datetime | None:
     if value is None:
         return None
     if isinstance(value, dt.datetime):
-        return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
     return pd.Timestamp(value).tz_convert("UTC").to_pydatetime()
 
 
@@ -227,7 +228,14 @@ def _iso(value: Any) -> str | None:
 def ensure_metric_catalog(conn: psycopg.Connection) -> None:
     """Register the metric codes the real telemetry uses but the baseline lacks."""
     with conn.cursor() as cur:
-        for code, display, unit, source, key_feature, description in EXTRA_METRIC_CATALOG:
+        for (
+            code,
+            display,
+            unit,
+            source,
+            key_feature,
+            description,
+        ) in EXTRA_METRIC_CATALOG:
             cur.execute(
                 """
                 insert into catalog.metric_catalog
@@ -239,7 +247,9 @@ def ensure_metric_catalog(conn: psycopg.Connection) -> None:
             )
 
 
-def _resolve_experiment(source: psycopg.Connection, settings: Settings) -> dict[str, Any]:
+def _resolve_experiment(
+    source: psycopg.Connection, settings: Settings
+) -> dict[str, Any]:
     if settings.experiment_uid:
         rows = query(
             source,
@@ -288,7 +298,9 @@ def _ensure_resource(
         return int(row[0]["resource_id"])
 
     suffix = str(resource_uid).split("-")[0]
-    name = settings.resource_name if is_primary else f"{settings.resource_name}-{suffix}"
+    name = (
+        settings.resource_name if is_primary else f"{settings.resource_name}-{suffix}"
+    )
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -302,7 +314,9 @@ def _ensure_resource(
             (
                 str(resource_uid),
                 settings.resource_provider,
-                settings.extra.get("subscription_id", "00000000-0000-0000-0000-000000000000"),
+                settings.extra.get(
+                    "subscription_id", "00000000-0000-0000-0000-000000000000"
+                ),
                 settings.extra.get("resource_group", "rg-cco-forecasting"),
                 settings.extra.get("server_name", settings.resource_name),
                 name,
@@ -316,7 +330,10 @@ def _ensure_resource(
                 settings.extra.get("kind", "v12.0,user,vcore,serverless,freelimit"),
             ),
         )
-        cur.execute("select resource_id from core.resource where resource_uid = %s", (str(resource_uid),))
+        cur.execute(
+            "select resource_id from core.resource where resource_uid = %s",
+            (str(resource_uid),),
+        )
         found = cur.fetchone()
     if not found:
         raise RuntimeError(f"could not create the resource {resource_uid}")
@@ -324,7 +341,10 @@ def _ensure_resource(
 
 
 def _ensure_config_snapshot(
-    conn: psycopg.Connection, settings: Settings, resource_id: int, observed_at: dt.datetime
+    conn: psycopg.Connection,
+    settings: Settings,
+    resource_id: int,
+    observed_at: dt.datetime,
 ) -> None:
     sku_rows = query(
         conn,
@@ -332,7 +352,9 @@ def _ensure_config_snapshot(
         (settings.resource_sku_code or "GP_S_Gen5_2",),
     )
     sku_id = int(sku_rows[0]["sku_id"]) if sku_rows else None
-    capacity = float(sku_rows[0]["capacity_vcores"]) if sku_rows else settings.resource_vcores
+    capacity = (
+        float(sku_rows[0]["capacity_vcores"]) if sku_rows else settings.resource_vcores
+    )
     compute_model = settings.resource_compute_model or (
         str(sku_rows[0]["compute_model"]) if sku_rows else "serverless"
     )
@@ -381,10 +403,14 @@ def _import_collector_runs(
                 str(run["source"]),
                 _as_utc(run["started_at_utc"]),
                 _as_utc(run["finished_at_utc"]),
-                "ok" if run["status"] in ("ok", "succeeded") else ("partial" if run["status"] == "partial" else "error"),
+                "ok"
+                if run["status"] in ("ok", "succeeded")
+                else ("partial" if run["status"] == "partial" else "error"),
                 int(run["rows_written"] or 0),
                 run["error_message"],
-                json.dumps(run["request_metadata_json"]) if run.get("request_metadata_json") else None,
+                json.dumps(run["request_metadata_json"])
+                if run.get("request_metadata_json")
+                else None,
                 json.dumps({"source_collector_run_uid": str(run["collector_run_uid"])}),
             )
         )
@@ -444,10 +470,15 @@ def _import_metric_readings(
                 value,
                 value,
                 value,
-                1 if rec.source == "workload_self" and rec.local_metric_code.endswith("_operations") else None,
+                1
+                if rec.source == "workload_self"
+                and rec.local_metric_code.endswith("_operations")
+                else None,
                 rec.quality_status,
                 list(rec.quality_warnings or []),
-                json.dumps(rec.source_payload_json) if rec.source_payload_json else None,
+                json.dumps(rec.source_payload_json)
+                if rec.source_payload_json
+                else None,
                 str(rec.source),
             )
         )
@@ -567,7 +598,10 @@ def _import_db_resource_stats(
 
 
 def _import_workload_runs(
-    source: psycopg.Connection, conn: psycopg.Connection, resource_id: int, experiment_uid: str
+    source: psycopg.Connection,
+    conn: psycopg.Connection,
+    resource_id: int,
+    experiment_uid: str,
 ) -> int:
     runs = query(
         source,
@@ -648,7 +682,11 @@ def _import_workload_cycles(conn: psycopg.Connection, resource_id: int) -> int:
         "select workload_run_id, started_at_utc, finished_at_utc from core.workload_run order by started_at_utc",
     )
     run_bounds = [
-        (int(r["workload_run_id"]), _as_utc(r["started_at_utc"]), _as_utc(r["finished_at_utc"]))
+        (
+            int(r["workload_run_id"]),
+            _as_utc(r["started_at_utc"]),
+            _as_utc(r["finished_at_utc"]),
+        )
         for r in run_rows.to_dict("records")
     ]
 
@@ -664,7 +702,13 @@ def _import_workload_cycles(conn: psycopg.Connection, resource_id: int) -> int:
                 run_id = rid
                 break
         if run_id is None:
-            orphans.append((ts, rec.intensity, int(rec.offered) if rec.offered is not None else None))
+            orphans.append(
+                (
+                    ts,
+                    rec.intensity,
+                    int(rec.offered) if rec.offered is not None else None,
+                )
+            )
             continue
         rows.append(
             (
@@ -698,7 +742,9 @@ def _import_workload_cycles(conn: psycopg.Connection, resource_id: int) -> int:
 
 
 def _ensure_orphan_workload_run(
-    conn: psycopg.Connection, resource_id: int, orphans: Sequence[tuple[dt.datetime, Any, Any]]
+    conn: psycopg.Connection,
+    resource_id: int,
+    orphans: Sequence[tuple[dt.datetime, Any, Any]],
 ) -> int:
     """Create the run that holds the applied-load minutes without a declared run."""
     start = min(item[0] for item in orphans)
@@ -717,7 +763,9 @@ def _ensure_orphan_workload_run(
                 start,
                 end,
                 (end - start).total_seconds(),
-                json.dumps({"attribution": "no_active_run", "cycle_count": len(orphans)}),
+                json.dumps(
+                    {"attribution": "no_active_run", "cycle_count": len(orphans)}
+                ),
                 "Minutos de carga aplicada sin corrida declarada en la fuente.",
             ),
         )
@@ -762,7 +810,9 @@ def _canonical_hourly(conn: psycopg.Connection, resource_id: int) -> pd.DataFram
     frame["period_start_utc"] = frame["timestamp_utc"].dt.floor("h")
     frame["priority"] = frame["source"].map(SOURCE_PRIORITY).fillna(99)
     frame = frame.sort_values(["period_start_utc", "metric_code", "priority", "source"])
-    canonical = frame.groupby(["period_start_utc", "metric_code"], as_index=False).first()
+    canonical = frame.groupby(
+        ["period_start_utc", "metric_code"], as_index=False
+    ).first()
     return canonical
 
 
@@ -833,26 +883,44 @@ def _build_hourly_features(
         return 0
 
     pivot_avg = canonical.pivot_table(
-        index="period_start_utc", columns="metric_code", values="avg_value", aggfunc="first"
+        index="period_start_utc",
+        columns="metric_code",
+        values="avg_value",
+        aggfunc="first",
     )
     pivot_max = canonical.pivot_table(
-        index="period_start_utc", columns="metric_code", values="max_value", aggfunc="first"
+        index="period_start_utc",
+        columns="metric_code",
+        values="max_value",
+        aggfunc="first",
     )
     pivot_min = canonical.pivot_table(
-        index="period_start_utc", columns="metric_code", values="min_value", aggfunc="first"
+        index="period_start_utc",
+        columns="metric_code",
+        values="min_value",
+        aggfunc="first",
     )
     pivot_sum = canonical.pivot_table(
-        index="period_start_utc", columns="metric_code", values="sum_value", aggfunc="first"
+        index="period_start_utc",
+        columns="metric_code",
+        values="sum_value",
+        aggfunc="first",
     )
     pivot_n = canonical.pivot_table(
         index="period_start_utc", columns="metric_code", values="n", aggfunc="first"
     )
     for frame in (pivot_avg, pivot_max, pivot_min, pivot_sum, pivot_n):
         for column in frame.columns:
-            frame[column] = pd.to_numeric(frame[column], errors="coerce").astype("float64")
-    sources = (
-        canonical.assign(code=canonical["metric_code"] + "=" + canonical["source"])
-        .pivot_table(index="period_start_utc", columns="metric_code", values="source", aggfunc="first")
+            frame[column] = pd.to_numeric(frame[column], errors="coerce").astype(
+                "float64"
+            )
+    sources = canonical.assign(
+        code=canonical["metric_code"] + "=" + canonical["source"]
+    ).pivot_table(
+        index="period_start_utc",
+        columns="metric_code",
+        values="source",
+        aggfunc="first",
     )
 
     index = pivot_avg.index
@@ -883,7 +951,10 @@ def _build_hourly_features(
     for period in index:
         period_utc = period.to_pydatetime()
         end_utc = (period + pd.Timedelta(hours=1)).to_pydatetime()
-        row: dict[str, Any] = {"period_start_utc": period_utc, "period_end_utc": end_utc}
+        row: dict[str, Any] = {
+            "period_start_utc": period_utc,
+            "period_end_utc": end_utc,
+        }
 
         def avg_of(code: str) -> float | None:
             if code not in pivot_avg.columns:
@@ -910,9 +981,8 @@ def _build_hourly_features(
             return 0 if pd.isna(value) else int(value)
 
         cpu_values = pivot_avg.get("cpu_percent")
-        cpu_samples: list[float] = []
         if cpu_values is not None and not pd.isna(cpu_values.at[period]):
-            cpu_samples = [float(cpu_values.at[period])]
+            [float(cpu_values.at[period])]
 
         row.update(
             {
@@ -969,9 +1039,7 @@ def _build_hourly_features(
                     }
                 ),
                 "coverage_json": json.dumps(
-                    {
-                        code: n_of(code) for code in pivot_n.columns if n_of(code) > 0
-                    }
+                    {code: n_of(code) for code in pivot_n.columns if n_of(code) > 0}
                 ),
                 "quality_status": "usable",
                 "quality_warnings": [],
@@ -1056,14 +1124,16 @@ def import_real_data(
     """
     experiment = _resolve_experiment(source, settings)
     experiment_uid = str(experiment["experiment_uid"])
-    report = ImportReport(experiment_uid=experiment_uid, resource_uid=str(experiment["resource_uid"]))
+    report = ImportReport(
+        experiment_uid=experiment_uid, resource_uid=str(experiment["resource_uid"])
+    )
 
     ensure_metric_catalog(conn)
 
     resources = _discover_resources(source, experiment_uid)
     if not resources:
         raise ValueError("the source experiment has no metric readings")
-    primary = resources[0]
+    resources[0]
 
     for index, resource in enumerate(resources):
         is_primary = index == 0

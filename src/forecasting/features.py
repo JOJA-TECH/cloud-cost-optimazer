@@ -24,14 +24,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 #: Calendar features derived from the window start timestamp.
-CALENDAR_FEATURES: tuple[str, ...] = ("hour_sin", "hour_cos", "day_of_week", "is_peak_hour")
+CALENDAR_FEATURES: tuple[str, ...] = (
+    "hour_sin",
+    "hour_cos",
+    "day_of_week",
+    "is_peak_hour",
+)
 
 #: Lag horizons, in hourly periods.
 DEFAULT_LAGS: Mapping[str, tuple[int, ...]] = {
@@ -69,18 +75,25 @@ class FeatureSpec:
         "deadlock_count",
         "latency_p95_ms",
     )
-    lags: Mapping[str, tuple[int, ...]] = field(default_factory=lambda: dict(DEFAULT_LAGS))
-    rollings: Mapping[str, tuple[int, ...]] = field(default_factory=lambda: dict(DEFAULT_ROLLINGS))
+    lags: Mapping[str, tuple[int, ...]] = field(
+        default_factory=lambda: dict(DEFAULT_LAGS)
+    )
+    rollings: Mapping[str, tuple[int, ...]] = field(
+        default_factory=lambda: dict(DEFAULT_ROLLINGS)
+    )
     calendar: tuple[str, ...] = CALENDAR_FEATURES
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any] | None) -> "FeatureSpec":
+    def from_mapping(cls, data: Mapping[str, Any] | None) -> FeatureSpec:
         data = data or {}
         return cls(
             required=tuple(data.get("required", cls.required)),
             optional=tuple(data.get("optional", cls.optional)),
             lags={k: tuple(v) for k, v in (data.get("lags") or DEFAULT_LAGS).items()},
-            rollings={k: tuple(v) for k, v in (data.get("rollings") or DEFAULT_ROLLINGS).items()},
+            rollings={
+                k: tuple(v)
+                for k, v in (data.get("rollings") or DEFAULT_ROLLINGS).items()
+            },
             calendar=tuple(data.get("calendar", CALENDAR_FEATURES)),
         )
 
@@ -104,7 +117,9 @@ class FeatureSpec:
         }
 
 
-def add_derived_features(frame: pd.DataFrame, spec: FeatureSpec | None = None) -> pd.DataFrame:
+def add_derived_features(
+    frame: pd.DataFrame, spec: FeatureSpec | None = None
+) -> pd.DataFrame:
     """Return a copy of ``frame`` with the derived features appended.
 
     ``frame`` must be sorted by ``period_start_utc`` and contain one row per
@@ -127,7 +142,9 @@ def add_derived_features(frame: pd.DataFrame, spec: FeatureSpec | None = None) -
             continue
         for window in windows:
             # No extra shift: the current window is closed at forecast time.
-            out[f"{base}_rolling_{window}h"] = out[base].rolling(window, min_periods=window).mean()
+            out[f"{base}_rolling_{window}h"] = (
+                out[base].rolling(window, min_periods=window).mean()
+            )
 
     if "period_start_utc" in out.columns:
         hours = out["period_start_utc"].dt.hour
@@ -141,7 +158,9 @@ def add_derived_features(frame: pd.DataFrame, spec: FeatureSpec | None = None) -
     return out
 
 
-def intensity_band(values: pd.Series, edges: Sequence[float] = (0, 100, 250, 500, 1000)) -> pd.Series:
+def intensity_band(
+    values: pd.Series, edges: Sequence[float] = (0, 100, 250, 500, 1000)
+) -> pd.Series:
     """Bucket the workload intensity into ordered bands."""
     labels = []
     for value in values:
@@ -209,7 +228,11 @@ def feature_columns(frame: pd.DataFrame, spec: FeatureSpec | None = None) -> lis
     for name in spec.derived_names():
         if name in frame.columns:
             columns.append(name)
-    columns.extend(f"feature_missing_{c}" for c in spec.optional if f"feature_missing_{c}" in frame.columns)
+    columns.extend(
+        f"feature_missing_{c}"
+        for c in spec.optional
+        if f"feature_missing_{c}" in frame.columns
+    )
     return columns
 
 
@@ -243,11 +266,21 @@ def impute_optional(
         if pd.isna(median):
             # No train information at all: the feature carries no signal and is
             # dropped instead of being filled with a constant.
-            report["imputed"][column] = {"median": None, "rows_imputed": 0, "dropped": True}
+            report["imputed"][column] = {
+                "median": None,
+                "rows_imputed": 0,
+                "dropped": True,
+            }
             continue
-        out.loc[missing, column] = float(median)
+        out.loc[missing, column] = (
+            int(median) if pd.api.types.is_integer_dtype(out[column]) else float(median)
+        )
         report["imputed"][column] = {
-            "median": float(median),
+            "median": (
+                float(median)
+                if pd.api.types.is_numeric_dtype(out[column])
+                else int(median)
+            ),
             "rows_imputed": int(missing.sum()),
             "dropped": False,
         }

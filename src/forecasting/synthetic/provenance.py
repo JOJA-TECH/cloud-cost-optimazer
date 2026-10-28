@@ -6,11 +6,11 @@ Every synthetic row must carry its origin, seed, formula, and calibration info.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 
 PROVENANCE_COLUMNS: list[str] = [
     "row_origin",
@@ -61,7 +61,9 @@ class SyntheticManifest:
 def verify_provenance(frame: pd.DataFrame) -> dict[str, Any]:
     """Check that all provenance columns are present and non-null."""
     missing = [c for c in PROVENANCE_COLUMNS if c not in frame.columns]
-    null_counts = {c: int(frame[c].isna().sum()) for c in PROVENANCE_COLUMNS if c in frame.columns}
+    null_counts = {
+        c: int(frame[c].isna().sum()) for c in PROVENANCE_COLUMNS if c in frame.columns
+    }
     return {
         "missing_columns": missing,
         "null_counts": null_counts,
@@ -87,11 +89,15 @@ def build_manifest(
         source_schema_hash=source_schema_hash,
         code_commit=code_commit,
         branch=branch,
-        created_at_utc=datetime.now(timezone.utc).isoformat(),
+        created_at_utc=datetime.now(UTC).isoformat(),
         random_seed=random_seed,
         row_count=len(frame),
         experiment_uid=experiment_uid,
-        period_start_utc=str(frame["period_start_utc"].min()) if not frame.empty else None,
-        period_end_utc=str(frame["period_start_utc"].max()) if not frame.empty else None,
+        period_start_utc=str(frame["period_start_utc"].min())
+        if not frame.empty
+        else None,
+        period_end_utc=str(frame["period_start_utc"].max())
+        if not frame.empty
+        else None,
         scenarios=scenarios,
     )

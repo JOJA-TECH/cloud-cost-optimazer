@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 
@@ -163,7 +164,7 @@ class Settings:
     def artifacts_path(self) -> Path:
         return Path(self.artifacts_dir)
 
-    def with_overrides(self, **kwargs: Any) -> "Settings":
+    def with_overrides(self, **kwargs: Any) -> Settings:
         clean = {k: v for k, v in kwargs.items() if v is not None}
         return replace(self, **clean)  # type: ignore[arg-type]
 
@@ -182,11 +183,24 @@ def _build_local_dsn(env: Mapping[str, str], data: Mapping[str, Any]) -> str:
     explicit = str(data.get("local_dsn") or _env_value(env, "LOCAL_DSN"))
     if explicit:
         return explicit
-    user = str(data.get("postgres_user") or _env_value(env, "POSTGRES_USER", default="cco_forecasting"))
-    password = str(data.get("postgres_password") or _env_value(env, "POSTGRES_PASSWORD"))
-    host = str(data.get("postgres_host") or _env_value(env, "POSTGRES_HOST", default="127.0.0.1"))
-    port = int(data.get("postgres_port") or _env_value(env, "POSTGRES_PORT", default="55432"))
-    dbname = str(data.get("postgres_db") or _env_value(env, "POSTGRES_DB", default="cco_forecasting"))
+    user = str(
+        data.get("postgres_user")
+        or _env_value(env, "POSTGRES_USER", default="cco_forecasting")
+    )
+    password = str(
+        data.get("postgres_password") or _env_value(env, "POSTGRES_PASSWORD")
+    )
+    host = str(
+        data.get("postgres_host")
+        or _env_value(env, "POSTGRES_HOST", default="127.0.0.1")
+    )
+    port = int(
+        data.get("postgres_port") or _env_value(env, "POSTGRES_PORT", default="55432")
+    )
+    dbname = str(
+        data.get("postgres_db")
+        or _env_value(env, "POSTGRES_DB", default="cco_forecasting")
+    )
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
 
@@ -223,7 +237,8 @@ def load_settings(
             data.get("resource_sku_code") or _env_value(env, "RESOURCE_SKU_CODE")
         ),
         resource_compute_model=str(
-            data.get("resource_compute_model") or _env_value(env, "RESOURCE_COMPUTE_MODEL")
+            data.get("resource_compute_model")
+            or _env_value(env, "RESOURCE_COMPUTE_MODEL")
         ),
         resource_vcores=(
             float(data["resource_vcores"])
@@ -235,9 +250,12 @@ def load_settings(
             or _env_value(env, "RESOURCE_REGION_CODE", default="australiaeast")
         ),
         resource_provider=str(
-            data.get("resource_provider") or _env_value(env, "RESOURCE_PROVIDER", default="azure")
+            data.get("resource_provider")
+            or _env_value(env, "RESOURCE_PROVIDER", default="azure")
         ),
-        random_seed=int(data.get("random_seed") or _env_value(env, "RANDOM_SEED", default="42")),
+        random_seed=int(
+            data.get("random_seed") or _env_value(env, "RANDOM_SEED", default="42")
+        ),
         target=str(data.get("target") or "target_cpu_avg_next1h"),
         secondary_targets=tuple(data.get("secondary_targets") or ()),
         period_type=str(data.get("period_type") or "1h"),
@@ -245,10 +263,22 @@ def load_settings(
         artifacts_dir=str(data.get("artifacts_dir") or ARTIFACTS_DIR),
         local_dsn=_build_local_dsn(env, data),
         source_dsn=str(data.get("source_dsn") or _env_value(env, "SOURCE_DSN")),
-        source_sslmode=str(data.get("source_sslmode") or _env_value(env, "SOURCE_SSLMODE", default="require")),
-        postgres_port=int(data.get("postgres_port") or _env_value(env, "POSTGRES_PORT", default="55432")),
-        postgres_db=str(data.get("postgres_db") or _env_value(env, "POSTGRES_DB", default="cco_forecasting")),
-        postgres_user=str(data.get("postgres_user") or _env_value(env, "POSTGRES_USER", default="cco_forecasting")),
+        source_sslmode=str(
+            data.get("source_sslmode")
+            or _env_value(env, "SOURCE_SSLMODE", default="require")
+        ),
+        postgres_port=int(
+            data.get("postgres_port")
+            or _env_value(env, "POSTGRES_PORT", default="55432")
+        ),
+        postgres_db=str(
+            data.get("postgres_db")
+            or _env_value(env, "POSTGRES_DB", default="cco_forecasting")
+        ),
+        postgres_user=str(
+            data.get("postgres_user")
+            or _env_value(env, "POSTGRES_USER", default="cco_forecasting")
+        ),
         postgres_password=str(
             data.get("postgres_password") or _env_value(env, "POSTGRES_PASSWORD")
         ),

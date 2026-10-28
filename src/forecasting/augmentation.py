@@ -14,15 +14,16 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from forecasting.config import Settings
 from forecasting.db import connect
-from forecasting.evaluation import evaluate, grouped_evaluation
+from forecasting.evaluation import evaluate
 from forecasting.extraction import extract_training_base, temporal_split
 from forecasting.features import (
     FeatureSpec,
@@ -32,7 +33,6 @@ from forecasting.features import (
     impute_optional,
 )
 from forecasting.models import (
-    ModelSpec,
     default_catalogue,
     fit_model,
     predict_model,
@@ -159,11 +159,15 @@ def _run_experiment(
     test_frame = test_frame[test_frame[target].notna()].reset_index(drop=True)
 
     columns = feature_columns(train_frame, spec)
-    train_imputed, imputation_report = impute_optional(train_frame, train_frame, columns)
+    train_imputed, imputation_report = impute_optional(
+        train_frame, train_frame, columns
+    )
     val_imputed, _ = impute_optional(train_frame, val_frame, columns)
     test_imputed, _ = impute_optional(train_frame, test_frame, columns)
 
-    usable = [c for c in columns if not imputation_report["imputed"].get(c, {}).get("dropped")]
+    usable = [
+        c for c in columns if not imputation_report["imputed"].get(c, {}).get("dropped")
+    ]
 
     X_train, y_train = _build_matrix(train_imputed, usable, target)
     X_val, y_val = _build_matrix(val_imputed, usable, target)
@@ -197,7 +201,9 @@ def _run_experiment(
     from forecasting.baselines import baseline_predictions, build_baselines
 
     baseline_specs = build_baselines(train_frame[target])
-    baseline_preds = baseline_predictions(test_frame, target, observed="cpu_avg", specs=baseline_specs)
+    baseline_preds = baseline_predictions(
+        test_frame, target, observed="cpu_avg", specs=baseline_specs
+    )
     baseline_test: dict[str, Any] = {}
     for name in baseline_specs:
         truth = test_frame[target].to_numpy(dtype=float)
@@ -222,14 +228,14 @@ def _compare_experiments(results: dict[str, Any]) -> dict[str, Any]:
         if test_metrics:
             # Get the best model's MAE (minimum across all models tested)
             best_mae = min(
-                m.get("mae", float("inf")) 
-                for m in test_metrics.values() 
+                m.get("mae", float("inf"))
+                for m in test_metrics.values()
                 if isinstance(m, dict)
             )
             exp_maes[name] = best_mae
         else:
             exp_maes[name] = float("inf")
-    
+
     baseline_a = exp_maes.get("A_real_only", float("inf"))
     baseline_b = exp_maes.get("B_real_plus_synthetic", float("inf"))
     baseline_c = exp_maes.get("C_real_plus_calibrated", float("inf"))
@@ -251,7 +257,9 @@ def _compare_experiments(results: dict[str, Any]) -> dict[str, Any]:
     return verdict
 
 
-def _build_matrix(frame: pd.DataFrame, columns: Sequence[str], target: str) -> tuple[pd.DataFrame, pd.Series]:
+def _build_matrix(
+    frame: pd.DataFrame, columns: Sequence[str], target: str
+) -> tuple[pd.DataFrame, pd.Series]:
     X = frame[list(columns)].copy()
     y = frame[target].astype(float).copy()
     return X, y

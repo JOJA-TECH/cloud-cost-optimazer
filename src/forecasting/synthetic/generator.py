@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import pandas as pd
 
 from forecasting.config import Settings
-from forecasting.synthetic.scenarios import ScenarioConfig, build_workload_curve
 from forecasting.synthetic.response_model import ResponseModel
+from forecasting.synthetic.scenarios import ScenarioConfig, build_workload_curve
 
 
 @dataclass
@@ -92,7 +91,7 @@ def generate_one(
     import uuid
 
     scenario_run_uid = str(uuid.uuid4())
-    started = datetime.now(timezone.utc).isoformat()
+    started = datetime.now(UTC).isoformat()
 
     # 1. Build workload curve
     curve = build_workload_curve(config, step_minutes=60)  # hourly steps
@@ -134,7 +133,7 @@ def generate_one(
         pq_path = output_dir / f"{config.scenario_id}.parquet"
         predicted.to_parquet(pq_path, index=False)
 
-    ended = datetime.now(timezone.utc).isoformat()
+    ended = datetime.now(UTC).isoformat()
     info = ScenarioRunInfo(
         scenario_run_uid=scenario_run_uid,
         scenario_id=config.scenario_id,
@@ -226,7 +225,9 @@ def add_provenance(
     out["generation_seed"] = config.seed
     out["generation_formula"] = config.scenario_type
     out["noise_model"] = config.noise_distribution
-    out["calibration_model_id"] = response_model.metadata_.get("model_name", "response_model_v1")
+    out["calibration_model_id"] = response_model.metadata_.get(
+        "model_name", "response_model_v1"
+    )
     out["calibration_model_version"] = "1.0.0"
     out["source_window_start_utc"] = source_start
     out["source_window_end_utc"] = source_end

@@ -9,8 +9,9 @@ label is always the *next* window and never the current one.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import pandas as pd
 import psycopg
@@ -118,7 +119,9 @@ def extract_training_base(
     if not selected:
         raise ValueError("feat.v_training_base does not expose the expected columns")
     statement = (
-        "select " + ", ".join(selected + selected_targets) + " from feat.v_training_base "
+        "select "
+        + ", ".join(selected + selected_targets)
+        + " from feat.v_training_base "
         "where resource_id = %s and period_start_utc is not null order by period_start_utc"
     )
     frame = read_frame(conn, statement, (resource_id,))
@@ -170,11 +173,15 @@ def temporal_split(
         empty = TemporalSplit("empty", ordered)
         return {"train": empty, "validation": empty, "test": empty}
     return {
-        "train": TemporalSplit("train", ordered.iloc[:train_end].reset_index(drop=True)),
+        "train": TemporalSplit(
+            "train", ordered.iloc[:train_end].reset_index(drop=True)
+        ),
         "validation": TemporalSplit(
             "validation", ordered.iloc[train_end:validation_end].reset_index(drop=True)
         ),
-        "test": TemporalSplit("test", ordered.iloc[validation_end:].reset_index(drop=True)),
+        "test": TemporalSplit(
+            "test", ordered.iloc[validation_end:].reset_index(drop=True)
+        ),
     }
 
 

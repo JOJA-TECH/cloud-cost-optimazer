@@ -20,8 +20,9 @@ is not "reliable", it is simply a calibrated offset.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -54,7 +55,9 @@ def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     valid = denominator > EPS
     if not valid.any():
         return float("nan")
-    return float(100.0 * np.mean(np.abs(y_true[valid] - y_pred[valid]) / denominator[valid]))
+    return float(
+        100.0 * np.mean(np.abs(y_true[valid] - y_pred[valid]) / denominator[valid])
+    )
 
 
 def naive_scale(series: pd.Series) -> float:
@@ -84,7 +87,13 @@ def evaluate(
     mask = np.isfinite(true) & np.isfinite(pred)
     true, pred = true[mask], pred[mask]
     if true.size == 0:
-        return {"n": 0, "mae": float("nan"), "rmse": float("nan"), "smape": float("nan"), "mase": float("nan")}
+        return {
+            "n": 0,
+            "mae": float("nan"),
+            "rmse": float("nan"),
+            "smape": float("nan"),
+            "mase": float("nan"),
+        }
     metrics = {
         "n": int(true.size),
         "mae": mae(true, pred),
@@ -135,7 +144,11 @@ def interval_metrics(
     hi = np.asarray(upper, dtype=float)
     mask = np.isfinite(true) & np.isfinite(lo) & np.isfinite(hi)
     if not mask.any():
-        return {"interval_coverage": float("nan"), "mean_interval_width": float("nan"), "n": 0}
+        return {
+            "interval_coverage": float("nan"),
+            "mean_interval_width": float("nan"),
+            "n": 0,
+        }
     true, lo, hi = true[mask], lo[mask], hi[mask]
     inside = (true >= lo) & (true <= hi)
     return {
@@ -219,12 +232,16 @@ def stationarity_test(series: pd.Series) -> dict[str, Any]:
         "p_value": pvalue,
         "stationary_at_5pct": bool(pvalue < 0.05),
         "interpretation": (
-            "la serie es estacionaria" if pvalue < 0.05 else "la serie no es estacionaria (p>0.05)"
+            "la serie es estacionaria"
+            if pvalue < 0.05
+            else "la serie no es estacionaria (p>0.05)"
         ),
     }
 
 
-def residual_autocorrelation(residuals: Sequence[float], lags: int = 6) -> dict[str, Any]:
+def residual_autocorrelation(
+    residuals: Sequence[float], lags: int = 6
+) -> dict[str, Any]:
     """Ljung-Box on the residuals of the selected model."""
     try:
         from statsmodels.stats.diagnostic import acorr_ljungbox
@@ -245,7 +262,9 @@ def residual_autocorrelation(residuals: Sequence[float], lags: int = 6) -> dict[
         "p_value": pvalue,
         "no_autocorrelation_at_5pct": bool(pvalue >= 0.05),
         "interpretation": (
-            "no autocorrelacion significativa" if pvalue >= 0.05 else "residuos autocorrelacionados"
+            "no autocorrelacion significativa"
+            if pvalue >= 0.05
+            else "residuos autocorrelacionados"
         ),
     }
 
@@ -258,7 +277,11 @@ def residual_normality(residuals: Sequence[float]) -> dict[str, Any]:
         return {"test": "jarque_bera", "available": False, "reason": str(exc)}
     values = np.asarray([r for r in residuals if np.isfinite(r)], dtype=float)
     if len(values) < 8:
-        return {"test": "jarque_bera", "available": False, "reason": "too few residuals"}
+        return {
+            "test": "jarque_bera",
+            "available": False,
+            "reason": "too few residuals",
+        }
     statistic, pvalue = stats.jarque_bera(values)
     return {
         "test": "jarque_bera",
@@ -274,7 +297,9 @@ def residual_normality(residuals: Sequence[float]) -> dict[str, Any]:
     }
 
 
-def residual_homoscedasticity(residuals: Sequence[float], exog: np.ndarray | None = None) -> dict[str, Any]:
+def residual_homoscedasticity(
+    residuals: Sequence[float], exog: np.ndarray | None = None
+) -> dict[str, Any]:
     """Breusch-Pagan test for constant variance of the residuals."""
     try:
         from statsmodels.stats.diagnostic import het_breuschpagan
@@ -282,7 +307,11 @@ def residual_homoscedasticity(residuals: Sequence[float], exog: np.ndarray | Non
         return {"test": "breusch_pagan", "available": False, "reason": str(exc)}
     values = np.asarray([r for r in residuals if np.isfinite(r)], dtype=float)
     if len(values) < 12:
-        return {"test": "breusch_pagan", "available": False, "reason": "too few residuals"}
+        return {
+            "test": "breusch_pagan",
+            "available": False,
+            "reason": "too few residuals",
+        }
     if exog is None:
         exog = np.ones((len(values), 1))
     with warnings.catch_warnings():
@@ -297,7 +326,9 @@ def residual_homoscedasticity(residuals: Sequence[float], exog: np.ndarray | Non
         "f_p_value": float(f_p),
         "homoscedastic_at_5pct": bool(lm_p >= 0.05),
         "interpretation": (
-            "varianza constante" if lm_p >= 0.05 else "varianza no constante (heterocedasticidad)"
+            "varianza constante"
+            if lm_p >= 0.05
+            else "varianza no constante (heterocedasticidad)"
         ),
     }
 
@@ -327,7 +358,9 @@ def unit_coherence(
     try:
         array = np.asarray(values, dtype=float)
     except Exception:
-        array = np.array([float(v) for v in values if v is not None and np.isfinite(float(v))])
+        array = np.array(
+            [float(v) for v in values if v is not None and np.isfinite(float(v))]
+        )
     if array.size == 0:
         return {"available": False, "reason": "no values"}
     mask = np.isfinite(array)
@@ -356,8 +389,16 @@ def leakage_report(
     original = frame.copy()
     mutated = frame.copy()
     value_columns = [
-        c for c in original.columns
-        if c not in ("period_start_utc", "quality_status", "quality_warnings", "canonical_sources", "coverage_json")
+        c
+        for c in original.columns
+        if c
+        not in (
+            "period_start_utc",
+            "quality_status",
+            "quality_warnings",
+            "canonical_sources",
+            "coverage_json",
+        )
         and pd.api.types.is_numeric_dtype(original[c])
     ]
     # Mutate ONLY rows strictly after the cutoff (future data).
@@ -374,7 +415,10 @@ def leakage_report(
         features_original = add_derived_features(original).iloc[idx]
         features_mutated = add_derived_features(mutated).iloc[idx]
         for column in feature_columns:
-            if column not in features_original.index or column not in features_mutated.index:
+            if (
+                column not in features_original.index
+                or column not in features_mutated.index
+            ):
                 continue
             left = features_original[column]
             right = features_mutated[column]

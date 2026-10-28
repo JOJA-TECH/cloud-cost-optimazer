@@ -40,7 +40,7 @@ class DifferencedPredictor:
     level_index: int
     model: Any = field(default=None, repr=False)
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "DifferencedPredictor":
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> DifferencedPredictor:
         matrix = X.to_numpy(dtype=float)
         delta = y.to_numpy(dtype=float) - matrix[:, self.level_index]
         self.model = fit_model(self.spec, X, pd.Series(delta))

@@ -9,9 +9,9 @@ dictionary that is written to the profile artifact, so a reader can tell
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
-import numpy as np
 import pandas as pd
 
 #: Plausible range per metric, used to detect impossible values.
@@ -36,7 +36,9 @@ COUNT_METRICS: tuple[str, ...] = (
 )
 
 
-def check_timestamps_utc(frame: pd.DataFrame, column: str = "observed_at_utc") -> dict[str, Any]:
+def check_timestamps_utc(
+    frame: pd.DataFrame, column: str = "observed_at_utc"
+) -> dict[str, Any]:
     """Timestamps must be timezone aware and expressed in UTC."""
     if column not in frame.columns or frame.empty:
         return {"check": "timestamps_utc", "applicable": False}
@@ -44,11 +46,13 @@ def check_timestamps_utc(frame: pd.DataFrame, column: str = "observed_at_utc") -
     naive = 0
     if not isinstance(frame[column].dtype, pd.DatetimeTZDtype):
         raw = frame[column].astype(str)
-        naive = int(sum(1 for value in raw if not value.endswith("Z") and "+00:00" not in value))
+        naive = int(
+            sum(1 for value in raw if not value.endswith("Z") and "+00:00" not in value)
+        )
     return {
         "check": "timestamps_utc",
         "applicable": True,
-        "rows": int(len(frame)),
+        "rows": len(frame),
         "unparseable": int(series.isna().sum()),
         "not_explicitly_utc": naive,
         "passed": bool(series.isna().sum() == 0 and naive == 0),
@@ -85,9 +89,7 @@ def check_granularity(
     }
 
 
-def check_duplicates(
-    frame: pd.DataFrame, keys: Sequence[str]
-) -> dict[str, Any]:
+def check_duplicates(frame: pd.DataFrame, keys: Sequence[str]) -> dict[str, Any]:
     """Logical duplicates on the natural key."""
     present = [k for k in keys if k in frame.columns]
     if not present or frame.empty:
@@ -111,14 +113,16 @@ def check_nulls(frame: pd.DataFrame, columns: Iterable[str]) -> dict[str, Any]:
     return {
         "check": "nulls",
         "applicable": True,
-        "rows": int(len(frame)),
+        "rows": len(frame),
         "null_counts": counts,
         "null_fraction": {c: (counts[c] / len(frame)) for c in columns},
         "passed": all(v == 0 for v in counts.values()),
     }
 
 
-def check_ranges(frame: pd.DataFrame, ranges: Mapping[str, tuple[float, float]]) -> dict[str, Any]:
+def check_ranges(
+    frame: pd.DataFrame, ranges: Mapping[str, tuple[float, float]]
+) -> dict[str, Any]:
     """Values outside the physically plausible range."""
     findings: dict[str, Any] = {}
     for code, (low, high) in ranges.items():
@@ -142,7 +146,9 @@ def check_ranges(frame: pd.DataFrame, ranges: Mapping[str, tuple[float, float]])
     }
 
 
-def check_negative_counts(frame: pd.DataFrame, columns: Iterable[str]) -> dict[str, Any]:
+def check_negative_counts(
+    frame: pd.DataFrame, columns: Iterable[str]
+) -> dict[str, Any]:
     """Counts cannot be negative."""
     columns = [c for c in columns if c in frame.columns]
     if not columns or frame.empty:
@@ -178,10 +184,14 @@ def hourly_completeness(
     )
     grouped["coverage"] = grouped["rows_observed"] / float(expected_per_hour)
     grouped["complete"] = grouped["rows_observed"] >= expected_per_hour
-    return grouped.sort_values([metric_column, "period_start_utc"]).reset_index(drop=True)
+    return grouped.sort_values([metric_column, "period_start_utc"]).reset_index(
+        drop=True
+    )
 
 
-def quality_status_counts(frame: pd.DataFrame, column: str = "quality_status") -> dict[str, Any]:
+def quality_status_counts(
+    frame: pd.DataFrame, column: str = "quality_status"
+) -> dict[str, Any]:
     """Distribution of the quality status of the windows."""
     if column not in frame.columns or frame.empty:
         return {"check": "quality_status", "applicable": False}
@@ -201,20 +211,24 @@ def detect_workload_changes(frame: pd.DataFrame) -> dict[str, Any]:
         return {"check": "workload_changes", "applicable": False}
     ordered = frame.sort_values("period_start_utc")
     classes = ordered["workload_class"].fillna("unknown").astype(str)
-    changes = ordered.loc[classes.ne(classes.shift()) & classes.shift().notna(), "period_start_utc"]
+    changes = ordered.loc[
+        classes.ne(classes.shift()) & classes.shift().notna(), "period_start_utc"
+    ]
     distinct = sorted(set(classes.unique()))
     return {
         "check": "workload_changes",
         "applicable": True,
         "distinct_classes": distinct,
-        "n_changes": int(len(changes)),
+        "n_changes": len(changes),
         "change_points": [str(c) for c in changes.tolist()],
     }
 
 
 def detect_config_changes(frame: pd.DataFrame) -> dict[str, Any]:
     """Changes of the SKU configuration over time."""
-    columns = [c for c in ("sku_id", "compute_model", "capacity_vcores") if c in frame.columns]
+    columns = [
+        c for c in ("sku_id", "compute_model", "capacity_vcores") if c in frame.columns
+    ]
     if not columns or frame.empty:
         return {"check": "config_changes", "applicable": False}
     ordered = frame.sort_values("period_start_utc")
@@ -223,12 +237,14 @@ def detect_config_changes(frame: pd.DataFrame) -> dict[str, Any]:
     if not valid:
         return {"check": "config_changes", "applicable": False}
     signature = ordered[valid].astype(str).agg("|".join, axis=1)
-    changes = ordered.loc[signature.ne(signature.shift()) & signature.shift().notna(), "period_start_utc"]
+    changes = ordered.loc[
+        signature.ne(signature.shift()) & signature.shift().notna(), "period_start_utc"
+    ]
     return {
         "check": "config_changes",
         "applicable": True,
         "tracked_columns": valid,
-        "n_changes": int(len(changes)),
+        "n_changes": len(changes),
         "change_points": [str(c) for c in changes.tolist()],
         "stable": bool(len(changes) == 0),
     }
@@ -242,7 +258,7 @@ def target_null_report(frame: pd.DataFrame, targets: Sequence[str]) -> dict[str,
             continue
         values = frame[target]
         report[target] = {
-            "rows": int(len(frame)),
+            "rows": len(frame),
             "nulls": int(values.isna().sum()),
             "non_null": int(values.notna().sum()),
             "min": float(values.min()) if values.notna().any() else None,
@@ -266,16 +282,20 @@ def missingness_report(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFr
         rows.append(
             {
                 "column": column,
-                "rows": int(len(frame)),
+                "rows": len(frame),
                 "nulls": int(values.isna().sum()),
-                "missing_fraction": float(values.isna().mean()) if len(frame) else float("nan"),
+                "missing_fraction": float(values.isna().mean())
+                if len(frame)
+                else float("nan"),
                 "distinct_values": distinct,
             }
         )
     return pd.DataFrame(rows)
 
 
-def coverage_summary(frame: pd.DataFrame, time_column: str = "period_start_utc") -> dict[str, Any]:
+def coverage_summary(
+    frame: pd.DataFrame, time_column: str = "period_start_utc"
+) -> dict[str, Any]:
     """Real coverage of the dataset: first, last, duration and number of windows."""
     if frame.empty or time_column not in frame.columns:
         return {"applicable": False}
@@ -288,7 +308,7 @@ def coverage_summary(frame: pd.DataFrame, time_column: str = "period_start_utc")
         "last_timestamp_utc": str(last),
         "duration_seconds": duration,
         "duration_hours": duration / 3600.0,
-        "windows": int(len(frame)),
+        "windows": len(frame),
         "expected_windows": int(duration / 3600.0) + 1,
         "window_completeness": float(len(frame) / (duration / 3600.0 + 1)),
     }
@@ -316,7 +336,9 @@ def run_all_checks(
     checks["workload_changes"] = detect_workload_changes(hourly)
     checks["config_changes"] = detect_config_changes(hourly)
     checks["coverage"] = coverage_summary(hourly)
-    checks["missingness"] = missingness_report(hourly, feature_columns).to_dict("records")
+    checks["missingness"] = missingness_report(hourly, feature_columns).to_dict(
+        "records"
+    )
     return checks
 
 
@@ -324,9 +346,13 @@ def passed_checks(report: Mapping[str, Any]) -> list[str]:
     """Names of the checks that passed."""
     passed = []
     for name, check in report.items():
-        if isinstance(check, Mapping) and check.get("applicable") and "passed" in check:
-            if check["passed"]:
-                passed.append(name)
+        if (
+            isinstance(check, Mapping)
+            and check.get("applicable")
+            and "passed" in check
+            and check["passed"]
+        ):
+            passed.append(name)
     return passed
 
 
@@ -334,7 +360,11 @@ def failed_checks(report: Mapping[str, Any]) -> list[str]:
     """Names of the checks that failed."""
     failed = []
     for name, check in report.items():
-        if isinstance(check, Mapping) and check.get("applicable") and "passed" in check:
-            if not check["passed"]:
-                failed.append(name)
+        if (
+            isinstance(check, Mapping)
+            and check.get("applicable")
+            and "passed" in check
+            and not check["passed"]
+        ):
+            failed.append(name)
     return failed

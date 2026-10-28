@@ -6,7 +6,6 @@ The curves are reproducible given a seed and fully documented.
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,7 +81,9 @@ def _rng(seed: int, step: int) -> np.random.Generator:
     return np.random.default_rng(seed + step * 1009)
 
 
-def _apply_noise(values: np.ndarray, scale: float, distribution: str, seed: int) -> np.ndarray:
+def _apply_noise(
+    values: np.ndarray, scale: float, distribution: str, seed: int
+) -> np.ndarray:
     """Add reproducible noise to a curve."""
     if scale <= 0:
         return values
@@ -199,7 +200,9 @@ def build_workload_curve(config: ScenarioConfig, step_minutes: int = 1) -> pd.Da
         raise ValueError(f"unknown scenario_type: {config.scenario_type}")
 
     # ---- noise --------------------------------------------------------------
-    curve = _apply_noise(curve, config.noise_scale, config.noise_distribution, config.seed)
+    curve = _apply_noise(
+        curve, config.noise_scale, config.noise_distribution, config.seed
+    )
 
     # ---- clip to bounds -----------------------------------------------------
     curve = _clip(curve, config.min_intensity_ops_min, config.max_intensity_ops_min)

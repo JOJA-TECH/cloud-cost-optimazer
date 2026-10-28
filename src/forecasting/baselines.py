@@ -14,7 +14,6 @@ and they are the reference every learned model has to beat.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -70,11 +69,15 @@ def seasonal_naive(series: pd.Series, period: int = 24) -> np.ndarray:
     return out
 
 
-def build_baselines(series: pd.Series, *, seasonal_period: int = 24) -> dict[str, BaselineSpec]:
+def build_baselines(
+    series: pd.Series, *, seasonal_period: int = 24
+) -> dict[str, BaselineSpec]:
     """The baseline catalogue evaluated in every experiment."""
     return {
         "naive_last": BaselineSpec("naive_last", "naive_last", {}),
-        "moving_average": BaselineSpec("moving_average", "moving_average", {"window": 3}),
+        "moving_average": BaselineSpec(
+            "moving_average", "moving_average", {"window": 3}
+        ),
         "seasonal_naive": BaselineSpec(
             "seasonal_naive", "seasonal_naive", {"period": seasonal_period}
         ),
@@ -121,7 +124,9 @@ def add_group_bands(frame: pd.DataFrame) -> pd.DataFrame:
     if "workload_intensity" in out.columns:
         out["intensity_band"] = intensity_band(out["workload_intensity"])
     if "period_start_utc" in out.columns:
-        out["peak_band"] = peak_band(pd.to_datetime(out["period_start_utc"], utc=True).dt.hour)
+        out["peak_band"] = peak_band(
+            pd.to_datetime(out["period_start_utc"], utc=True).dt.hour
+        )
     if "workload_class" in out.columns:
         out["workload_class"] = out["workload_class"].fillna("unknown")
     if "quality_status" in out.columns:

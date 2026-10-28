@@ -15,18 +15,18 @@ is recorded.
 
 from __future__ import annotations
 
-import json
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -86,7 +86,7 @@ class ResponseModel:
         *,
         targets: Sequence[ResponseTarget] = DEFAULT_TARGETS,
         feature_spec: FeatureSpec | None = None,
-    ) -> "ResponseModel":
+    ) -> ResponseModel:
         """Fit one model per target metric from the real hourly frame."""
         feature_spec = feature_spec or FeatureSpec()
         hourly = hourly.sort_values("period_start_utc").reset_index(drop=True)
@@ -133,7 +133,9 @@ class ResponseModel:
             if feature_array.std() > 0 and target_array.std() > 0:
                 corr_pearson = float(np.corrcoef(feature_array, target_array)[0, 1])
                 corr_spearman = float(
-                    pd.Series(feature_array).corr(pd.Series(target_array), method="spearman")
+                    pd.Series(feature_array).corr(
+                        pd.Series(target_array), method="spearman"
+                    )
                 )
             else:
                 corr_pearson = float("nan")
@@ -191,7 +193,9 @@ class ResponseModel:
             model.clipped_counts[target.name] = n_clipped
             model.metadata_[target.name] = {
                 "model_kind": kind,
-                "in_sample_rmse": float(tree_rmse if kind == "gradient_boosting" else lin_rmse),
+                "in_sample_rmse": float(
+                    tree_rmse if kind == "gradient_boosting" else lin_rmse
+                ),
                 "n_obs": int(valid.sum()),
                 "n_clipped": n_clipped,
                 "corr_pearson_with_feature": corr_pearson,
@@ -242,7 +246,7 @@ class ResponseModel:
         joblib.dump(self, path)
 
     @classmethod
-    def load(cls, path: str | Path) -> "ResponseModel":
+    def load(cls, path: str | Path) -> ResponseModel:
         return joblib.load(path)
 
     def metadata(self) -> dict[str, Any]:
@@ -269,7 +273,7 @@ def impute_response_features(
     train_frame: pd.DataFrame, target_frame: pd.DataFrame
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Impute missing features with train median (same logic as forecasting)."""
-    from forecasting.features import impute_optional, FeatureSpec
+    from forecasting.features import FeatureSpec
 
     # Collect all numeric columns except the target names
     targets = [t.name for t in DEFAULT_TARGETS]
@@ -280,8 +284,5 @@ def impute_response_features(
         and c not in ("period_start_utc", "period_end_utc", "formula", "ts")
         and pd.api.types.is_numeric_dtype(train_frame[c])
     ]
-    spec = FeatureSpec(optional=tuple(feature_cols))
+    FeatureSpec(optional=tuple(feature_cols))
     return impute_optional(train_frame, target_frame, feature_cols)
-
-
-from sklearn.impute import SimpleImputer

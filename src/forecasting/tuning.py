@@ -21,8 +21,9 @@ never read by any stage of the tuning.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -85,7 +86,9 @@ def grid_catalogue(seed: int = 42) -> list[ModelSpec]:
 
 def grid_description() -> dict[str, list[dict[str, Any]]]:
     """Serialisable description of the search space."""
-    return {kind: [dict(params) for params in grid] for kind, grid in DEFAULT_GRIDS.items()}
+    return {
+        kind: [dict(params) for params in grid] for kind, grid in DEFAULT_GRIDS.items()
+    }
 
 
 def evaluation_points(n_rows: int, n_splits: int) -> int:
@@ -124,7 +127,7 @@ class Candidate:
     def transform_name(self) -> str:
         return "diff" if self.differenced else "level"
 
-    def clone(self) -> "Candidate":
+    def clone(self) -> Candidate:
         return Candidate(
             spec=self.spec, differenced=self.differenced, level_index=self.level_index
         )

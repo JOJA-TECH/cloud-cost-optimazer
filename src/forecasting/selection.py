@@ -25,8 +25,9 @@ never read by any step of the selection.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -162,7 +163,12 @@ def permutation_ranking(
     rows: dict[str, dict[str, float]] = {column: {} for column in X.columns}
     for spec in specs:
         scores = _fold_mean_importance(
-            build_estimator(spec), X, y, n_splits=n_splits, n_repeats=n_repeats, seed=seed
+            build_estimator(spec),
+            X,
+            y,
+            n_splits=n_splits,
+            n_repeats=n_repeats,
+            seed=seed,
         )
         for column, score in zip(X.columns, scores):
             rows[column][f"importance_{spec.name}"] = float(score)
@@ -196,10 +202,14 @@ def select_features(
     survivors = [c for c in after_variance if c not in dropped_collinear]
 
     notes = [
-        "La ventana de calibracion es train + validacion: el conjunto de prueba "
-        "no participa en ninguna etapa de la seleccion.",
-        "El ranking promedia la degradacion de MAE por permutacion sobre los pliegues "
-        "expansivos (TimeSeriesSplit) y sobre todos los modelos candidatos.",
+        (
+            "La ventana de calibracion es train + validacion: el conjunto de prueba "
+            "no participa en ninguna etapa de la seleccion."
+        ),
+        (
+            "El ranking promedia la degradacion de MAE por permutacion sobre los pliegues "
+            "expansivos (TimeSeriesSplit) y sobre todos los modelos candidatos."
+        ),
     ]
     if not survivors:
         notes.append("Sin columnas supervivientes: se conservan todas las candidatas.")

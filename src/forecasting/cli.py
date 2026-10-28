@@ -17,10 +17,11 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import joblib
 import numpy as np
@@ -61,7 +62,7 @@ from .extraction import (
 # Helpers
 # =============================================================================
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -97,7 +98,9 @@ def _resolve_resource_id(conn, settings: Settings) -> int:
         "select resource_id, resource_uid from core.resource order by resource_id",
     )
     if frame.empty:
-        raise RuntimeError("the local database has no resource: run `import-real` first")
+        raise RuntimeError(
+            "the local database has no resource: run `import-real` first"
+        )
     if settings.resource_uid:
         match = frame[frame["resource_uid"].astype(str) == str(settings.resource_uid)]
         if not match.empty:
@@ -106,7 +109,12 @@ def _resolve_resource_id(conn, settings: Settings) -> int:
 
 
 def _source_schema_hash() -> str:
-    schema_path = Path(__file__).resolve().parents[2] / "databases" / "cco_data" / "cco_data_schema.sql"
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "databases"
+        / "cco_data"
+        / "cco_data_schema.sql"
+    )
     if not schema_path.is_file():
         return ""
     return ft.file_hash(str(schema_path))
@@ -185,9 +193,13 @@ def cmd_profile_real(args: argparse.Namespace, settings: Settings) -> int:
         counts = table_row_counts(conn)
 
     if not readings.empty:
-        readings["observed_at_utc"] = pd.to_datetime(readings["observed_at_utc"], utc=True)
+        readings["observed_at_utc"] = pd.to_datetime(
+            readings["observed_at_utc"], utc=True
+        )
     if not samples.empty:
-        samples["observed_at_utc"] = pd.to_datetime(samples["observed_at_utc"], utc=True)
+        samples["observed_at_utc"] = pd.to_datetime(
+            samples["observed_at_utc"], utc=True
+        )
 
     inventory = (
         readings.groupby(["metric_code", "source"])
@@ -213,7 +225,8 @@ def cmd_profile_real(args: argparse.Namespace, settings: Settings) -> int:
     _write_frame(output_dir / "real_hourly_quality.csv", quality)
 
     missingness = va.missingness_report(
-        hourly, [c for c in BASE_COLUMNS if c not in ("period_start_utc", "period_end_utc")]
+        hourly,
+        [c for c in BASE_COLUMNS if c not in ("period_start_utc", "period_end_utc")],
     )
     _write_frame(output_dir / "real_missingness.csv", missingness)
 
@@ -221,26 +234,38 @@ def cmd_profile_real(args: argparse.Namespace, settings: Settings) -> int:
         readings,
         hourly,
         targets=TARGET_COLUMNS,
-        feature_columns=[c for c in BASE_COLUMNS if c not in ("period_start_utc", "period_end_utc")],
+        feature_columns=[
+            c for c in BASE_COLUMNS if c not in ("period_start_utc", "period_end_utc")
+        ],
     )
     coverage = va.coverage_summary(hourly)
     profile = {
         "generated_at_utc": _utc_now(),
-        "experiment_uid": str(experiment.iloc[0]["experiment_uid"]) if not experiment.empty else "",
-        "resource_uid": str(experiment.iloc[0]["resource_uid"]) if not experiment.empty else "",
+        "experiment_uid": str(experiment.iloc[0]["experiment_uid"])
+        if not experiment.empty
+        else "",
+        "resource_uid": str(experiment.iloc[0]["resource_uid"])
+        if not experiment.empty
+        else "",
         "resource_id": resource_id,
-        "workload_class": str(experiment.iloc[0]["workload_class"]) if not experiment.empty else "",
+        "workload_class": str(experiment.iloc[0]["workload_class"])
+        if not experiment.empty
+        else "",
         "counts": {
-            "metric_readings": int(len(readings)),
-            "metric_samples": int(len(samples)),
-            "hourly_features": int(len(hourly)),
-            "training_rows": int(len(training)),
+            "metric_readings": len(readings),
+            "metric_samples": len(samples),
+            "hourly_features": len(hourly),
+            "training_rows": len(training),
         },
         "coverage": coverage,
         "samples": {
-            "rows": int(len(samples)),
-            "min_ts": str(samples["observed_at_utc"].min()) if not samples.empty else None,
-            "max_ts": str(samples["observed_at_utc"].max()) if not samples.empty else None,
+            "rows": len(samples),
+            "min_ts": str(samples["observed_at_utc"].min())
+            if not samples.empty
+            else None,
+            "max_ts": str(samples["observed_at_utc"].max())
+            if not samples.empty
+            else None,
         },
         "table_row_counts": counts.to_dict("records") if not counts.empty else [],
         "checks": checks,
@@ -275,7 +300,9 @@ def _prepare_frames(
 
 
 def _baseline_block(
-    modeling: pd.DataFrame, target: str, splits: dict[str, bl.TemporalSplit] | None = None
+    modeling: pd.DataFrame,
+    target: str,
+    splits: dict[str, bl.TemporalSplit] | None = None,
 ) -> dict[str, pd.DataFrame]:
     specs = bl.build_baselines(modeling[target])
     predictions = bl.baseline_predictions(modeling, target, specs)
@@ -292,13 +319,17 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
 
     with connect(settings.local_dsn) as conn:
         resource_id = _resolve_resource_id(conn, settings)
-        raw_training, modeling, spec = _prepare_frames(conn, resource_id, settings, target)
+        _raw_training, modeling, spec = _prepare_frames(
+            conn, resource_id, settings, target
+        )
 
     print(f"[train-real] rows after feature engineering: {len(modeling)}")
 
     # --- baselines ---------------------------------------------------------
     baseline_specs = bl.build_baselines(modeling["cpu_avg"])
-    baseline_predictions = bl.baseline_predictions(modeling, target, observed="cpu_avg", specs=baseline_specs)
+    baseline_predictions = bl.baseline_predictions(
+        modeling, target, observed="cpu_avg", specs=baseline_specs
+    )
     for name in baseline_specs:
         modeling[f"pred_{name}"] = baseline_predictions[f"pred_{name}"].to_numpy()
 
@@ -310,8 +341,7 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         test=settings.split.get("test", 0.15),
     )
     print(
-        "[train-real] split: "
-        + ", ".join(f"{k}={v.rows}" for k, v in splits.items())
+        "[train-real] split: " + ", ".join(f"{k}={v.rows}" for k, v in splits.items())
     )
 
     columns = ft.feature_columns(modeling, spec)
@@ -333,8 +363,12 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     # The design matrix is wider than long (39 candidates vs 36 calibration
     # rows), so columns are pruned before any model is fitted. The test split
     # is never read here: the window ends where the test set begins.
-    calibration_frame = pd.concat([train_imputed, validation_imputed], ignore_index=True)
-    X_calibration, y_calibration = md.build_matrix(calibration_frame, usable_columns, target)
+    calibration_frame = pd.concat(
+        [train_imputed, validation_imputed], ignore_index=True
+    )
+    X_calibration, y_calibration = md.build_matrix(
+        calibration_frame, usable_columns, target
+    )
     max_features = int(getattr(args, "max_features", 0) or 0)
     if max_features > 0:
         selected_columns, selection_report = sel.select_features(
@@ -364,10 +398,14 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             selected=selected_columns,
             notes=["Seleccion deshabilitada (--max-features <= 0)."],
         )
-        print(f"[train-real] feature selection disabled: {len(selected_columns)} candidates")
+        print(
+            f"[train-real] feature selection disabled: {len(selected_columns)} candidates"
+        )
 
     X_train, y_train = md.build_matrix(train_imputed, selected_columns, target)
-    X_validation, y_validation = md.build_matrix(validation_imputed, selected_columns, target)
+    X_validation, y_validation = md.build_matrix(
+        validation_imputed, selected_columns, target
+    )
     X_test, y_test = md.build_matrix(test_imputed, selected_columns, target)
     X_calib, y_calib = md.build_matrix(calibration_frame, selected_columns, target)
 
@@ -394,7 +432,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         selected_columns.index("cpu_avg") if "cpu_avg" in selected_columns else None
     )
     candidates = tn.candidate_catalogue(seed, level_index=level_index)
-    cv_results = tn.evaluate_candidates(candidates, X_calib, y_calib, n_splits=cv_splits)
+    cv_results = tn.evaluate_candidates(
+        candidates, X_calib, y_calib, n_splits=cv_splits
+    )
     n_eval_points = tn.evaluation_points(len(X_calib), cv_splits)
     n_diff = sum(1 for candidate in candidates if candidate.differenced)
     print(
@@ -409,7 +449,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             f"[train-real]   {result.candidate.name:32s} CV MAE={result.mean_mae:.4f}  folds=[{folds}]"
         )
     if len(cv_results) > 5:
-        print(f"[train-real]   ... and {len(cv_results) - 5} more candidates (cv_results.csv)")
+        print(
+            f"[train-real]   ... and {len(cv_results) - 5} more candidates (cv_results.csv)"
+        )
     best_cv = cv_results[0]
     best_candidate = best_cv.candidate
     best_spec = best_candidate.spec
@@ -429,7 +471,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     pred_train_selected = tn.predict_candidate(split_predictor, X_train)
     pred_validation = tn.predict_candidate(split_predictor, X_validation)
     validation_predictions: dict[str, np.ndarray] = {best_name: pred_validation}
-    train_metrics[best_name] = ev.evaluate(y_train.to_numpy(), pred_train_selected, scale=scale)
+    train_metrics[best_name] = ev.evaluate(
+        y_train.to_numpy(), pred_train_selected, scale=scale
+    )
     validation_metrics[best_name] = ev.evaluate(
         y_validation.to_numpy(), pred_validation, scale=scale
     )
@@ -440,7 +484,11 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
 
     # --- baseline metrics --------------------------------------------------
     for name in baseline_specs:
-        for split_name, frame in (("train", train), ("validation", validation), ("test", test)):
+        for split_name, frame in (
+            ("train", train),
+            ("validation", validation),
+            ("test", test),
+        ):
             truth = frame[target].to_numpy(dtype=float)
             pred = frame[f"pred_{name}"].to_numpy(dtype=float)
             metrics = ev.evaluate(truth, pred, scale=scale)
@@ -479,8 +527,12 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     )
     coverage_level = float(args.coverage)
 
-    legacy_interval = ev.residual_interval(residuals_validation, coverage=coverage_level)
-    split_interval = cf.split_conformal_interval(residuals_validation, coverage=coverage_level)
+    legacy_interval = ev.residual_interval(
+        residuals_validation, coverage=coverage_level
+    )
+    split_interval = cf.split_conformal_interval(
+        residuals_validation, coverage=coverage_level
+    )
     legacy_lower, legacy_upper = legacy_interval.apply(pred_test)
     legacy_stats = ev.interval_metrics(y_test.to_numpy(), legacy_lower, legacy_upper)
 
@@ -495,12 +547,18 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             return tn.predict_candidate(predictor, X_new)
 
         loo_scores = cf.jackknife_plus_scores(_fit_predict, X_combined, y_combined)
-        jackknife_nominal = cf.jackknife_plus_interval(loo_scores, coverage=coverage_level)
+        jackknife_nominal = cf.jackknife_plus_interval(
+            loo_scores, coverage=coverage_level
+        )
         guaranteed_level = 1.0 - (1.0 - coverage_level) / 2.0
-        jackknife_guaranteed = cf.jackknife_plus_interval(loo_scores, coverage=guaranteed_level)
+        jackknife_guaranteed = cf.jackknife_plus_interval(
+            loo_scores, coverage=guaranteed_level
+        )
 
     # Primary band: guaranteed jackknife+ when available, split conformal otherwise.
-    primary_interval = jackknife_guaranteed if jackknife_guaranteed is not None else split_interval
+    primary_interval = (
+        jackknife_guaranteed if jackknife_guaranteed is not None else split_interval
+    )
     lower, upper = primary_interval.apply(pred_test)
     interval_stats = ev.interval_metrics(y_test.to_numpy(), lower, upper)
     test_metrics[best_name].update(interval_stats)
@@ -509,7 +567,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     split_lower, split_upper = split_interval.apply(pred_test)
     split_stats = ev.interval_metrics(y_test.to_numpy(), split_lower, split_upper)
     nominal_lower, nominal_upper = (
-        jackknife_nominal.apply(pred_test) if jackknife_nominal is not None else nan_band
+        jackknife_nominal.apply(pred_test)
+        if jackknife_nominal is not None
+        else nan_band
     )
     nominal_stats = (
         ev.interval_metrics(y_test.to_numpy(), nominal_lower, nominal_upper)
@@ -565,7 +625,10 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         validation_rows=len(validation),
         test_rows=len(test),
         training_period=(splits["train"].period_start, splits["train"].period_end),
-        validation_period=(splits["validation"].period_start, splits["validation"].period_end),
+        validation_period=(
+            splits["validation"].period_start,
+            splits["validation"].period_end,
+        ),
         test_period=(splits["test"].period_start, splits["test"].period_end),
         dataset_hash=dataset_hash,
         feature_definition_hash=feature_hash,
@@ -579,7 +642,7 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "model_selection": {
                 "protocol": "expanding_window_walk_forward",
                 "n_splits": cv_splits,
-                "n_calibration_rows": int(len(X_calib)),
+                "n_calibration_rows": len(X_calib),
                 "n_evaluation_points": int(n_eval_points),
                 "n_candidates": len(cv_results),
                 "n_differenced_candidates": int(n_diff),
@@ -614,8 +677,12 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
                 "jackknife_plus_nominal": (
                     {
                         **jackknife_nominal.as_dict(),
-                        "formal_guarantee_level": max(0.0, 1.0 - 2.0 * (1.0 - coverage_level)),
-                        "measured_coverage_on_test": nominal_stats.get("interval_coverage"),
+                        "formal_guarantee_level": max(
+                            0.0, 1.0 - 2.0 * (1.0 - coverage_level)
+                        ),
+                        "measured_coverage_on_test": nominal_stats.get(
+                            "interval_coverage"
+                        ),
                         "mean_interval_width": nominal_stats.get("mean_interval_width"),
                     }
                     if jackknife_nominal is not None
@@ -627,7 +694,8 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
                     "lower_offset": legacy_interval.lower_offset,
                     "upper_offset": legacy_interval.upper_offset,
                     "half_width": max(
-                        abs(legacy_interval.lower_offset), abs(legacy_interval.upper_offset)
+                        abs(legacy_interval.lower_offset),
+                        abs(legacy_interval.upper_offset),
                     ),
                     "n_residuals": legacy_interval.n_residuals,
                     "measured_coverage_on_test": legacy_stats["interval_coverage"],
@@ -674,7 +742,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             output_dir / "feature_importances.csv",
             pd.DataFrame(selection_report.importances),
         )
-    (output_dir / "feature_definition_hash.txt").write_text(feature_hash + "\n", encoding="utf-8")
+    (output_dir / "feature_definition_hash.txt").write_text(
+        feature_hash + "\n", encoding="utf-8"
+    )
 
     _write_json(output_dir / "train_metrics.json", train_metrics)
     _write_json(output_dir / "validation_metrics.json", validation_metrics)
@@ -690,7 +760,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             "workload_class": test["workload_class"].to_numpy(),
             "intensity_band": test["intensity_band"].to_numpy(),
             "peak_band": test["peak_band"].to_numpy(),
-            "quality_status": test.get("quality_status", pd.Series(["unknown"] * len(test))).to_numpy(),
+            "quality_status": test.get(
+                "quality_status", pd.Series(["unknown"] * len(test))
+            ).to_numpy(),
             "target": test[target].to_numpy(),
             f"pred_{best_name}": pred_test,
             "y_lower": lower,
@@ -722,7 +794,7 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         "branch": git_context["branch"],
         "created_at_utc": _utc_now(),
         "random_seed": seed,
-        "row_count": int(len(modeling)),
+        "row_count": len(modeling),
         "source_type": "real",
         "experiment_uid": settings.experiment_uid,
         "period_start_utc": str(modeling["period_start_utc"].min()),
@@ -761,7 +833,9 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
     stats_payload = {
         "statistical_validation": stats_report,
         "leakage_check": leakage,
-        "baselines": {name: asdict(spec_model) for name, spec_model in baseline_specs.items()},
+        "baselines": {
+            name: asdict(spec_model) for name, spec_model in baseline_specs.items()
+        },
     }
     _write_json(output_dir / "statistical_validation.json", stats_payload)
 
@@ -785,12 +859,16 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
         },
         {
             "label": "jackknife+ nominal",
-            "half_width": jackknife_nominal.half_width if jackknife_nominal is not None else float("nan"),
+            "half_width": jackknife_nominal.half_width
+            if jackknife_nominal is not None
+            else float("nan"),
             "coverage": nominal_stats.get("interval_coverage"),
         },
         {
             "label": "empirico legacy",
-            "half_width": max(abs(legacy_interval.lower_offset), abs(legacy_interval.upper_offset)),
+            "half_width": max(
+                abs(legacy_interval.lower_offset), abs(legacy_interval.upper_offset)
+            ),
             "coverage": legacy_stats["interval_coverage"],
         },
     ]
@@ -812,12 +890,15 @@ def cmd_train_real(args: argparse.Namespace, settings: Settings) -> int:
             lower=lower,
             upper=upper,
             baseline_predictions={
-                name: test[f"pred_{name}"].to_numpy(dtype=float) for name in baseline_specs
+                name: test[f"pred_{name}"].to_numpy(dtype=float)
+                for name in baseline_specs
             },
             model_label=best_name,
             interval_summary=interval_summary,
         )
-        print(f"[train-real] {len(written_plots)} explainability plots written to {output_dir / 'plots'}")
+        print(
+            f"[train-real] {len(written_plots)} explainability plots written to {output_dir / 'plots'}"
+        )
     except Exception as exc:  # noqa: BLE001 - plots are best effort
         print(f"[train-real] warning: plots were not generated: {exc}")
 
@@ -881,18 +962,24 @@ def _real_model_readme(
     if interval:
         nominal = float(interval.get("formal_guarantee_level", 0.0))
         measured = interval.get("measured_coverage_on_test")
-        measured_text = f"{float(measured):.0%}" if isinstance(measured, (int, float)) else "n/d"
+        measured_text = (
+            f"{float(measured):.0%}" if isinstance(measured, (int, float)) else "n/d"
+        )
         lines += [
             "",
             "## Intervalo de predicción",
             "",
             f"- Método primario: `{interval.get('primary_method', 'n/d')}`.",
-            f"- Garantía formal: cobertura ≥ {nominal:.0%} bajo intercambiabilidad — "
-            f"cobertura medida en test: {measured_text} (n={metadata.get('test_rows', 'n/d')}).",
-            f"- Semiancho: ±{float(interval.get('half_width', float('nan'))):.4f} "
-            f"(nivel de construcción {float(interval.get('nominal_coverage', 0.0)):.0%}, "
-            f"rango {interval.get('finite_sample_rank', 'n/d')}/"
-            f"{interval.get('n_calibration_scores', 'n/d')}).",
+            (
+                f"- Garantía formal: cobertura ≥ {nominal:.0%} bajo intercambiabilidad — "
+                f"cobertura medida en test: {measured_text} (n={metadata.get('test_rows', 'n/d')})."
+            ),
+            (
+                f"- Semiancho: ±{float(interval.get('half_width', float('nan'))):.4f} "
+                f"(nivel de construcción {float(interval.get('nominal_coverage', 0.0)):.0%}, "
+                f"rango {interval.get('finite_sample_rank', 'n/d')}/"
+                f"{interval.get('n_calibration_scores', 'n/d')})."
+            ),
             "",
             "### Comparación de construcciones conformales",
             "",
@@ -900,7 +987,9 @@ def _real_model_readme(
             "|---|---|---|---|",
         ]
         rows = [("primario", interval)]
-        for name, block in (metadata.get("prediction_interval_alternates") or {}).items():
+        for name, block in (
+            metadata.get("prediction_interval_alternates") or {}
+        ).items():
             if isinstance(block, dict):
                 rows.append((name, block))
         for name, block in rows:
@@ -911,7 +1000,8 @@ def _real_model_readme(
                 f"±{float(width):.4f} | "
                 f"{float(coverage):.0%} | "
                 f"{block.get('guarantee', block.get('method', ''))} |"
-                if isinstance(width, (int, float)) and isinstance(coverage, (int, float))
+                if isinstance(width, (int, float))
+                and isinstance(coverage, (int, float))
                 else f"| {name} | n/d | n/d | {block.get('method', '')} |"
             )
         lines += [
@@ -946,7 +1036,12 @@ def _register_lineage(
                         "EXP-FORECAST-01",
                         "Forecast CPU 1h del recurso Azure SQL observado",
                         "Baseline de forecasting con datos reales exclusivamente",
-                        json.dumps({"target": metadata["target"], "seed": metadata["random_seed"]}),
+                        json.dumps(
+                            {
+                                "target": metadata["target"],
+                                "seed": metadata["random_seed"],
+                            }
+                        ),
                     ),
                 )
                 cur.execute(
@@ -1015,7 +1110,9 @@ def _register_lineage(
                             row[0],
                             metadata["model_name"],
                             json.dumps(metadata["hyperparameters"]),
-                            json.dumps({"validation": manifest.get("validation_metrics", {})}),
+                            json.dumps(
+                                {"validation": manifest.get("validation_metrics", {})}
+                            ),
                         ),
                     )
     except Exception as exc:  # noqa: BLE001 - lineage is best effort
@@ -1050,14 +1147,18 @@ def cmd_generate_scenarios(args: argparse.Namespace, settings: Settings) -> int:
         write_to_db=True,
     )
     manifest = {
-        "dataset_hash": ft.dataset_hash(results["frame"]) if not results["frame"].empty else "",
+        "dataset_hash": ft.dataset_hash(results["frame"])
+        if not results["frame"].empty
+        else "",
         "feature_definition_hash": ft.feature_definition_hash(
-            sorted(results["frame"].columns.tolist()) if not results["frame"].empty else []
+            sorted(results["frame"].columns.tolist())
+            if not results["frame"].empty
+            else []
         ),
         "source_schema_hash": _source_schema_hash(),
         "created_at_utc": _utc_now(),
         "random_seed": settings.random_seed,
-        "row_count": int(len(results["frame"])),
+        "row_count": len(results["frame"]),
         "source_type": "synthetic",
         "experiment_uid": settings.experiment_uid,
         "period_start_utc": str(results["frame"]["period_start_utc"].min())
@@ -1070,7 +1171,9 @@ def cmd_generate_scenarios(args: argparse.Namespace, settings: Settings) -> int:
         "git": _git_context(),
     }
     _write_json(output_dir / "synthetic_dataset_manifest.json", manifest)
-    print(f"[generate-scenarios] {len(results['summary'])} scenarios, {len(results['frame'])} rows")
+    print(
+        f"[generate-scenarios] {len(results['summary'])} scenarios, {len(results['frame'])} rows"
+    )
     return 0
 
 
@@ -1121,7 +1224,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init-db", help="create the local schema and apply the migration")
 
-    p_import = sub.add_parser("import-real", help="copy the real telemetry into the local database")
+    p_import = sub.add_parser(
+        "import-real", help="copy the real telemetry into the local database"
+    )
     p_import.set_defaults(func=cmd_import_real)
 
     p_profile = sub.add_parser("profile-real", help="profile the real dataset")
@@ -1147,12 +1252,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_train.set_defaults(func=cmd_train_real)
 
-    p_scen = sub.add_parser("generate-scenarios", help="generate the synthetic scenarios")
+    p_scen = sub.add_parser(
+        "generate-scenarios", help="generate the synthetic scenarios"
+    )
     p_scen.add_argument("--config", default=None)
     p_scen.add_argument("--output-dir", default=None)
     p_scen.set_defaults(func=cmd_generate_scenarios)
 
-    p_aug = sub.add_parser("evaluate-augmentation", help="compare real-only vs real+synthetic")
+    p_aug = sub.add_parser(
+        "evaluate-augmentation", help="compare real-only vs real+synthetic"
+    )
     p_aug.add_argument("--output-dir", default=None)
     p_aug.set_defaults(func=cmd_evaluate_augmentation)
 

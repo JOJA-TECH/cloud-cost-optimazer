@@ -12,8 +12,9 @@ models, so the preprocessing is fitted on the train split only.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -43,18 +44,26 @@ def default_catalogue(seed: int = DEFAULT_RANDOM_SEED) -> list[ModelSpec]:
     return [
         ModelSpec("linear_lags", "linear", {}),
         ModelSpec("ridge_lags", "ridge", {"alpha": 1.0}),
-        ModelSpec("random_forest", "random_forest", {
-            "n_estimators": 300,
-            "max_depth": 3,
-            "min_samples_leaf": 2,
-            "random_state": seed,
-        }),
-        ModelSpec("gradient_boosting", "gradient_boosting", {
-            "n_estimators": 200,
-            "max_depth": 2,
-            "learning_rate": 0.05,
-            "random_state": seed,
-        }),
+        ModelSpec(
+            "random_forest",
+            "random_forest",
+            {
+                "n_estimators": 300,
+                "max_depth": 3,
+                "min_samples_leaf": 2,
+                "random_state": seed,
+            },
+        ),
+        ModelSpec(
+            "gradient_boosting",
+            "gradient_boosting",
+            {
+                "n_estimators": 200,
+                "max_depth": 2,
+                "learning_rate": 0.05,
+                "random_state": seed,
+            },
+        ),
     ]
 
 
@@ -70,33 +79,39 @@ def build_estimator(spec: ModelSpec) -> Pipeline:
         steps.append(("scaler", StandardScaler()))
         steps.append(("model", Ridge(alpha=float(spec.params.get("alpha", 1.0)))))
     elif spec.kind == "random_forest":
-        steps.append((
-            "model",
-            RandomForestRegressor(
-                n_estimators=int(spec.params.get("n_estimators", 300)),
-                max_depth=spec.params.get("max_depth"),
-                min_samples_leaf=int(spec.params.get("min_samples_leaf", 1)),
-                random_state=int(spec.params.get("random_state", DEFAULT_RANDOM_SEED)),
-            ),
-        ))
+        steps.append(
+            (
+                "model",
+                RandomForestRegressor(
+                    n_estimators=int(spec.params.get("n_estimators", 300)),
+                    max_depth=spec.params.get("max_depth"),
+                    min_samples_leaf=int(spec.params.get("min_samples_leaf", 1)),
+                    random_state=int(
+                        spec.params.get("random_state", DEFAULT_RANDOM_SEED)
+                    ),
+                ),
+            )
+        )
     elif spec.kind == "gradient_boosting":
-        steps.append((
-            "model",
-            GradientBoostingRegressor(
-                n_estimators=int(spec.params.get("n_estimators", 200)),
-                max_depth=spec.params.get("max_depth"),
-                learning_rate=float(spec.params.get("learning_rate", 0.05)),
-                random_state=int(spec.params.get("random_state", DEFAULT_RANDOM_SEED)),
-            ),
-        ))
+        steps.append(
+            (
+                "model",
+                GradientBoostingRegressor(
+                    n_estimators=int(spec.params.get("n_estimators", 200)),
+                    max_depth=spec.params.get("max_depth"),
+                    learning_rate=float(spec.params.get("learning_rate", 0.05)),
+                    random_state=int(
+                        spec.params.get("random_state", DEFAULT_RANDOM_SEED)
+                    ),
+                ),
+            )
+        )
     else:
         raise ValueError(f"unknown model kind: {spec.kind}")
     return Pipeline(steps)
 
 
-def fit_model(
-    spec: ModelSpec, X: pd.DataFrame, y: pd.Series
-) -> Pipeline:
+def fit_model(spec: ModelSpec, X: pd.DataFrame, y: pd.Series) -> Pipeline:
     """Fit a model on the given matrices."""
     estimator = build_estimator(spec)
     estimator.fit(X.to_numpy(dtype=float), y.to_numpy(dtype=float))
@@ -117,16 +132,17 @@ def feature_importance(model: Pipeline, columns: Sequence[str]) -> pd.DataFrame:
         if coefficients is None:
             return pd.DataFrame(columns=["feature", "importance"])
         return pd.DataFrame(
-            {"feature": list(columns), "importance": np.abs(np.asarray(coefficients, dtype=float))}
+            {
+                "feature": list(columns),
+                "importance": np.abs(np.asarray(coefficients, dtype=float)),
+            }
         ).sort_values("importance", ascending=False)
     return pd.DataFrame(
         {"feature": list(columns), "importance": np.asarray(importances, dtype=float)}
     ).sort_values("importance", ascending=False)
 
 
-def select_columns(
-    frame: pd.DataFrame, candidates: Sequence[str]
-) -> list[str]:
+def select_columns(frame: pd.DataFrame, candidates: Sequence[str]) -> list[str]:
     """Keep the candidate columns that exist and are not entirely null."""
     keep: list[str] = []
     for column in candidates:
@@ -151,7 +167,11 @@ def describe_model(model: Pipeline) -> dict[str, Any]:
         "estimator": type(estimator).__name__,
         "steps": [name for name, _ in model.steps],
         "params": {
-            key: (value if isinstance(value, (int, float, str, bool, type(None))) else str(value))
+            key: (
+                value
+                if isinstance(value, (int, float, str, bool, type(None)))
+                else str(value)
+            )
             for key, value in estimator.get_params().items()
             if key
             in {
