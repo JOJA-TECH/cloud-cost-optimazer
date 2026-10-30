@@ -28,3 +28,7 @@
 | DEC-024 | 2026-09-12 | General | Mantener las recomendaciones sin aplicación automática | MTG-002, REQ-004 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
 | DEC-025 | 2026-09-12 | General | Priorizar problema, justificación, objetivos, usuarios, alcance y antecedentes para el primer avance | MTG-002, REQ-005 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
 | DEC-026 | 2026-09-12 | General | Mantener el sprint o retrospectiva los domingos a las 10:00 a. m. | MTG-002 | Adoptada | 01-governance/MTG-002-reunion-2-proyecto-ingenieria.md |
+| DEC-027 | 2026-10-29 | Arquitectura | Autenticación y autorización dentro del monolito Go (sin gateway separado); adapters OIDC/password/Service Principal/Managed Identity | ADR-004 | Aceptada | 04-architecture/decisions/ADR-004-iam-authentication.md |
+| DEC-028 | 2026-10-29 | Pruebas | Unitarias junto al código (_test.go); integración cross-package en backend/test/ | ADR-005 | Aceptada | 04-architecture/decisions/ADR-005-test-directory-structure.md |
+| DEC-029 | 2026-10-30 | Observabilidad | Logging estructurado con log/slog en backend Go; salida a stdout, formato texto o JSON | ADR-006 | Aceptada | 04-architecture/decisions/ADR-006-logging-standard.md |
+| DEC-030 | 2026-10-30 | Seguridad | Argon2id para contraseñas, rate limiting, account lockout, security headers, refresh token rotation | ADR-007 | Aceptada | 04-architecture/decisions/ADR-007-security-design.md |

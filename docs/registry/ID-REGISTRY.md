@@ -22,3 +22,15 @@
 | DEC-024 | Decision | Recomendaciones sin cambios automáticos | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | DEC-025 | Decision | Prioridad del primer avance académico | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | DEC-026 | Decision | Sprint dominical a las 10:00 a. m. | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
+| ADR-003 | ADR | Persistencia GORM portable para cco_app | 2026-10-26 | Equipo del proyecto | Propuesto | 04-architecture/decisions/ADR-003-gorm-portable-persistence.md |
+| ADR-004 | ADR | Arquitectura de Autenticación y Autorización del módulo IAM | 2026-10-29 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-004-iam-authentication.md |
+| ADR-005 | ADR | Estructura de pruebas del backend Go | 2026-10-29 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-005-test-directory-structure.md |
+| TEST-IAM-001 | Test | PermissionEngine Can() wildcard y exact-match | 2026-10-29 | Equipo del proyecto | Aprobado | backend/internal/iam/permission_engine_test.go |
+| TEST-IAM-002 | Test | MapErrorToCode para todos los errores de dominio | 2026-10-29 | Equipo del proyecto | Aprobado | backend/internal/iam/errors_test.go |
+| TEST-IAM-003 | Test | Integración IAM end-to-end sobre SQLite (repos, membresía, proyectos, identidades externas) | 2026-10-29 | Equipo del proyecto | Aprobado | backend/test/iam_integration_test.go |
+| TEST-IAM-004 | Test | Endpoint POST /auth/register: creación de usuario con Argon2id, 201 Created, 409 si email duplicado, validación de campos requeridos | 2026-10-29 | Equipo del proyecto | Aprobado | backend/internal/iam/handlers.go |
+| TEST-IAM-005 | Test | Logging estructurado: slog en middleware y handlers, eventos de auth con request_id/correlation_id | 2026-10-30 | Equipo del proyecto | Aprobado | backend/internal/iam/middleware/auth_middleware.go, backend/internal/iam/handlers.go |
+| TEST-IAM-006 | Test | Seguridad IAM: Argon2id password hash, rate limiting, account lockout, security headers, refresh token rotation | 2026-10-30 | Equipo del proyecto | Aprobado | backend/internal/iam/auth.go, backend/internal/iam/handlers.go, backend/internal/iam/middleware/security.go |
+| TEST-IAM-007 | Test | Registro duplicado y logs críticos: email duplicado → 409 USER_EXISTS; logs en todos los pasos críticos de auth | 2026-10-30 | Equipo del proyecto | Aprobado | backend/internal/iam/handlers.go |
+| ADR-006 | ADR | Estándar de logging del backend con log/slog | 2026-10-30 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-006-logging-standard.md |
+| ADR-007 | ADR | Diseño de seguridad del módulo IAM (Argon2id, rate limiting, account lockout, security headers, refresh token rotation) | 2026-10-30 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-007-security-design.md |
