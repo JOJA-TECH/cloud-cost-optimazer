@@ -16,8 +16,11 @@ type UserModel struct {
 	Status        string     `gorm:"column:status;not null;default:active"`
 	EmailVerified bool       `gorm:"column:email_verified;not null;default:false"`
 	LastLoginAt   *time.Time `gorm:"column:last_login_at"`
-	CreatedAt     time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt     time.Time  `gorm:"column:updated_at;not null"`
+	// PasswordHash is a dev/local fallback; production identity comes from OIDC.
+	// Not present in the production dump: add ALTER TABLE iam.users before enabling password login outside dev.
+	PasswordHash *string   `gorm:"column:password_hash"`
+	CreatedAt    time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
 }
 
 func (UserModel) TableName() string { return "users" }

@@ -18,14 +18,14 @@ func TestMigrateAndUserRepositoryOnSQLite(t *testing.T) {
 	}
 
 	repo := iam.NewUserRepository(db)
-	created, err := repo.Create(context.Background(), iam.CreateUserInput{Email: "ana@example.com", DisplayName: "Ana"})
+	created, err := repo.CreateUser(context.Background(), iam.CreateUserInput{Email: "ana@example.com", DisplayName: "Ana"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created.Email != "ana@example.com" || created.DisplayName != "Ana" {
 		t.Fatalf("unexpected DTO: %#v", created)
 	}
-	found, err := repo.FindByID(context.Background(), created.ID)
+	found, err := repo.FindUserByID(context.Background(), created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
