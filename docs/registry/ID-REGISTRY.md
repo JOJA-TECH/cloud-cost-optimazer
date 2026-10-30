@@ -22,6 +22,9 @@
 | DEC-024 | Decision | Recomendaciones sin cambios automáticos | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | DEC-025 | Decision | Prioridad del primer avance académico | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
 | DEC-026 | Decision | Sprint dominical a las 10:00 a. m. | 2026-09-12 | Equipo del proyecto | Adoptada | registry/DECISION-LOG.md |
+| RES-001 | Research | Antecedentes de software similar y estudio del estándar FOCUS | 2026-09-28 | Equipo del proyecto | Borrador | 02-research/RES-001-antecedentes-software-similar-estandar-focus.md |
+| RES-002 | Research | Precios y métricas reales de Azure SQL Database | 2026-09-28 | Jesús / Equipo del proyecto | Borrador | 02-research/RES-002-precios-metricas-azure-sql.md |
+| DEC-027 | Decision | Adoptar FOCUS como formato de normalización de datos de costo/uso en la capa de ingesta | 2026-09-28 | Equipo del proyecto | Propuesta | registry/DECISION-LOG.md |
 | ADR-003 | ADR | Persistencia GORM portable para cco_app | 2026-10-26 | Equipo del proyecto | Propuesto | 04-architecture/decisions/ADR-003-gorm-portable-persistence.md |
 | ADR-004 | ADR | Arquitectura de Autenticación y Autorización del módulo IAM | 2026-10-29 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-004-iam-authentication.md |
 | ADR-005 | ADR | Estructura de pruebas del backend Go | 2026-10-29 | Equipo del proyecto | Aceptada | 04-architecture/decisions/ADR-005-test-directory-structure.md |
