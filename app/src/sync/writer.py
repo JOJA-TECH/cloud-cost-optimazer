@@ -80,6 +80,17 @@ def start_collector_run(cfg, source: str) -> str:
     uid = str(uuid.uuid4())
     try:
         with db_supabase.transaction(cfg) as conn:
+            # Ensure the experiment row exists so the FK on ops.collector_run
+            # holds even if the workload runner never ran. Idempotent.
+            db_supabase.query(
+                conn,
+                "insert into experiment.experiment_run "
+                "(experiment_uid, resource_uid, started_at_utc, workload_class, "
+                " random_seed, status, config_json) "
+                "values (%s, %s, now(), 'collector', 0, 'CREATED', '{}'::jsonb) "
+                "on conflict (experiment_uid) do nothing",
+                (cfg.experiment_uid, cfg.resource_uid()),
+            )
             db_supabase.query(
                 conn,
                 "insert into ops.collector_run "

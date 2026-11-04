@@ -384,7 +384,8 @@ WorkloadRunner.OPS = {
 def seed_for(cfg: Config) -> int:
     """Deterministic seed per experiment so phases are reproducible."""
     digest = hashlib.sha256(cfg.experiment_uid.encode("utf-8")).hexdigest()
-    return int(digest[:8], 16)
+    # SQL Server `int` is signed 32-bit; keep the seed in range.
+    return int(digest[:8], 16) & 0x7FFFFFFF
 
 
 def _setup_logging(verbose: bool = False) -> None:

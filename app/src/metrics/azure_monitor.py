@@ -55,6 +55,7 @@ def fetch(
         logger.warning("azure-monitor-query/azure-identity not installed; skipping")
         return []
 
+    from azure.core.exceptions import HttpResponseError
     from azure.identity import DefaultAzureCredential
     from azure.monitor.query import MetricsQueryClient
 
@@ -62,13 +63,25 @@ def fetch(
     try:
         credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
         client = MetricsQueryClient(credential)
-        response = client.query_resource(
-            resource_id,
-            metric_names=PLATFORM_METRICS,
-            timespan=(window_start, window_end),
-            granularity=dt.timedelta(seconds=granularity_seconds),
-        )
-        for metric in response.metrics:
+        # Query one metric at a time: not every metric exists for every resource
+        # type (e.g. serverless SQL), and one unknown name fails the whole batch.
+        responses = []
+        for metric_name in PLATFORM_METRICS:
+            try:
+                responses.append(
+                    client.query_resource(
+                        resource_id,
+                        metric_names=[metric_name],
+                        timespan=(window_start, window_end),
+                        granularity=dt.timedelta(seconds=granularity_seconds),
+                    )
+                )
+            except HttpResponseError as exc:
+                if exc.status_code == 400:
+                    logger.debug("metric %s not supported for this resource", metric_name)
+                    continue
+                raise
+        for metric in (m for response in responses for m in response.metrics):
             code = canonical_metric(metric.name)
             if not code:
                 if rejected is not None:
