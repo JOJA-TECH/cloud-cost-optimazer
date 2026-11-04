@@ -28,7 +28,8 @@ jobs:
         include:
           - language: go
             build-mode: autobuild
-          - language: python
+
+          - language: javascript-typescript
             build-mode: none
 
     steps:
