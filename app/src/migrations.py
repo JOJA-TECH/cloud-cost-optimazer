@@ -239,17 +239,22 @@ def main() -> int:
         parser.print_help()
         return 1
 
-    try:
-        if args.apply or args.apply_azure:
+    exit_code = 0
+    if args.apply or args.apply_azure:
+        try:
             az = apply_azure_sql(cfg)
             print(f"azure_sql applied: {az or 'nothing'}")
-        if args.apply or args.apply_supabase:
+        except Exception as exc:  # noqa: BLE001 - supabase must still apply even if azure is unreachable
+            logger.error("azure_sql migration failed (continuing with supabase): %s", exc)
+            exit_code = 1
+    if args.apply or args.apply_supabase:
+        try:
             su = apply_supabase(cfg)
             print(f"supabase applied: {su or 'nothing'}")
-    except Exception as exc:  # noqa: BLE001 - surface migration failure to systemd
-        logger.error("migration failed: %s", exc)
-        return 1
-    return 0
+        except Exception as exc:  # noqa: BLE001 - surface migration failure to systemd
+            logger.error("supabase migration failed: %s", exc)
+            return 1
+    return exit_code
 
 
 if __name__ == "__main__":

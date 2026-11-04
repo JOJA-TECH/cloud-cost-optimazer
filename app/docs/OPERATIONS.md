@@ -1,17 +1,70 @@
 # Operations runbook
 
-## Provision
+## Perfiles de despliegue
+
+- **pilot (predeterminado, seguro):** 1 base de datos + 1 VM + corrida corta.
+  `deployment_profile=pilot` y exactamente una entrada en `database_targets`.
+- **full:** `deployment_profile=full`, `database_subscription_ids` (allowlist no
+  vacía) y `database_targets` con las suscripciones de base explícitas. La VM va
+  en `vm_subscription_id`.
+
+Nunca desplegar en todas las suscripciones visibles por defecto.
+
+## 0. Preflight (obligatorio, read-only, sin Azure real necesario)
+
+```bash
+cd <repo>
+# Definir valores con placeholders o reales (nunca commitear secretos).
+export DEPLOYMENT_PROFILE=pilot
+export DATABASE_TARGETS_JSON='{"pilot-db-1":{...}}'   # ver VARIABLES.md
+export DATABASE_SUBSCRIPTION_IDS="[]"                  # full: allowlist no vacía
+export VM_SUBSCRIPTION_ID="..."
+export SUBSCRIPTION_ID="..."
+export FREE_TIER_ENABLED=true   # solo tras confirmar elegibilidad (lectura sola)
+./scripts/preflight.sh
+```
+
+Si Free Tier no está confirmado, `preflight.sh` se detiene y presenta una
+alternativa de bajo costo claramente marcada como facturable. No continuar hasta
+resolverlo.
+
+## 1. Revisar variables y validar
 
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # fill values; never commit
-terraform init
-terraform apply
+cp terraform.tfvars.example terraform.tfvars   # rellenar placeholders; no commitear
+terraform init -backend=false -input=false
+terraform validate                             # configuración válida, sin Azure
 ```
 
-Cloud-init on the VM installs the runtime, writes `/opt/cco/.env` (0600),
-installs the services and runs migrations. `AUTO_START=false` by default, so the
-workload waits for a Telegram `/start`.
+## 2. Plan (revisar antes de aplicar)
+
+El plan lee la configuración y compila qué se crearía y en qué suscripción. No
+crea recursos. Requiere suscripciones reales conocidas por la sesión de `az`
+autenticada (solo lectura):
+
+```bash
+cd terraform
+terraform plan -var-file=terraform.tfvars -out=tfplan
+# Inspeccionar tfplan (o `terraform show tfplan`). Verificar:
+#   - un solo target de DB (pilot) y suscripción de cada recurso
+#   - VM en vm_subscription_id
+#   - SKU, auto-pause, firewall (solo IP del VM), no 0.0.0.0/0
+```
+
+**No ejecutar `terraform apply` automáticamente.** El operador revisa el plan y
+aplica manualmente cuando confirme targets, suscripciones, costo y Free Tier.
+
+## 3. Aplicar (manual, tras revisar)
+
+```bash
+cd terraform
+terraform apply tfplan   # solo si el operador revisó y aprobó el plan
+```
+
+Cloud-init en la VM instala el runtime, escribe `/opt/cco/.env` (0600), aplica
+migraciones y arranca los servicios. `AUTO_START=false` por defecto, así que la
+carga espera a un Telegram `/start`.
 
 ## Deploy application changes
 

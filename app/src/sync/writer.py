@@ -12,6 +12,7 @@ flush_spool():
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -81,7 +82,8 @@ def start_collector_run(cfg, source: str) -> str:
     try:
         with db_supabase.transaction(cfg) as conn:
             # Ensure the experiment row exists so the FK on ops.collector_run
-            # holds even if the workload runner never ran. Idempotent.
+            # holds even if the workload runner never ran (e.g. migrations
+            # failed before creating it). Idempotent: re-runs are no-ops.
             db_supabase.query(
                 conn,
                 "insert into experiment.experiment_run "

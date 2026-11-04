@@ -89,6 +89,10 @@ write_files:
       AZURE_LOCATION=${azure_location}
       AZURE_SQL_MAX_SIZE_GB=${azure_sql_max_size_gb}
 
+      # --- Deployment profile and multi-subscription target list ---
+      DEPLOYMENT_PROFILE=${deployment_profile}
+      AZURE_SQL_TARGETS_JSON=${azure_sql_targets_json}
+
   - path: /etc/systemd/system/cco-migrate.service
     owner: root:root
     permissions: '0644'
@@ -103,8 +107,10 @@ write_files:
       RemainAfterExit=yes
       WorkingDirectory=${app_dir}/app
       EnvironmentFile=${app_dir}/.env
-      ExecStart=/bin/bash -c 'if [ -x ${app_dir}/venv/bin/python ] && [ -d ${app_dir}/app/src ]; then ${app_dir}/venv/bin/python -m src.migrations --apply; else echo "app not present yet; skipping migrations"; fi'
-      TimeoutStartSec=600
+      # Retry: Azure SQL firewall/RBAC propagation can take a few minutes after
+      # the VM boots; a single failed run used to leave the schema missing.
+      ExecStart=/bin/bash -c 'if [ -x ${app_dir}/venv/bin/python ] && [ -d ${app_dir}/app/src ]; then for i in $(seq 1 20); do ${app_dir}/venv/bin/python -m src.migrations --apply && exit 0; echo "migration attempt $i failed; retrying in 10s"; sleep 10; done; exit 1; else echo "app not present yet; skipping migrations"; fi'
+      TimeoutStartSec=900
 
       [Install]
       WantedBy=multi-user.target
@@ -117,7 +123,7 @@ write_files:
       Description=CCO workload generator
       After=network-online.target cco-migrate.service
       Wants=network-online.target
-      Requires=cco-migrate.service
+      Wants=cco-migrate.service
 
       [Service]
       Type=simple
@@ -140,7 +146,7 @@ write_files:
       Description=CCO metric collector and sync
       After=network-online.target cco-migrate.service
       Wants=network-online.target
-      Requires=cco-migrate.service
+      Wants=cco-migrate.service
 
       [Service]
       Type=simple

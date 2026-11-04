@@ -26,11 +26,15 @@ import sys
 import time
 from typing import List, Tuple
 
+import hashlib
+
 from ..config import Config, from_env, load_env_file
 from ..sync import writer
 from . import aggregator, azure_monitor, query_store, sql_diagnostics, workload_observations
 from .normalizer import MetricReading
 from .quality import evaluate_reading
+
+from ..workload.controller import WorkloadController
 
 logger = logging.getLogger(__name__)
 
@@ -56,28 +60,74 @@ def _apply_quality(readings: List[MetricReading]) -> Tuple[List[MetricReading], 
     return intervals, samples
 
 
+def _targets(cfg: Config) -> List[dict]:
+    """Lista de targets a recolectar. piloto: el único target configurado."""
+    targets = cfg.azure_sql_targets or []
+    if not targets:
+        # Fallback a target único (legacy / pilot sin targets_json).
+        rid = cfg.azure_monitor_resource_id()
+        if rid:
+            targets = [{
+                "target_key": "default",
+                "resource_id": rid,
+                "resource_uid": cfg.resource_uid(),
+                "sku_name": cfg.sql_sku_name or None,
+            }]
+    return targets
+
+
+def _monitor_window(cfg: Config) -> Tuple[dt.datetime, dt.datetime]:
+    """Ventana retrasada + lookback.
+
+    end   = ahora - demora          (evita métricas aún no publicadas)
+    start = end - lookback          (recupera puntos publicados con retraso)
+    La deduplicación (idempotencia en observed_at_utc) evita repetir puntos.
+    """
+    end = _now() - dt.timedelta(seconds=cfg.azure_monitor_delay_seconds)
+    start = end - dt.timedelta(seconds=cfg.azure_monitor_lookback_seconds)
+    return start, end
+
+
 def collect_once(cfg: Config, collector_run_uid: str) -> writer.WriteResult:
-    end = _now()
-    start = end - dt.timedelta(seconds=cfg.capture_raw_interval_seconds)
+    start, end = _monitor_window(cfg)
+    targets = _targets(cfg)
 
     readings: List[MetricReading] = []
     rejected: List[dict] = []
-    readings.extend(
-        azure_monitor.fetch(
-            cfg, start, end, cfg.capture_raw_interval_seconds, rejected=rejected
+    for target in targets:
+        resource_id = target.get("resource_id") or cfg.azure_monitor_resource_id()
+        resource_uid = target.get("resource_uid") or cfg.resource_uid()
+        sku_name = target.get("sku_name")
+        readings.extend(
+            azure_monitor.fetch(
+                cfg,
+                resource_id,
+                resource_uid,
+                start,
+                end,
+                cfg.capture_raw_interval_seconds,
+                rejected=rejected,
+                sku_name=sku_name,
+            )
         )
-    )
-    readings.extend(sql_diagnostics.fetch(cfg))
-    readings.extend(query_store.fetch(cfg))
+        if cfg.collect_sql_diagnostics:
+            readings.extend(sql_diagnostics.fetch(cfg, resource_uid, sku_name=sku_name))
+            readings.extend(query_store.fetch(cfg, resource_uid, sku_name=sku_name))
 
     observations, workload_stats = workload_observations.drain(cfg, start, end)
+    # Las observaciones de workload pertenecen al experimento; se etiquetan con
+    # el target primario (en piloto es el único).
+    primary_uid = cfg.primary_resource_id()
+    for r in observations + workload_stats:
+        if r.resource_uid is None:
+            r.resource_uid = primary_uid
     readings.extend(observations)
     readings.extend(workload_stats)
 
     intervals, samples = _apply_quality(readings)
     logger.info(
-        "cycle: %d interval readings, %d samples, %d rejected",
-        len(intervals), len(samples), len(rejected),
+        "cycle: %d interval readings, %d samples, %d rejected (targets=%d)",
+        len(intervals), len(samples), len(rejected), len(targets),
     )
 
     result = writer.persist(
@@ -104,6 +154,19 @@ def run_forever(cfg: Config, interval_seconds: int | None = None) -> int:
         "collector started (experiment=%s interval=%ds agg_every=%ds)",
         cfg.experiment_uid, interval, aggregation_every,
     )
+
+    # Ensure the experiment exists in both stores so the collector's FKs hold
+    # even if the workload runner or migrations never ran. Idempotent.
+    try:
+        seed = int(hashlib.sha256(cfg.experiment_uid.encode("utf-8")).hexdigest()[:8], 16)
+        WorkloadController(cfg).ensure_experiment(
+            workload_class="collector",
+            random_seed=seed,
+            config_json={"profile": cfg.deployment_profile},
+        )
+    except Exception as exc:  # noqa: BLE001 - collector still runs, spools data
+        logger.warning("cannot ensure experiment: %s", exc)
+
     last_aggregation = 0.0
     while not stop["requested"]:
         cycle_start = time.monotonic()

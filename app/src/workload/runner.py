@@ -1,20 +1,18 @@
 """Workload generator service.
 
-Runs one or more controlled phases against the Azure SQL `loadtest` schema,
-honoring the state machine in loadtest.workload_control. Operations are bounded
-(small batches, capped payloads) and only touch loadtest. Nothing destructive
-or unbounded is ever executed.
+Ejecuta fases W0-W9 contra la base de datos Azure SQL `loadtest` con control de
+carga en abierto (open-loop): la tasa ofrecida es independiente del tiempo de
+respuesta y nunca se multiplica por la concurrencia.
 
-Lifecycle:
-- creates the workload_run in Supabase when a phase starts;
-- streams updated counters (operations_total, errors_total) to Supabase;
-- acknowledges PAUSING -> PAUSED when a batch completes;
-- exits on STOPPING/STOPPED/FAILED and on SIGTERM/SIGINT (exit code 143/130);
-- the final flush + STOPPED persistence is owned by src.shutdown.
+Cada observación lleva trazabilidad completa:
+experiment_uid, resource_uid, workload_run_uid, config_snapshot_id,
+workload_class, fase, timestamp UTC, operación y origen.
 
-Usage:
+Los fallos SQL generan una observación con error y latencia/tiempo de espera.
+
+Uso:
     python -m src.workload.runner --service            # systemd
-    python -m src.workload.runner --run --class mixed --hours 6
+    python -m src.workload.runner --run --class W1 --hours 1
 """
 
 from __future__ import annotations
@@ -40,20 +38,33 @@ from .controller import WorkloadController
 
 logger = logging.getLogger(__name__)
 
+INTERVAL_LABELS = ("warmup", "measure", "cooldown")
+W8 = "W8"
+
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
 class PhaseConfig:
-    def __init__(self, raw: dict, index: int):
+    def __init__(self, raw: dict, index: int, config_snapshot_id: str):
         self.index = index
         self.workload_class = raw.get("workload_class", "mixed")
+        patterns.validate_class(self.workload_class)
         self.duration_seconds = int(raw.get("duration_seconds", 6 * 3600))
         self.intensity = float(raw.get("intensity", 0.7))
-        self.concurrency = int(raw.get("concurrency", 1))
-        self.batch_size = int(raw.get("batch_size", 10))
-        patterns.validate_class(self.workload_class)
+        self.concurrency = max(1, int(raw.get("concurrency", 1)))
+        self.batch_size = max(1, int(raw.get("batch_size", 1)))
+        # Tasa ofrecida total (ops/min), independiente de la concurrencia.
+        self.offered_rate_ops_per_min = float(
+            raw.get("offered_rate_ops_per_min", 15.0 * self.intensity)
+        )
+        self.warmup_seconds = int(raw.get("warmup_seconds", 60))
+        self.measure_seconds = int(raw.get("measure_seconds", self.duration_seconds))
+        self.cooldown_seconds = int(raw.get("cooldown_seconds", 60))
+        self.pause_seconds = int(raw.get("pause_seconds", 0))
+        self.storage_cap_bytes = raw.get("storage_cap_bytes")  # tope W8
+        self.config_snapshot_id = config_snapshot_id
 
     def as_dict(self) -> dict:
         return {
@@ -63,30 +74,14 @@ class PhaseConfig:
             "intensity": self.intensity,
             "concurrency": self.concurrency,
             "batch_size": self.batch_size,
+            "offered_rate_ops_per_min": self.offered_rate_ops_per_min,
+            "warmup_seconds": self.warmup_seconds,
+            "measure_seconds": self.measure_seconds,
+            "cooldown_seconds": self.cooldown_seconds,
+            "pause_seconds": self.pause_seconds,
+            "storage_cap_bytes": self.storage_cap_bytes,
+            "config_snapshot_id": self.config_snapshot_id,
         }
-
-
-def default_schedule(cfg: Config) -> List[PhaseConfig]:
-    """Default: a single `mixed` phase covering the experiment window."""
-    return [
-        PhaseConfig(
-            {
-                "workload_class": "mixed",
-                "duration_seconds": cfg.experiment_duration_hours * 3600,
-                "intensity": cfg.workload_intensity,
-                "concurrency": 1,
-                "batch_size": 10,
-            },
-            index=1,
-        )
-    ]
-
-
-def load_schedule(cfg: Config) -> List[PhaseConfig]:
-    raw = _env_json("WORKLOAD_SCHEDULE_JSON")
-    if not raw:
-        return default_schedule(cfg)
-    return [PhaseConfig(item, idx) for idx, item in enumerate(raw, start=1)]
 
 
 def _env_json(name: str) -> Optional[list]:
@@ -102,26 +97,85 @@ def _env_json(name: str) -> Optional[list]:
         return None
 
 
+def config_snapshot_id(schedule: List[dict]) -> str:
+    """Identificador determinista del snapshot de configuración de carga."""
+    material = json.dumps(schedule, sort_keys=True)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def default_schedule(cfg: Config) -> List[PhaseConfig]:
+    """Piloto: humo corto W0 (línea base) + W1 (alta estable) + pausa."""
+    snapshot = config_snapshot_id(
+        [
+            {"workload_class": "low_stable", "duration_seconds": 5 * 60},
+            {"workload_class": "high_stable", "duration_seconds": 5 * 60},
+        ]
+    )
+    return [
+        PhaseConfig(
+            {
+                "workload_class": "low_stable",
+                "duration_seconds": 5 * 60,
+                "intensity": 0.2,
+                "concurrency": 1,
+                "batch_size": 1,
+                "offered_rate_ops_per_min": 5.0,
+            },
+            index=1,
+            config_snapshot_id=snapshot,
+        ),
+        PhaseConfig(
+            {
+                "workload_class": "high_stable",
+                "duration_seconds": 5 * 60,
+                "intensity": 0.7,
+                "concurrency": 1,
+                "batch_size": 1,
+                "offered_rate_ops_per_min": 30.0,
+            },
+            index=2,
+            config_snapshot_id=snapshot,
+        ),
+    ]
+
+
+def load_schedule(cfg: Config) -> List[PhaseConfig]:
+    raw = _env_json("WORKLOAD_SCHEDULE_JSON")
+    if not raw:
+        return default_schedule(cfg)
+    snapshot = config_snapshot_id(raw)
+    return [PhaseConfig(item, idx, snapshot) for idx, item in enumerate(raw, start=1)]
+
+
+def seed_for_phase(cfg: Config, phase_index: int) -> int:
+    """Semilla determinista por experimento + fase (persistida, nunca aleatoria)."""
+    digest = hashlib.sha256(
+        f"{cfg.experiment_uid}:{phase_index}".encode("utf-8")
+    ).hexdigest()
+    # SQL Server `int` is signed 32-bit; keep the seed in range.
+    return int(digest[:8], 16) & 0x7FFFFFFF
+
+
 class WorkloadRunner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.controller = WorkloadController(cfg)
-        self.rng = random.Random(seed_for(cfg))
         self._stop_requested = threading.Event()
         self.status = "CREATED"
+        self._schedule: List[PhaseConfig] = []
 
-    # -- operations ----------------------------------------------------------
-    def _op_point_lookup(self, conn, worker_id: int, batch_id: int, rng: random.Random):
+    # -- operaciones (solo tocan loadtest, acotadas) -----------------------
+    def _op_point_lookup(self, conn, rng: random.Random):
         start = time.monotonic()
         db_azure.execute(
             conn,
-            "SELECT TOP (1) fe.event_id, fe.created_at_utc FROM loadtest.fact_events fe "
+            "SELECT TOP (1) fe.event_id FROM loadtest.fact_events fe "
             "WHERE fe.experiment_uid = ? ORDER BY fe.created_at_utc DESC",
             (self.cfg.experiment_uid,),
         )
         return True, (time.monotonic() - start) * 1000.0
 
-    def _op_range_scan(self, conn, worker_id: int, batch_id: int, rng: random.Random):
+    def _op_range_scan(self, conn, rng: random.Random):
         start = time.monotonic()
         end = _now()
         start_utc = end - dt.timedelta(seconds=3600)
@@ -133,7 +187,7 @@ class WorkloadRunner:
         )
         return True, (time.monotonic() - start) * 1000.0
 
-    def _op_insert(self, conn, worker_id: int, batch_id: int, rng: random.Random):
+    def _op_insert(self, conn, rng: random.Random):
         start = time.monotonic()
         payload_size = rng.randint(64, 1024)
         payload = "".join(rng.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(payload_size))
@@ -145,20 +199,20 @@ class WorkloadRunner:
                 " payload_size_bytes, batch_id, worker_id) "
                 "OUTPUT INSERTED.event_id "
                 "VALUES (NEWID(), ?, SYSUTCDATETIME(), N'insert_event', ?, ?, ?)",
-                (self.cfg.experiment_uid, payload_size, batch_id, worker_id),
+                (self.cfg.experiment_uid, payload_size, 0, 0),
             )
             row = cur.fetchone()
         if row is not None:
-            db_azure.execute(
-                conn,
-                "INSERT INTO loadtest.fact_events_payload (event_id, payload, payload_sha256) "
-                "VALUES (?, ?, ?)",
-                (row[0], payload, digest),
-            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO loadtest.fact_events_payload (event_id, payload, payload_sha256) "
+                    "VALUES (?, ?, ?)",
+                    (row[0], payload, digest),
+                )
         conn.commit()
         return True, (time.monotonic() - start) * 1000.0
 
-    def _op_update(self, conn, worker_id: int, batch_id: int, rng: random.Random):
+    def _op_update(self, conn, rng: random.Random):
         start = time.monotonic()
         db_azure.execute(
             conn,
@@ -169,7 +223,7 @@ class WorkloadRunner:
         conn.commit()
         return True, (time.monotonic() - start) * 1000.0
 
-    def _op_aggregate(self, conn, worker_id: int, batch_id: int, rng: random.Random):
+    def _op_aggregate(self, conn, rng: random.Random):
         start = time.monotonic()
         db_azure.execute(
             conn,
@@ -181,7 +235,7 @@ class WorkloadRunner:
 
     OPS: Dict[str, str] = {}
 
-    # -- phase bookkeeping -----------------------------------------------------
+    # -- registro de fases --------------------------------------------------
     def _register_workload_run(self, phase: PhaseConfig) -> str:
         uid = str(uuid.uuid4())
         with db_supabase.transaction(self.cfg) as conn:
@@ -205,7 +259,9 @@ class WorkloadRunner:
             )
         return uid
 
-    def _write_workload_stats(self, run_uid: str, ops: int, errs: int, finished: bool, reason: str = ""):
+    def _write_workload_stats(
+        self, run_uid: str, ops: int, errs: int, finished: bool, reason: str = ""
+    ):
         with db_supabase.transaction(self.cfg) as conn:
             db_supabase.query(
                 conn,
@@ -218,15 +274,31 @@ class WorkloadRunner:
                 (ops, errs, finished, finished, reason, run_uid),
             )
 
-    # -- worker loop -----------------------------------------------------------
-    def _worker(self, run_uid: str, phase: PhaseConfig, stop_event: threading.Event,
-                stats: dict, worker_id: int):
-        rng = random.Random(f"{seed_for(self.cfg)}:{run_uid}:{worker_id}")
+    # -- intervalo de la fase (warmup/measure/cooldown) ---------------------
+    def _phase_interval(self, elapsed: float, phase: PhaseConfig) -> str:
+        if elapsed <= phase.warmup_seconds:
+            return "warmup"
+        if elapsed <= phase.warmup_seconds + phase.measure_seconds:
+            return "measure"
+        return "cooldown"
+
+    # -- bucle de worker (tasa ofrecida open-loop) --------------------------
+    def _worker(
+        self,
+        run_uid: str,
+        phase: PhaseConfig,
+        stop_event: threading.Event,
+        stats: dict,
+        worker_id: int,
+        phase_start: float,
+        rng: random.Random,
+    ):
         conn = db_azure.connect(self.cfg)
         try:
-            ops_per_min = 15.0 * phase.intensity * phase.concurrency
+            # Cada worker ofrece offered_rate / concurrency ops/min (open-loop).
+            worker_rate = max(0.1, phase.offered_rate_ops_per_min / phase.concurrency)
+            seconds_per_op = 60.0 / worker_rate
             batch = max(1, phase.batch_size)
-            intensity_factor = 1.0
 
             while not stop_event.is_set() and not self._stop_requested.is_set():
                 status = self.controller.azure_status()
@@ -243,112 +315,183 @@ class WorkloadRunner:
                     time.sleep(5)
                     continue
 
-                elapsed = time.monotonic() - stats["started_at"]
-                fraction = min(1.0, elapsed / max(1.0, phase.duration_seconds))
-                multiplier = patterns.shape_value(phase.workload_class, fraction)
-                intensity_factor = patterns.next_intensity_factor(
-                    rng, intensity_factor, self.cfg.workload_intensity_jitter
-                )
-                effective_rate = max(1.0, ops_per_min * multiplier * intensity_factor)
+                elapsed = time.monotonic() - phase_start
+                if elapsed >= phase.duration_seconds:
+                    break
 
-                for _ in range(batch):
-                    if stop_event.is_set():
-                        break
-                    key, _ = patterns.pick_operation(rng, phase.workload_class)
-                    name = self.OPS.get(key)
-                    handler = getattr(self, name, None) if name else None
-                    if handler is None:
-                        continue
+                # Tope W8: si hay storage_cap y se acerca, detener la fase.
+                if phase.storage_cap_bytes is not None:
                     try:
-                        ok, _latency = handler(
-                            conn, worker_id=worker_id, batch_id=stats["batch_seq"], rng=rng
+                        used = db_azure.scalar(
+                            conn,
+                            "SELECT SUM(size) * 8192 FROM sys.database_files "
+                            "WHERE type = 0 AND name NOT LIKE N'model%'",
                         )
-                        workload_observations.append_observation(
-                            self.cfg, key, _latency, ok
-                        )
+                        if used is not None and int(used) >= int(phase.storage_cap_bytes):
+                            logger.warning(
+                                "W8 storage cap alcanzado (%s >= %s); deteniendo fase %d",
+                                used, phase.storage_cap_bytes, phase.index,
+                            )
+                            with stats["lock"]:
+                                stats["stopped_by_cap"] = True
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                # Tope de operaciones ofrecidas en este ciclo.
+                for _ in range(batch):
+                    if stop_event.is_set() or self._stop_requested.is_set():
+                        break
+                    op_start = time.monotonic()
+                    key, _ = patterns.pick_operation(rng, phase.workload_class)
+                    handler_name = self.OPS.get(key)
+                    handler = getattr(self, handler_name, None) if handler_name else None
+                    if handler is None:
+                        with stats["lock"]:
+                            stats["offered"] += 1
+                        continue
+                    with stats["lock"]:
+                        stats["offered"] += 1
+                        stats["started"] += 1
+                    ok = False
+                    latency = 0.0
+                    try:
+                        ok, latency = handler(conn, rng=rng)
                         with stats["lock"]:
                             if ok:
-                                stats["ops"] += 1
+                                stats["completed"] += 1
                             else:
-                                stats["errs"] += 1
+                                stats["failed"] += 1
                     except Exception as exc:  # noqa: BLE001
-                        logger.warning("operation %s failed: %s", key, exc)
+                        logger.warning("operación %s falló: %s", key, exc)
+                        try:
+                            conn.rollback()
+                        except Exception:  # noqa: BLE001
+                            pass
                         with stats["lock"]:
-                            stats["errs"] += 1
-                        conn.rollback()
+                            stats["failed"] += 1
+                        latency = (time.monotonic() - op_start) * 1000.0
+                    op_elapsed = time.monotonic() - op_start
+                    if op_elapsed > seconds_per_op:
+                        with stats["lock"]:
+                            stats["delayed"] += 1
+                    workload_observations.append_observation(
+                        self.cfg,
+                        key,
+                        latency,
+                        ok,
+                        workload_run_uid=run_uid,
+                        phase=phase.index,
+                        workload_class=phase.workload_class,
+                        config_snapshot_id=phase.config_snapshot_id,
+                        origin="worker",
+                        resource_uid=self.cfg.primary_resource_id(),
+                    )
                     with stats["lock"]:
                         stats["batch_seq"] += 1
 
-                sleep_seconds = max(0.2, (batch / effective_rate) * 60.0)
-                stop_event.wait(sleep_seconds)
+                # Open-loop: dormir el resto del intervalo por operación, sin
+                # depender del tiempo de respuesta (la tasa ofrecida es fija).
+                sleep_for = max(0.0, seconds_per_op - (time.monotonic() - op_start))
+                if sleep_for > 0:
+                    stop_event.wait(sleep_for)
         finally:
             conn.close()
 
     def run_phases(self) -> int:
         self.controller.ensure_experiment(
             workload_class="schedule",
-            random_seed=seed_for(self.cfg),
+            random_seed=seed_for_phase(self.cfg, 0),
             config_json={"schedule": [p.as_dict() for p in self._schedule]},
         )
-        logger.info("experiment %s ensured", self.cfg.experiment_uid)
+        logger.info("experimento %s asegurado", self.cfg.experiment_uid)
 
         for phase in self._schedule:
             if self._stop_requested.is_set():
                 break
             logger.info(
-                "phase %d/%d class=%s duration=%ds intensity=%s concurrency=%d",
+                "fase %d/%d class=%s tasa_ofrecida=%.2f ops/min concurrency=%d "
+                "warmup=%ds measure=%ds cooldown=%ds",
                 phase.index, len(self._schedule), phase.workload_class,
-                phase.duration_seconds, phase.intensity, phase.concurrency,
+                phase.offered_rate_ops_per_min, phase.concurrency,
+                phase.warmup_seconds, phase.measure_seconds, phase.cooldown_seconds,
             )
             run_uid = self._register_workload_run(phase)
             stop_event = threading.Event()
             stats = {
-                "ops": 0,
-                "errs": 0,
+                "offered": 0,
+                "started": 0,
+                "completed": 0,
+                "failed": 0,
+                "delayed": 0,
+                "abandoned": 0,
                 "batch_seq": 1,
-                "started_at": time.monotonic(),
+                "stopped_by_cap": False,
                 "lock": threading.Lock(),
             }
+            phase_seed = seed_for_phase(self.cfg, phase.index)
             threads = [
                 threading.Thread(
                     target=self._worker,
-                    args=(run_uid, phase, stop_event, stats, w + 1),
+                    args=(
+                        run_uid, phase, stop_event, stats, w + 1,
+                        time.monotonic(), random.Random(phase_seed ^ (w + 1)),
+                    ),
                     daemon=True,
                     name=f"worker-{w}",
                 )
-                for w in range(max(1, phase.concurrency))
+                for w in range(phase.concurrency)
             ]
             for t in threads:
                 t.start()
 
-            phase_end = time.monotonic() + phase.duration_seconds
+            phase_wall_end = time.monotonic() + phase.duration_seconds
             last_report = time.monotonic()
-            while time.monotonic() < phase_end:
+            while time.monotonic() < phase_wall_end:
                 if self._stop_requested.is_set():
                     break
                 status = self.controller.azure_status()
                 if status in ("STOPPING", "STOPPED", "FAILED"):
                     break
+                with stats["lock"]:
+                    if stats.get("stopped_by_cap"):
+                        break
                 now = time.monotonic()
                 if now - last_report > 30:
-                    self._write_workload_stats(run_uid, stats["ops"], stats["errs"], False)
+                    self._write_workload_stats(
+                        run_uid, stats["completed"], stats["failed"], False
+                    )
                     last_report = now
                 time.sleep(2)
 
             stop_event.set()
             for t in threads:
                 t.join(timeout=15)
+            with stats["lock"]:
+                stopped_by_cap = stats.get("stopped_by_cap", False)
+                ops = stats["completed"]
+                errs = stats["failed"]
             reason = "phase_completed"
             if self._stop_requested.is_set():
                 reason = "stop_requested"
+            elif stopped_by_cap:
+                reason = "w8_storage_cap"
             elif self.controller.azure_status() in ("STOPPING", "STOPPED", "FAILED"):
                 reason = self.controller.azure_status().lower()
-            self._write_workload_stats(run_uid, stats["ops"], stats["errs"], True, reason)
-            logger.info("phase %d finished: ops=%d errs=%d", phase.index, stats["ops"], stats["errs"])
+            self._write_workload_stats(run_uid, ops, errs, True, reason)
+            logger.info(
+                "fase %d terminada: ofrecido=%d iniciado=%d completado=%d "
+                "fallido=%d retrasado=%d razón=%s",
+                phase.index, stats["offered"], stats["started"], ops, errs,
+                stats["delayed"], reason,
+            )
+            if phase.pause_seconds > 0 and not self._stop_requested.is_set():
+                logger.info("fase %d: pausa %ds", phase.index, phase.pause_seconds)
+                stop_event.wait(phase.pause_seconds)
 
         return 0
 
-    # -- service entry ---------------------------------------------------------
+    # -- servicio -----------------------------------------------------------
     def serve(self) -> int:
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -369,9 +512,8 @@ class WorkloadRunner:
         self._stop_requested.set()
 
 
-# Operation registry: template_key (from loadtest.query_templates) -> handler
-# method name, resolved per instance so the method stays bound. All handlers are
-# bounded and touch only the loadtest schema.
+# Operación registry: template_key (de loadtest.query_templates) -> handler.
+# Todos los handlers son acotados y tocan solo el esquema loadtest.
 WorkloadRunner.OPS = {
     "point_lookup": "_op_point_lookup",
     "range_scan": "_op_range_scan",
@@ -382,7 +524,7 @@ WorkloadRunner.OPS = {
 
 
 def seed_for(cfg: Config) -> int:
-    """Deterministic seed per experiment so phases are reproducible."""
+    """Semilla determinista por experimento (compatibilidad)."""
     digest = hashlib.sha256(cfg.experiment_uid.encode("utf-8")).hexdigest()
     # SQL Server `int` is signed 32-bit; keep the seed in range.
     return int(digest[:8], 16) & 0x7FFFFFFF
@@ -399,7 +541,7 @@ def _setup_logging(verbose: bool = False) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="CCO workload generator")
     parser.add_argument("--service", action="store_true", help="run as a systemd service")
-    parser.add_argument("--run", action="store_true", help="single run (implies --service loop semantics)")
+    parser.add_argument("--run", action="store_true", help="single run")
     parser.add_argument("--class", dest="workload_class", default=None)
     parser.add_argument("--hours", type=float, default=None)
     parser.add_argument("--verbose", action="store_true")
@@ -412,9 +554,13 @@ def main() -> int:
     if args.workload_class:
         patterns.validate_class(args.workload_class)
         hours = args.hours if args.hours else cfg.experiment_duration_hours
+        snapshot = config_snapshot_id(
+            [{"workload_class": args.workload_class, "duration_seconds": int(hours * 3600)}]
+        )
         cfg_overrides = [PhaseConfig(
             {"workload_class": args.workload_class, "duration_seconds": int(hours * 3600)},
             index=1,
+            config_snapshot_id=snapshot,
         )]
     else:
         cfg_overrides = load_schedule(cfg)

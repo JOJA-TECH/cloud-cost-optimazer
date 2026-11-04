@@ -42,12 +42,14 @@ def available() -> bool:
 
 def fetch(
     cfg: Config,
+    resource_id: str,
+    resource_uid: str,
     window_start: dt.datetime,
     window_end: dt.datetime,
     granularity_seconds: int = 60,
     rejected: Optional[List[dict]] = None,
+    sku_name: Optional[str] = None,
 ) -> List[MetricReading]:
-    resource_id = cfg.azure_monitor_resource_id()
     if not resource_id:
         logger.debug("no ARM resource id available; skipping Azure Monitor")
         return []
@@ -78,7 +80,9 @@ def fetch(
                 )
             except HttpResponseError as exc:
                 if exc.status_code == 400:
-                    logger.debug("metric %s not supported for this resource", metric_name)
+                    logger.debug(
+                        "metric %s not supported for %s", metric_name, resource_uid
+                    )
                     continue
                 raise
         for metric in (m for response in responses for m in response.metrics):
@@ -93,6 +97,7 @@ def fetch(
                             "observed_at_utc": window_end,
                             "payload_json": {"raw_metric": metric.name},
                             "reason": "unknown_metric",
+                            "resource_uid": resource_uid,
                         }
                     )
                 logger.warning("dropping unknown Azure Monitor metric %r", metric.name)
@@ -105,6 +110,9 @@ def fetch(
                     observed = point.timestamp
                     if observed.tzinfo is None:
                         observed = observed.replace(tzinfo=dt.timezone.utc)
+                    payload = {"raw_metric": metric.name}
+                    if sku_name is not None:
+                        payload["sku_name"] = sku_name
                     readings.append(
                         MetricReading(
                             metric_code=code,
@@ -113,15 +121,16 @@ def fetch(
                             observed_at_utc=observed,
                             interval_seconds=granularity_seconds,
                             source="azure_monitor",
+                            resource_uid=resource_uid,
                             source_record_id=None,
-                            source_payload={"raw_metric": metric.name},
+                            source_payload=payload,
                             source_granularity_seconds=granularity_seconds,
                         )
                     )
     except Exception as exc:  # noqa: BLE001 - monitoring must never break capture
-        logger.warning("Azure Monitor query failed: %s", exc)
+        logger.warning("Azure Monitor query failed for %s: %s", resource_uid, exc)
         return []
-    logger.debug("Azure Monitor returned %d readings", len(readings))
+    logger.debug("Azure Monitor returned %d readings for %s", len(readings), resource_uid)
     return readings
 
 

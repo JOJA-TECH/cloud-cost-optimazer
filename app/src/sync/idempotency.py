@@ -48,7 +48,9 @@ def build_metric_reading_row(
     reading: MetricReading,
     workload_run_uid: str | None = None,
 ) -> Dict[str, Any]:
-    resource_uid = cfg.resource_uid()
+    # Cada lectura lleva el resource_uid de su target de origen; fallback al
+    # resource_uid del experimento (pilot = target único).
+    resource_uid = reading.resource_uid or cfg.resource_uid()
     bucket = _floor_to_interval(reading.observed_at_utc, reading.interval_seconds)
     granularity = reading.source_granularity_seconds or reading.interval_seconds
     coverage_end = reading.coverage_end_utc or reading.observed_at_utc
@@ -83,7 +85,7 @@ def build_metric_sample_row(
     workload_run_uid: str | None = None,
     source_sample_id: str | None = None,
 ) -> Dict[str, Any]:
-    resource_uid = cfg.resource_uid()
+    resource_uid = reading.resource_uid or cfg.resource_uid()
     if source_sample_id is None:
         material = "|".join(
             [

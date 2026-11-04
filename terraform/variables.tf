@@ -1,10 +1,23 @@
 # ---------------------------------------------------------------------------
 # Identity / subscription
 # ---------------------------------------------------------------------------
+# Primary subscription that hosts the Azure SQL database target(s). For the
+# pilot profile this is the single target subscription. For `full` it is the
+# first/primary entry; additional database subscriptions are declared through
+# database_targets and the explicit provider aliases in providers.tf.
 variable "subscription_id" {
   type        = string
   sensitive   = true
-  description = "Azure subscription id used to create the experiment resources."
+  description = "Primary Azure subscription id (hosts the SQL database target(s))."
+}
+
+# Subscription where the collector VM is deployed. Separate from the database
+# subscription(s) on purpose: multi-subscription experiments must pin the VM to
+# one explicit subscription and never default to all visible subscriptions.
+variable "vm_subscription_id" {
+  type        = string
+  sensitive   = true
+  description = "Azure subscription id where the collector VM is deployed."
 }
 
 variable "tenant_id" {
@@ -16,8 +29,125 @@ variable "tenant_id" {
 variable "location" {
   type        = string
   default     = "eastus"
-  description = "Azure region. Verify SKU availability and pricing before applying."
+  description = "Azure region for the primary subscription. Verify SKU availability and pricing before applying."
 }
+
+variable "vm_location" {
+  type        = string
+  default     = "eastus"
+  description = "Azure region for the collector VM subscription."
+}
+
+variable "vm_resource_group" {
+  type        = string
+  default     = "cco-vm-rg"
+  description = "Resource group for the collector VM (in vm_subscription_id)."
+}
+
+# ---------------------------------------------------------------------------
+# Deployment profile
+# ---------------------------------------------------------------------------
+variable "deployment_profile" {
+  type        = string
+  default     = "pilot"
+  description = "pilot (one DB, one VM, short run) or full (explicit allowlist of DB subscriptions)."
+
+  validation {
+    condition     = contains(["pilot", "full"], var.deployment_profile)
+    error_message = "deployment_profile must be 'pilot' or 'full'."
+  }
+}
+
+# Allowlist of subscriptions that may host database targets. The VM subscription
+# is intentionally NOT part of this list unless explicitly added.
+variable "database_subscription_ids" {
+  type        = list(string)
+  sensitive   = true
+  default     = []
+  description = "Allowlist of subscription ids permitted to host database targets. Required and non-empty for profile=full."
+}
+
+# Explicit database targets. Each key is a stable target identifier; the value
+# fully describes one Azure SQL database target. Used by both profiles.
+# pilot: exactly one entry. full: one or more entries, each subscription_id in
+# database_subscription_ids.
+variable "database_targets" {
+  type = map(object({
+    subscription_id          = string
+    resource_group           = string
+    location                 = string
+    server                   = string
+    database                 = string
+    sku_name                 = string
+    min_capacity             = number
+    max_capacity             = number
+    auto_pause_delay_minutes = number
+    max_size_gb              = number
+    free_tier                = bool
+    resource_uid             = string
+  }))
+  default     = {}
+  description = "Explicit database targets (multi-subscription capable). pilot requires exactly one entry; full requires one or more."
+
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && (var.deployment_profile != "pilot" || length(var.database_targets) == 1)
+    )
+    error_message = "deployment_profile=pilot requires exactly one entry in database_targets."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && (var.deployment_profile != "full" || length(var.database_targets) >= 1)
+    )
+    error_message = "deployment_profile=full requires at least one entry in database_targets."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && (var.deployment_profile != "full" || length(var.database_subscription_ids) >= 1)
+    )
+    error_message = "deployment_profile=full requires a non-empty database_subscription_ids allowlist."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && alltrue([
+        for t in var.database_targets : var.deployment_profile == "pilot" || contains(var.database_subscription_ids, t.subscription_id)
+      ])
+    )
+    error_message = "Every database_targets.subscription_id must be listed in database_subscription_ids (allowlist)."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && length(distinct(keys(var.database_targets))) == length(var.database_targets)
+    )
+    error_message = "database_targets keys must be unique."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && (var.deployment_profile == "pilot"
+        || length(distinct([for t in var.database_targets : t.subscription_id]))
+      == length([for t in var.database_targets : t.subscription_id]))
+    )
+    error_message = "Duplicate subscription_id across database_targets is not allowed; each database must live in a distinct subscription."
+  }
+  validation {
+    condition = (
+      length(var.database_targets) >= 0
+      && alltrue([for t in var.database_targets : t.subscription_id != "" && t.resource_group != "" && t.server != "" && t.database != "" && t.resource_uid != ""])
+    )
+    error_message = "database_targets entries must not contain empty subscription_id, resource_group, server, database or resource_uid."
+  }
+}
+
+# Nota: los proveedores azurerm para suscripciones de base de datos distintas
+# a la primaria son bloques estáticos `provider "azurerm" { alias = "..." }`
+# que el operador añade manualmente en providers.tf (Terraform no los genera
+# dinámicamente). No hay variable para ellos.
 
 variable "resource_prefix" {
   type        = string

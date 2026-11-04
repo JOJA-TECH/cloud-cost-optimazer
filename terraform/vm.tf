@@ -1,13 +1,21 @@
 # ---------------------------------------------------------------------------
 # Collector VM (workload generator + collector + normalizer + sync + bot).
-# System-assigned managed identity is enabled for Azure control-plane reads.
-# No Azure credentials are stored on disk: azure-identity uses the IMDS.
+# Deployed in vm_subscription_id via the azurerm.vm provider — exactly one
+# explicit subscription, never every visible subscription.
+#
+# System-assigned managed identity for Azure control-plane reads. No Azure
+# credentials are stored on disk: azure-identity uses the IMDS.
+#
+# custom_data contains the experiment configuration, including secrets. It is
+# stored in Terraform state, so the state file MUST be protected exactly like
+# the tfvars file. See docs/OPERATIONS.md (secret rotation / state hygiene).
 # ---------------------------------------------------------------------------
 resource "azurerm_linux_virtual_machine" "vm" {
-  name                            = local.name.vm
+  provider                        = azurerm.vm
+  name                            = local.vm.vm
   computer_name                   = "cco-collector"
-  location                        = azurerm_resource_group.main.location
-  resource_group_name             = azurerm_resource_group.main.name
+  location                        = azurerm_resource_group.vm.location
+  resource_group_name             = azurerm_resource_group.vm.name
   size                            = var.vm_size
   admin_username                  = var.admin_username
   disable_password_authentication = true
@@ -25,7 +33,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   }
 
   os_disk {
-    name                 = "${local.name.vm}-osdisk"
+    name                 = "${local.vm.vm}-osdisk"
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
     disk_size_gb         = 30
@@ -38,9 +46,8 @@ resource "azurerm_linux_virtual_machine" "vm" {
     version   = "latest"
   }
 
-  # custom_data contains the experiment configuration, including secrets. It is
-  # stored in Terraform state, so the state file MUST be protected exactly like
-  # the tfvars file. See docs/OPERATIONS.md (secret rotation / state hygiene).
+  # One target is passed as the legacy single-connection env vars; the full
+  # target list (multi-subscription) is passed as JSON for the collector.
   custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
     experiment_uid   = local.experiment_uid
     app_dir          = local.app_dir
@@ -48,8 +55,9 @@ resource "azurerm_linux_virtual_machine" "vm" {
     app_git_ref      = var.app_git_ref
     admin_username   = var.admin_username
 
-    azure_sql_server         = azurerm_mssql_server.main.fully_qualified_domain_name
-    azure_sql_database       = azurerm_mssql_database.loadtest.name
+    # Primary (single-connection) target — pilot uses exactly this one.
+    azure_sql_server         = local.primary_target != null ? "${local.primary_target.server}.database.windows.net" : ""
+    azure_sql_database       = local.primary_target != null ? local.primary_target.database : ""
     azure_sql_admin_user     = var.sql_admin_username
     azure_sql_admin_password = var.sql_admin_password
     azure_sql_user           = var.sql_workload_username
@@ -69,11 +77,33 @@ resource "azurerm_linux_virtual_machine" "vm" {
     max_experiment_hours      = var.max_experiment_hours
     auto_stop_after_hours     = var.auto_stop_after_hours
 
-    azure_sql_resource_id = azurerm_mssql_database.loadtest.id
-    azure_subscription_id = var.subscription_id
-    azure_resource_group  = local.name.resource_group
-    azure_location        = var.location
-    azure_sql_max_size_gb = local.sql_max_size_gb
+    azure_sql_resource_id = local.primary_target != null ? azurerm_mssql_database.loadtest[local.primary_target_key].id : ""
+    azure_subscription_id = local.primary_target != null ? local.primary_target.subscription_id : var.subscription_id
+    azure_resource_group  = local.primary_target != null ? local.primary_target.resource_group : local.vm.resource_group
+    azure_location        = local.primary_target != null ? local.primary_target.location : var.location
+    azure_sql_max_size_gb = local.primary_target != null ? local.primary_target.max_size_gb : local.default_max_size_gb
+
+    # Full target list for the multi-subscription collector (JSON).
+    azure_sql_targets_json = jsonencode([
+      for key, target in var.database_targets : {
+        target_key               = key
+        subscription_id          = target.subscription_id
+        resource_group           = target.resource_group
+        location                 = target.location
+        server                   = "${target.server}.database.windows.net"
+        database                 = target.database
+        resource_uid             = target.resource_uid
+        sku_name                 = target.sku_name
+        min_capacity             = target.min_capacity
+        max_capacity             = target.max_capacity
+        auto_pause_delay_minutes = target.auto_pause_delay_minutes
+        max_size_gb              = target.max_size_gb
+        free_tier                = target.free_tier
+        resource_id              = azurerm_mssql_database.loadtest[key].id
+      }
+    ])
+
+    deployment_profile = var.deployment_profile
   }))
 
   lifecycle {

@@ -10,6 +10,7 @@ dependencies = [
     "pyodbc==5.*",
     "azure-identity==1.*",
     "azure-monitor-query==1.*",
+    "pyarrow>=25.0.1",
 ]
 
 [project.optional-dependencies]

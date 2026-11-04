@@ -1,40 +1,48 @@
 resource "random_uuid" "experiment" {}
 
 # ---------------------------------------------------------------------------
-# Resource group (created and destroyed as one unit)
+# Resource group for the collector VM (vm_subscription_id, azurerm.vm).
+# Created and destroyed as one unit with the VM.
 # ---------------------------------------------------------------------------
-resource "azurerm_resource_group" "main" {
-  name     = local.name.resource_group
-  location = var.location
+resource "azurerm_resource_group" "vm" {
+  provider = azurerm.vm
+  name     = local.vm.resource_group
+  location = local.vm.location
   tags     = local.tags
 }
 
 # ---------------------------------------------------------------------------
-# Virtual network and application subnet
+# Virtual network and application subnet (vm subscription).
 # ---------------------------------------------------------------------------
-resource "azurerm_virtual_network" "main" {
-  name                = local.name.vnet
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+resource "azurerm_virtual_network" "vm" {
+  provider            = azurerm.vm
+  name                = local.vm.vnet
+  location            = azurerm_resource_group.vm.location
+  resource_group_name = azurerm_resource_group.vm.name
   address_space       = ["10.42.0.0/16"]
   tags                = local.tags
 }
 
 resource "azurerm_subnet" "app" {
-  name                 = local.name.subnet
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
+  provider             = azurerm.vm
+  name                 = local.vm.subnet
+  resource_group_name  = azurerm_resource_group.vm.name
+  virtual_network_name = azurerm_virtual_network.vm.name
   address_prefixes     = ["10.42.1.0/24"]
+  service_endpoints    = ["Microsoft.Sql"]
 }
 
 # ---------------------------------------------------------------------------
-# Network security group: SSH only from admin_cidr, no inbound HTTP,
-# no database port exposed to the internet.
+# Network security group: SSH only from admin_cidr, SQL only to Azure SQL
+# public endpoint (Internet), HTTPS outbound. No database port exposed to the
+# internet from the VM subnet perspective; the Azure SQL firewall pins the VM
+# public IP separately.
 # ---------------------------------------------------------------------------
 resource "azurerm_network_security_group" "app" {
-  name                = local.name.nsg
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+  provider            = azurerm.vm
+  name                = local.vm.nsg
+  location            = azurerm_resource_group.vm.location
+  resource_group_name = azurerm_resource_group.vm.name
   tags                = local.tags
 
   security_rule {
@@ -60,7 +68,7 @@ resource "azurerm_network_security_group" "app" {
     destination_port_range     = "*"
     source_address_prefix      = "Internet"
     destination_address_prefix = "*"
-    description                = "Deny any other inbound internet traffic (no HTTP bot port)."
+    description                = "Deny any other inbound internet traffic."
   }
 
   security_rule {
@@ -104,35 +112,35 @@ resource "azurerm_network_security_group" "app" {
 }
 
 resource "azurerm_subnet_network_security_group_association" "app" {
+  provider                  = azurerm.vm
   subnet_id                 = azurerm_subnet.app.id
   network_security_group_id = azurerm_network_security_group.app.id
 }
 
 # ---------------------------------------------------------------------------
-# Public IP (static) so the Azure SQL firewall can be pinned to this VM only.
-# Delete it (enable_public_ip=false) only if outbound connectivity is provided
-# by another reviewed mechanism.
+# Public IP (static) so each Azure SQL firewall can be pinned to this VM only.
 # ---------------------------------------------------------------------------
 resource "azurerm_public_ip" "vm" {
-  count               = var.enable_public_ip ? 1 : 0
-  name                = local.name.public_ip
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+  provider            = azurerm.vm
+  name                = local.vm.public_ip
+  location            = azurerm_resource_group.vm.location
+  resource_group_name = azurerm_resource_group.vm.name
   allocation_method   = "Static"
   sku                 = "Standard"
   tags                = local.tags
 }
 
 resource "azurerm_network_interface" "vm" {
-  name                = local.name.nic
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+  provider            = azurerm.vm
+  name                = local.vm.nic
+  location            = azurerm_resource_group.vm.location
+  resource_group_name = azurerm_resource_group.vm.name
   tags                = local.tags
 
   ip_configuration {
     name                          = "ipconfig1"
     subnet_id                     = azurerm_subnet.app.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = var.enable_public_ip ? azurerm_public_ip.vm[0].id : null
+    public_ip_address_id          = var.enable_public_ip ? azurerm_public_ip.vm.id : null
   }
 }

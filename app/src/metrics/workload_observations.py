@@ -44,8 +44,24 @@ def obs_dir(cfg: Config) -> Path:
     return Path(cfg.local_spool_dir) / OBS_SUBDIR
 
 
-def append_observation(cfg: Config, op_key: str, duration_ms: float, ok: bool) -> None:
-    """Best-effort append by the workload generator; never raises."""
+def append_observation(
+    cfg: Config,
+    op_key: str,
+    duration_ms: float,
+    ok: bool,
+    *,
+    workload_run_uid: Optional[str] = None,
+    phase: Optional[int] = None,
+    workload_class: Optional[str] = None,
+    config_snapshot_id: Optional[str] = None,
+    origin: str = "worker",
+    resource_uid: Optional[str] = None,
+) -> None:
+    """Best-effort append by the workload generator; never raises.
+
+    Cada registro lleva trazabilidad completa para poder reconstruir
+    raw -> agregado -> export por experimento, recurso, corrida y fase.
+    """
     try:
         directory = obs_dir(cfg)
         directory.mkdir(parents=True, exist_ok=True)
@@ -55,6 +71,13 @@ def append_observation(cfg: Config, op_key: str, duration_ms: float, ok: bool) -
             "op": op_key,
             "duration_ms": float(duration_ms),
             "ok": bool(ok),
+            "experiment_uid": cfg.experiment_uid,
+            "resource_uid": resource_uid or cfg.resource_uid(),
+            "workload_run_uid": workload_run_uid,
+            "phase": phase,
+            "workload_class": workload_class,
+            "config_snapshot_id": config_snapshot_id,
+            "origin": origin,
         }
         path = directory / f"obs-{os.getpid()}-{int(time.time() // ROTATE_SECONDS)}.jsonl"
         with path.open("a", encoding="utf-8") as handle:
@@ -142,6 +165,17 @@ def drain(
             duration = record.get("duration_ms")
             if duration is None:
                 continue
+            payload = {
+                "op": record.get("op"),
+                "ok": record.get("ok"),
+                "experiment_uid": record.get("experiment_uid"),
+                "resource_uid": record.get("resource_uid"),
+                "workload_run_uid": record.get("workload_run_uid"),
+                "phase": record.get("phase"),
+                "workload_class": record.get("workload_class"),
+                "config_snapshot_id": record.get("config_snapshot_id"),
+                "origin": record.get("origin"),
+            }
             reading = make_reading(
                 "operation_duration_ms",
                 float(duration),
@@ -149,7 +183,7 @@ def drain(
                 cfg.capture_raw_interval_seconds,
                 "workload_observation",
                 source_record_id=record.get("id"),
-                source_payload={"op": record.get("op"), "ok": record.get("ok")},
+                source_payload=payload,
             )
             if reading is not None:
                 samples.append(reading)

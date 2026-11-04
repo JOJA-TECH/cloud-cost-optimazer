@@ -1,67 +1,104 @@
-"""Workload shapes (time series over a run) and operation mixes.
+"""Workload shapes W0-W9 y mezclas de operaciones.
 
-A shape maps an elapsed fraction ``f`` in [0, 1] to a multiplier in [0, 1]
-applied on top of the configured intensity. This is pure, deterministic logic
-(seeded) so experiments are reproducible.
+Cada entrada del registro ``W0..W9`` define:
+- ``class``: nombre de forma usado por ``shape_value``.
+- ``params``: parámetros temporales observables (duración, ciclo, duty cycle, …).
+- ``primary_metric``: señal que debe moverse en este escenario.
+- ``secondary``: señales que pueden moverse como efecto secundario.
+- ``negative_controls``: señales que deberían permanecer aproximadamente
+  constantes (no deben interpretarse como movimiento del objetivo).
+- ``ops_mix``: mezcla de operaciones (template_key -> peso).
+
+Todas las funciones son puras y deterministas: dada una fracción ``f`` en [0,1]
+y unos parámetros, devuelven el mismo multiplicador en [0,1]. Esto hace las
+corridas reproducibles semilla a semilla.
 """
 
 from __future__ import annotations
 
 import math
-import random
 from typing import Callable, Dict, List
 
-WORKLOAD_CLASSES = [
-    "low_stable",
-    "high_stable",
-    "periodic",
-    "bursty",
-    "increasing",
-    "cpu_intensive",
-    "io_intensive",
-    "mixed",
-]
-
-Shape = Callable[[float], float]
+Shape = Callable[[float, Dict], float]
 
 
 def _clamp(value: float) -> float:
     return min(1.0, max(0.0, value))
 
 
-def _low_stable(f: float) -> float:
-    return 0.2
+# ---------------------------------------------------------------------------
+# Formas temporales (multiplicador sobre la intensidad base)
+# ---------------------------------------------------------------------------
+
+def _low_stable(f: float, params: Dict) -> float:
+    """W0: carga baja y estable (control). ~constante."""
+    return _clamp(params.get("base", 0.2))
 
 
-def _high_stable(f: float) -> float:
-    return 1.0
+def _high_stable(f: float, params: Dict) -> float:
+    """W1: carga alta y estable. Tasa fija calibrada por el piloto."""
+    return _clamp(params.get("base", 1.0))
 
 
-def _periodic(f: float) -> float:
-    return _clamp(0.5 + 0.5 * math.sin(2.0 * math.pi * 3.0 * f))
+def _periodic(f: float, params: Dict) -> float:
+    """W2: ciclo periódico.
+
+    params: period_minutes (5-10), amplitude (0-1), offset (0-1).
+    La fracción f se mapea a minutos dentro de la corrida.
+    """
+    amplitude = _clamp(float(params.get("amplitude", 0.5)))
+    offset = _clamp(float(params.get("offset", 0.5)))
+    # f es fracción [0,1]; sin total de minutos no podemos conocer el minuto
+    # absoluto, así que usamos ciclos sobre la corrida completa.
+    cycles_per_run = float(params.get("cycles_per_run", 6))
+    value = offset + amplitude * math.sin(2.0 * math.pi * cycles_per_run * f)
+    return _clamp(value)
 
 
-def _bursty(f: float) -> float:
-    # Short intense bursts (~12% duty cycle) on a low baseline.
-    if (f % 0.25) < 0.12:
-        return 1.0
-    return 0.2
+def _bursty(f: float, params: Dict) -> float:
+    """W3: ráfagas con duty cycle explícito.
+
+    params: burst_minutes (2-5), recover_minutes (5-10), duty_cycle (0-1).
+    duty_cycle = burst_minutes / (burst_minutes + recover_minutes).
+    Se alternan pulsos de intensidad 1.0 y recuperación base.
+    """
+    duty = _clamp(float(params.get("duty_cycle", 0.25)))
+    base = _clamp(float(params.get("base", 0.2)))
+    # Patrón repetitivo sobre la fracción de corrida.
+    cycles_per_run = float(params.get("cycles_per_run", 6))
+    phase = (f * cycles_per_run) % 1.0
+    return 1.0 if phase < duty else base
 
 
-def _increasing(f: float) -> float:
-    return _clamp(0.15 + 0.85 * f)
+def _increasing(f: float, params: Dict) -> float:
+    """W4: escalones definidos de carga.
+
+    params: steps (>=2). Cada escalón mantiene un nivel constante durante su
+    fracción de la corrida (no es una rampa implícita).
+    """
+    steps = max(2, int(params.get("steps", 5)))
+    step = min(steps - 1, int(f * steps))
+    level = step / max(1, steps - 1)
+    return _clamp(params.get("base", 0.1) + (1.0 - params.get("base", 0.1)) * level)
 
 
-def _cpu_intensive(f: float) -> float:
-    return 0.8
+def _cpu_intensive(f: float, params: Dict) -> float:
+    """W5: cómputo acotado. Resultado esperado de CPU documentado por el piloto."""
+    return _clamp(float(params.get("base", 0.8)))
 
 
-def _io_intensive(f: float) -> float:
-    return 0.7
+def _io_intensive(f: float, params: Dict) -> float:
+    """W6: I/O intensivo. Precondición: working set mayor que la caché."""
+    return _clamp(float(params.get("base", 0.7)))
 
 
-def _mixed(f: float) -> float:
-    # Day/night-like wave plus a mid-run plateau.
+def _storage(f: float, params: Dict) -> float:
+    """W8: crecimiento de almacenamiento acotado y medible."""
+    return _clamp(float(params.get("base", 0.5)))
+
+
+def _mixed(f: float, params: Dict) -> float:
+    """W9: carga combinada documentada (ola + meseta)."""
     base = 0.35 + 0.45 * math.sin(2.0 * math.pi * 2.0 * f)
     return _clamp(base)
 
@@ -74,62 +111,185 @@ SHAPES: Dict[str, Shape] = {
     "increasing": _increasing,
     "cpu_intensive": _cpu_intensive,
     "io_intensive": _io_intensive,
+    "storage": _storage,
     "mixed": _mixed,
 }
 
-# Operation mix per class: query_templates.template_key -> weight.
-_MIX: Dict[str, Dict[str, float]] = {
-    "low_stable": {"point_lookup": 0.7, "insert_event": 0.2, "range_scan": 0.1},
-    "high_stable": {"insert_event": 0.45, "point_lookup": 0.3, "range_scan": 0.15, "update_row": 0.1},
-    "periodic": {"insert_event": 0.35, "point_lookup": 0.35, "range_scan": 0.2, "update_row": 0.1},
-    "bursty": {"insert_event": 0.45, "aggregate": 0.2, "point_lookup": 0.25, "update_row": 0.1},
-    "increasing": {"insert_event": 0.4, "range_scan": 0.3, "point_lookup": 0.2, "update_row": 0.1},
-    "cpu_intensive": {"aggregate": 0.5, "point_lookup": 0.25, "range_scan": 0.25},
-    "io_intensive": {"insert_event": 0.5, "range_scan": 0.3, "update_row": 0.2},
-    "mixed": {
-        "insert_event": 0.25, "point_lookup": 0.25, "range_scan": 0.15,
-        "update_row": 0.15, "aggregate": 0.2,
+WORKLOAD_CLASSES = list(SHAPES.keys())
+
+
+def shape_value(workload_class: str, fraction: float, params: Dict | None = None) -> float:
+    """Multiplicador en [0,1] para la clase en la fracción de corrida."""
+    fn = SHAPES.get(workload_class)
+    if fn is None:
+        return 0.5
+    return _clamp(fn(fraction, params or {}))
+
+
+# ---------------------------------------------------------------------------
+# Registro W0-W9: clase, parámetros, señal primaria, secundarios y controles
+# negativos. El piloto usa esto para calibrar y congelar parámetros.
+# ---------------------------------------------------------------------------
+
+W_REGISTRY: Dict[str, Dict] = {
+    "W0": {
+        "workload_class": "low_stable",
+        "params": {"base": 0.2},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "log_write_percent"),
+        "negative_controls": ("storage_used_bytes", "deadlock_count"),
+        "ops_mix": {"point_lookup": 0.7, "range_scan": 0.2, "insert_event": 0.1},
+        "read_only": False,
+        "description": "Carga baja y estable (control). Señales casi constantes.",
+    },
+    "W1": {
+        "workload_class": "high_stable",
+        "params": {"base": 1.0},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "log_write_percent", "sessions_count"),
+        "negative_controls": ("storage_used_bytes",),
+        "ops_mix": {
+            "insert_event": 0.45,
+            "point_lookup": 0.3,
+            "range_scan": 0.15,
+            "update_row": 0.1,
+        },
+        "read_only": False,
+        "description": "Carga alta estable, tasa fija calibrada por el piloto.",
+    },
+    "W2": {
+        "workload_class": "periodic",
+        "params": {"period_minutes": 7.5, "amplitude": 0.5, "offset": 0.5,
+                   "cycles_per_run": 6},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "workload_intensity"),
+        "negative_controls": ("storage_used_bytes", "deadlock_count"),
+        "ops_mix": {
+            "insert_event": 0.35,
+            "point_lookup": 0.35,
+            "range_scan": 0.2,
+            "update_row": 0.1,
+        },
+        "read_only": False,
+        "description": "Ciclos periódicos 5-10 min, amplitud y duración configurables.",
+    },
+    "W3": {
+        "workload_class": "bursty",
+        "params": {"burst_minutes": 3, "recover_minutes": 7, "duty_cycle": 0.3,
+                   "base": 0.2, "cycles_per_run": 6},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "log_write_percent"),
+        "negative_controls": ("storage_used_bytes",),
+        "ops_mix": {
+            "insert_event": 0.45,
+            "aggregate": 0.2,
+            "point_lookup": 0.25,
+            "update_row": 0.1,
+        },
+        "read_only": False,
+        "description": "Pulsos 2-5 min con recuperación 5-10 min y duty cycle explícito.",
+    },
+    "W4": {
+        "workload_class": "increasing",
+        "params": {"steps": 5, "base": 0.1},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "workers_percent"),
+        "negative_controls": ("storage_used_bytes",),
+        "ops_mix": {
+            "insert_event": 0.4,
+            "range_scan": 0.3,
+            "point_lookup": 0.2,
+            "update_row": 0.1,
+        },
+        "read_only": False,
+        "description": "Escalones de carga definidos (no rampa implícita).",
+    },
+    "W5": {
+        "workload_class": "cpu_intensive",
+        "params": {"base": 0.8},
+        "primary_metric": "cpu_percent",
+        "secondary": ("workers_percent", "sessions_count"),
+        "negative_controls": ("data_io_percent", "log_write_percent"),
+        "ops_mix": {"aggregate": 0.5, "point_lookup": 0.25, "range_scan": 0.25},
+        "read_only": False,
+        "description": "Consultas de cómputo acotado; resultado de CPU documentado por el piloto.",
+    },
+    "W6": {
+        "workload_class": "io_intensive",
+        "params": {"base": 0.7},
+        "primary_metric": "data_io_percent",
+        "secondary": ("log_write_percent", "cpu_percent"),
+        "negative_controls": ("storage_used_bytes",),
+        "ops_mix": {"insert_event": 0.5, "range_scan": 0.3, "update_row": 0.2},
+        "read_only": False,
+        "description": "Lectura/escritura para mover data/log I/O; working set > caché.",
+    },
+    "W7": {
+        "workload_class": "high_stable",
+        "params": {"base": 1.0},
+        "primary_metric": "sessions_count",
+        "secondary": ("workers_percent", "cpu_percent"),
+        "negative_controls": ("storage_used_bytes", "deadlock_count"),
+        "ops_mix": {"point_lookup": 0.5, "range_scan": 0.3, "insert_event": 0.2},
+        "read_only": False,
+        "description": "Escalera de workers/conexiones concurrentes; se miden sesiones y workers.",
+    },
+    "W8": {
+        "workload_class": "storage",
+        "params": {"base": 0.5},
+        "primary_metric": "storage_used_bytes",
+        "secondary": ("log_write_percent", "storage_percent"),
+        "negative_controls": ("cpu_percent", "data_io_percent"),
+        "ops_mix": {"insert_event": 0.9, "update_row": 0.1},
+        "read_only": False,
+        "description": "Crecimiento acotado y medible con tope preventivo y parada automática.",
+    },
+    "W9": {
+        "workload_class": "mixed",
+        "params": {},
+        "primary_metric": "cpu_percent",
+        "secondary": ("data_io_percent", "log_write_percent", "sessions_count"),
+        "negative_controls": ("storage_used_bytes",),
+        "ops_mix": {
+            "insert_event": 0.25,
+            "point_lookup": 0.25,
+            "range_scan": 0.15,
+            "update_row": 0.15,
+            "aggregate": 0.2,
+        },
+        "read_only": False,
+        "description": "Carga combinada documentada.",
     },
 }
 
-DEFAULT_BASE_OPS_PER_MIN_PER_WORKER = 15
 
-
-def shape_value(workload_class: str, fraction: float) -> float:
-    """Multiplier in [0,1] for the given class at a run fraction."""
-    fn = SHAPES.get(workload_class)
-    return _clamp(fn(fraction)) if fn else 0.5
-
-
-def next_intensity_factor(
-    rng: random.Random,
-    current: float,
-    jitter: float,
-    step: float = 0.25,
-) -> float:
-    """Bounded random walk of an intensity multiplier around 1.0.
-
-    With ``jitter`` = 0 the factor stays at 1.0 (deterministic, the default).
-    Otherwise it drifts within ``[1 - jitter, 1 + jitter]`` so the offered load
-    varies naturally while remaining reproducible for a given seed.
-    """
-    if jitter <= 0:
-        return 1.0
-    low = 1.0 - jitter
-    high = 1.0 + jitter
-    value = current + rng.uniform(-step, step)
-    return min(high, max(low, value))
+def workload_entries() -> List[str]:
+    return [f"W{i}" for i in range(10)]
 
 
 def operation_distribution(workload_class: str) -> Dict[str, float]:
-    """Copy of the operation mix (template_key -> weight)."""
-    return dict(_MIX.get(workload_class, _MIX["mixed"]))
+    """Mezcla de operaciones para una clase (fallback a mixed)."""
+    entry = None
+    # Buscar por clase en el registro.
+    for info in W_REGISTRY.values():
+        if info["workload_class"] == workload_class:
+            entry = info
+            break
+    if entry is not None:
+        return dict(entry["ops_mix"])
+    return {
+        "insert_event": 0.25,
+        "point_lookup": 0.25,
+        "range_scan": 0.15,
+        "update_row": 0.15,
+        "aggregate": 0.2,
+    }
 
 
 def pick_operation(
-    rng: random.Random, workload_class: str
-) -> tuple[str, float]:
-    """Return (template_key, weight) selected from the class mix."""
+    rng, workload_class: str
+):
+    """Devuelve (template_key, weight) seleccionado de la mezcla de la clase."""
     mix = operation_distribution(workload_class)
     keys = list(mix.keys())
     weights = [mix[k] for k in keys]
@@ -145,9 +305,9 @@ def schedule_phases(
     classes: List[str],
     hours_per_phase: float,
 ) -> List[dict]:
-    """Build the default experiment schedule (A..H phases).
+    """Construye el calendario por defecto (fases A..H).
 
-    Each phase defines its workload_class, duration_seconds and intensity.
+    Cada fase define workload_class, duration_seconds, intensity y concurrency.
     """
     phases = []
     for index, wc in enumerate(classes, start=1):

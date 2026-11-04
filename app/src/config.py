@@ -62,6 +62,18 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_json(name: str):
+    import json
+
+    raw = _env(name, "")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
 @dataclass(frozen=True)
 class Config:
     # Experiment identity
@@ -124,6 +136,26 @@ class Config:
     azure_resource_group: str = ""
     azure_location: str = ""
     azure_sql_max_size_gb: int = 5
+
+    # Deployment profile: "pilot" (1 DB, 1 VM, short run) or "full" (explicit
+    # allowlist of DB subscriptions).
+    deployment_profile: str = "pilot"
+
+    # SKU del recurso único en modo legacy/pilot sin AZURE_SQL_TARGETS_JSON.
+    # Se usa como sku_name del target de respaldo en _targets().
+    sql_sku_name: str = ""
+
+    # Full list of database targets (parsed from AZURE_SQL_TARGETS_JSON). Each
+    # entry: target_key, subscription_id, resource_group, location, server,
+    # database, resource_uid, sku_name, min_capacity, max_capacity,
+    # auto_pause_delay_minutes, max_size_gb, free_tier, resource_id.
+    azure_sql_targets: list = None  # type: ignore[assignment]
+
+    # Free Tier / quota guardrails (pilot). free_tier_enabled must be confirmed
+    # by preflight before apply; the collector checks remaining quota each cycle.
+    free_tier_enabled: bool = False
+    sql_auto_pause_delay_minutes: int = 60
+    free_quota_margin_percent: float = 20.0  # stop starting phases below this %
 
     # Supabase connection string used by psycopg2/asyncpg or the pooler.
     def supabase_dsn(self) -> str:
@@ -236,7 +268,34 @@ def from_env() -> Config:
         azure_resource_group=_env("AZURE_RESOURCE_GROUP"),
         azure_location=_env("AZURE_LOCATION"),
         azure_sql_max_size_gb=_env_int("AZURE_SQL_MAX_SIZE_GB", 5),
+        deployment_profile=_env("DEPLOYMENT_PROFILE", "pilot"),
+        sql_sku_name=_env("RESOURCE_SKU_CODE"),
+        azure_sql_targets=_env_json("AZURE_SQL_TARGETS_JSON") or [],
+        free_tier_enabled=_env_bool("FREE_TIER_ENABLED", False),
+        sql_auto_pause_delay_minutes=_env_int(
+            "SQL_AUTO_PAUSE_DELAY_MINUTES", 60
+        ),
+        free_quota_margin_percent=_env_float("FREE_QUOTA_MARGIN_PERCENT", 20.0),
+        # Azure Monitor: ventana retrasada + lookback para recuperar métricas
+        # publicadas con retraso, con deduplicación por idempotencia.
+        azure_monitor_delay_seconds=_env_int("AZURE_MONITOR_DELAY_SECONDS", 90),
+        azure_monitor_lookback_seconds=_env_int(
+            "AZURE_MONITOR_LOOKBACK_SECONDS", 300
+        ),
+        # Cuando false, el colector solo lee Azure Monitor (plano de control, no
+        # reanuda SQL) y salta DMV/Query Store fuera de bloques activos.
+        collect_sql_diagnostics=_env_bool("COLLECT_SQL_DIAGNOSTICS", True),
     )
+
+    def primary_target(self) -> Optional[dict]:
+        """First configured database target (pilot uses exactly one)."""
+        if self.azure_sql_targets:
+            return self.azure_sql_targets[0]
+        return None
+
+    def primary_resource_id(self) -> Optional[str]:
+        t = self.primary_target()
+        return t.get("resource_id") if t else None
 
 
 def _redact(text: str) -> str:

@@ -126,6 +126,90 @@ class WorkloadController:
         logger.info("transition %s -> %s (%s)", current, target, requested_by)
         return target
 
+    # -- helpers -------------------------------------------------------------
+    # Espacio finito de SKUs Azure SQL conocido (mirror de catalog.sql_sku).
+    # Sirve para poblar arm_sku_name / tier / compute_model / capacity_vcores
+    # / min_capacity_vcores / family sin consultar Azure de nuevo.
+    SKU_CATALOG: dict[str, dict] = {
+        "GP_S_Gen5_1": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_1",
+            "tier": "GeneralPurpose",
+            "compute_model": "serverless",
+            "capacity_vcores": 1.0,
+            "min_capacity_vcores": 0.5,
+            "family": "Gen5",
+        },
+        "GP_S_Gen5_2": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_2",
+            "tier": "GeneralPurpose",
+            "compute_model": "serverless",
+            "capacity_vcores": 2.0,
+            "min_capacity_vcores": 0.5,
+            "family": "Gen5",
+        },
+        "GP_Gen5_2": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_2",
+            "tier": "GeneralPurpose",
+            "compute_model": "provisioned",
+            "capacity_vcores": 2.0,
+            "min_capacity_vcores": None,
+            "family": "Gen5",
+        },
+        "GP_Gen5_4": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_4",
+            "tier": "GeneralPurpose",
+            "compute_model": "provisioned",
+            "capacity_vcores": 4.0,
+            "min_capacity_vcores": None,
+            "family": "Gen5",
+        },
+        "GP_Gen5_6": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_6",
+            "tier": "GeneralPurpose",
+            "compute_model": "provisioned",
+            "capacity_vcores": 6.0,
+            "min_capacity_vcores": None,
+            "family": "Gen5",
+        },
+        "GP_Gen5_8": {
+            "arm_sku_name": "SQLDB_GP_Compute_Gen5_8",
+            "tier": "GeneralPurpose",
+            "compute_model": "provisioned",
+            "capacity_vcores": 8.0,
+            "min_capacity_vcores": None,
+            "family": "Gen5",
+        },
+    }
+
+    def _sku_fields(self) -> dict:
+        """Campos de SKU y recurso desde el target configurado o fallback.
+
+        Se leen de ``AZURE_SQL_TARGETS_JSON[0]`` (primary target) y, cuando falta,
+        de los campos sueltos de Config (``sql_sku_name``, ``azure_*``).
+        """
+        target = self.cfg.primary_target() or {}
+        server = target.get("server") or (
+            self.cfg.azure_sql_server.split(".")[0] if self.cfg.azure_sql_server else None
+        )
+        sku_name = target.get("sku_name") or self.cfg.sql_sku_name
+        catalog = self.SKU_CATALOG.get(sku_name, {})
+        return {
+            "subscription_id": target.get("subscription_id") or self.cfg.azure_subscription_id,
+            "resource_group": target.get("resource_group") or self.cfg.azure_resource_group,
+            "server_name": server,
+            "database_name": target.get("database") or self.cfg.azure_sql_database,
+            "region_code": target.get("location") or self.cfg.azure_location,
+            "sku_name": sku_name,
+            "arm_sku_name": catalog.get("arm_sku_name"),
+            "tier": catalog.get("tier"),
+            "compute_model": catalog.get("compute_model"),
+            "capacity_vcores": catalog.get("capacity_vcores"),
+            "min_capacity_vcores": catalog.get("min_capacity_vcores"),
+            "family": catalog.get("family"),
+            "source": target.get("source") or "config",
+            "auto_pause_delay_minutes": target.get("auto_pause_delay_minutes"),
+        }
+
     # -- convenience ---------------------------------------------------------
     def ensure_experiment(self, workload_class: str, random_seed: int, config_json: dict) -> None:
         """Idempotently create the experiment on both stores if missing."""
@@ -157,14 +241,36 @@ class WorkloadController:
 
         supabase_status = self.supabase_status()
         if supabase_status is None:
+            sku = self._sku_fields()
             with db_supabase.transaction(self.cfg) as supabase_conn:
                 db_supabase.query(
                     supabase_conn,
                     "insert into experiment.experiment_run "
                     "(experiment_uid, resource_uid, started_at_utc, workload_class, "
-                    " random_seed, status, config_json) "
-                    "values (%s, %s, %s, %s, %s, 'CREATED', %s) "
-                    "on conflict (experiment_uid) do nothing",
+                    " random_seed, status, config_json, "
+                    " subscription_id, resource_group, server_name, database_name, "
+                    " region_code, sku_name, arm_sku_name, tier, compute_model, "
+                    " capacity_vcores, min_capacity_vcores, family, "
+                    " auto_pause_delay_minutes, source) "
+                    "values (%s, %s, %s, %s, %s, 'CREATED', %s, "
+                    " %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                    " %s, %s, %s, %s, %s, %s) "
+                    "on conflict (experiment_uid) do update set "
+                    " subscription_id = excluded.subscription_id, "
+                    " resource_group = excluded.resource_group, "
+                    " server_name = excluded.server_name, "
+                    " database_name = excluded.database_name, "
+                    " region_code = excluded.region_code, "
+                    " sku_name = excluded.sku_name, "
+                    " arm_sku_name = excluded.arm_sku_name, "
+                    " tier = excluded.tier, "
+                    " compute_model = excluded.compute_model, "
+                    " capacity_vcores = excluded.capacity_vcores, "
+                    " min_capacity_vcores = excluded.min_capacity_vcores, "
+                    " family = excluded.family, "
+                    " auto_pause_delay_minutes = excluded.auto_pause_delay_minutes, "
+                    " source = excluded.source, "
+                    " updated_at_utc = now()",
                     (
                         exp_uid,
                         resource_uid,
@@ -172,6 +278,20 @@ class WorkloadController:
                         workload_class,
                         random_seed,
                         json.dumps(config_json),
+                        sku["subscription_id"],
+                        sku["resource_group"],
+                        sku["server_name"],
+                        sku["database_name"],
+                        sku["region_code"],
+                        sku["sku_name"],
+                        sku["arm_sku_name"],
+                        sku["tier"],
+                        sku["compute_model"],
+                        sku["capacity_vcores"],
+                        sku["min_capacity_vcores"],
+                        sku["family"],
+                        sku["auto_pause_delay_minutes"],
+                        sku["source"],
                     ),
                 )
 

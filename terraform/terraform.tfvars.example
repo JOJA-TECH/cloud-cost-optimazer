@@ -4,10 +4,41 @@
 # ---------------------------------------------------------------------------
 
 # --- Azure identity ---
-subscription_id = "00000000-0000-0000-0000-000000000000"
-tenant_id       = "00000000-0000-0000-0000-000000000000"
-location        = "eastus"
-resource_prefix = "cco-lab"
+subscription_id      = "00000000-0000-0000-0000-000000000000"  # primary: hosts the SQL target(s)
+vm_subscription_id   = "00000000-0000-0000-0000-000000000000"  # where the collector VM goes
+tenant_id            = "00000000-0000-0000-0000-000000000000"
+location             = "eastus"           # primary subscription region
+vm_location          = "eastus"           # VM subscription region
+resource_prefix      = "cco-lab"
+vm_resource_group    = "cco-vm-rg"
+
+# --- Deployment profile ---
+# pilot = 1 DB + 1 VM + corrida corta (predeterminado, seguro).
+# full  = requiere database_subscription_ids no vacía y database_targets con 1..N entries.
+deployment_profile = "pilot"
+
+# Allowlist of subscriptions permitted to host database targets.
+# pilot: puede omitirse (se usa subscription_id). full: OBLIGATORIO y no vacío.
+database_subscription_ids = []
+
+# --- Explicit database targets (multi-subscription capable) ---
+# pilot: exactamente 1 entry. full: 1..N entries, cada subscription_id en el allowlist.
+database_targets = {
+  "pilot-db-1" = {
+    subscription_id        = "00000000-0000-0000-0000-000000000000"
+    resource_group         = "cco-pilot-rg"
+    location               = "eastus"
+    server                 = "cco-pilot-sql"
+    database               = "loadtest"
+    sku_name               = "GP_S_Gen5_1"
+    min_capacity           = 0.5
+    max_capacity           = 1.0
+    auto_pause_delay_minutes = 60
+    max_size_gb            = 5
+    free_tier              = true        # confirma elegibilidad Free Tier en preflight
+    resource_uid           = "00000000-0000-0000-0000-000000000000"  # estable, único por base
+  }
+}
 
 # --- VM access ---
 admin_username       = "cco-admin"
@@ -19,8 +50,6 @@ sql_admin_username    = "cco_sql_admin"
 sql_admin_password    = "REPLACE-STRONG-PASSWORD"
 sql_workload_username = "cco_workload"
 sql_workload_password = "REPLACE-STRONG-WORKLOAD-PASSWORD"
-sql_min_capacity      = 0.5
-sql_max_capacity      = 1.0
 
 # --- Supabase (external PostgreSQL) ---
 supabase_db_host     = "db.xxxxxxxxxxxxxxxx.supabase.co"

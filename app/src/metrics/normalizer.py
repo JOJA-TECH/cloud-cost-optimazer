@@ -83,6 +83,7 @@ class MetricReading:
     observed_at_utc: dt.datetime
     interval_seconds: int
     source: str
+    resource_uid: Optional[str] = None   # ARM-derived id del target de origen
     source_record_id: Optional[str] = None
     source_payload: Dict[str, Any] = field(default_factory=dict)
     quality_status: str = "usable"

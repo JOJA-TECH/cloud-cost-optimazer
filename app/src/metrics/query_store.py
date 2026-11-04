@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import List
+from typing import List, Optional
 
 from .. import db_azure
 from ..config import Config
@@ -31,7 +31,7 @@ QUERY_STORE_QUERY = (
 )
 
 
-def fetch(cfg: Config) -> List[MetricReading]:
+def fetch(cfg: Config, resource_uid: str, sku_name: Optional[str] = None) -> List[MetricReading]:
     readings: List[MetricReading] = []
     conn = None
     try:
@@ -63,16 +63,18 @@ def fetch(cfg: Config) -> List[MetricReading]:
                     observed_at_utc=observed,
                     interval_seconds=60,
                     source="query_store_execution",
+                    resource_uid=resource_uid,
                     source_record_id=None,
                     source_payload={
                         "intervals": len(rows),
                         "executions": total_exec,
                         "percentile_method": "not_available",
+                        "sku_name": sku_name,
                     },
                 )
             )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("query_store unavailable: %s", exc)
+        logger.debug("query_store unavailable for %s: %s", resource_uid, exc)
     finally:
         if conn is not None:
             conn.close()

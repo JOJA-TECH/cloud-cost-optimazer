@@ -9,8 +9,8 @@
 resource "azurerm_consumption_budget_resource_group" "main" {
   count = var.enable_budget ? 1 : 0
 
-  name              = local.name.budget
-  resource_group_id = azurerm_resource_group.main.id
+  name              = "${var.resource_prefix}-budget"
+  resource_group_id = azurerm_resource_group.vm.id
   amount            = var.monthly_budget_usd
   time_grain        = "Monthly"
 

@@ -78,3 +78,61 @@ from `PAUSING` is done by resuming then stopping. See `docs/OPERATIONS.md`.
 `FINAL_FLUSH_TIMEOUT_SECONDS`. If the spool cannot be emptied the experiment is
 recorded as `STOPPED_WITH_PENDING_BUFFER` and the data stays on disk.
 `--supervise` forces this stop once the experiment exceeds `AUTO_STOP_AFTER_HOURS`.
+
+## Perfiles de despliegue: pilot y full
+
+- **pilot (predeterminado, `deployment_profile=pilot`)**: exactamente una base de
+  datos y una VM, corrida corta configurable. Usa Azure SQL Free Tier con
+  auto-pause al agotar la cuota solo si `FREE_TIER_ENABLED=true` (el operador
+  confirma elegibilidad por lectura sola antes de `apply`). Si no se confirma,
+  `scripts/preflight.sh` bloquea y presenta una alternativa de bajo costo
+  claramente marcada como facturable. No escala a más bases.
+- **full (`deployment_profile=full`)**: requiere `database_subscription_ids`
+  (allowlist no vacía) y `database_targets` con 1..N entradas. La VM se despliega
+  en `vm_subscription_id`; cada base en su suscripción explícita. Cada base
+  conserva identidad (`resource_uid`) y resultados separados.
+
+## Multi-suscripción y proveedores de Terraform
+
+- La VM se crea en `vm_subscription_id` mediante el proveedor estático
+  `azurerm.vm`, nunca en todas las suscripciones visibles por defecto.
+- Las bases de datos se crean en `subscription_id` (primaria) mediante el
+  proveedor por defecto, una por entrada de `database_targets`.
+- **Límite de proveedores (documentado):** Terraform no permite generar aliases
+  de `azurerm` dinámicamente con `for_each`. Las suscripciones de base de datos
+  distintas a la primaria requieren que el operador añada bloques estáticos
+  `provider "azurerm" { alias = "..." }` en `terraform/providers.tf` e
+  instancie el módulo/recursos de ese target con ese alias. `az account set` no
+  se usa como mecanismo oculto.
+- `terraform plan` y los outputs muestran la suscripción de cada recurso
+  (outputs `database_targets`, `vm_subscription_id`, `primary_subscription_id`).
+- Validaciones rechazan IDs vacíos, duplicados, no allowlisted e inconsistentes.
+
+## RBAC de solo lectura y red
+
+- La identidad de la VM (system-assigned managed identity) recibe `Reader` +
+  `Monitoring Reader` únicamente sobre el grupo de recursos de la VM.
+- Para leer métricas de bases en otras suscripciones (`full`), la identidad
+  necesita `Monitoring Reader` sobre cada recurso SQL de destino en su propia
+  suscripción (mínimo scope, sin `Owner` ni permisos de suscripción completa).
+  Eso requiere proveedores estáticos por suscripción (ver límite arriba) y se
+  documenta como paso de operación.
+- Firewall de Azure SQL: solo la IP pública del VM (`/32`). Sin `0.0.0.0/0` ni
+  "Allow Azure services". SSH solo desde `admin_cidr`. TLS 1.2 obligatorio.
+
+## SKU de la base de datos enviado a Supabase
+
+Cada lectura de Azure Monitor, DMV y Query Store incluye el `sku_name` del
+target de origen dentro de su `source_payload` (campo `sku_name`), de modo que
+Supabase conserva, junto a cada muestra, con qué SKU se tomó la lectura. Esto
+permite al pipeline de forecasting conocer la configuración real de cada base
+sin depender de consultas externas a Azure.
+
+## Exportación del dataset
+
+- `src.export` escribe CSV (y Parquet si hay pyarrow) más `manifest.json` con
+  IDs de recurso, configuración, calendario, zona horaria (UTC), semillas,
+  versión de catálogo/código, conteos, huecos, quality flags y checksums.
+- El paquete se escribe en disco local y sobrevive al apagado/destrucción de la
+  VM; debe copiarse fuera de la VM antes de cualquier `destroy`. El spool local
+  de recuperación por sí solo NO es el dataset final.
