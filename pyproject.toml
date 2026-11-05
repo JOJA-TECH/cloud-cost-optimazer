@@ -22,6 +22,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 forecasting = "forecasting.cli:main"
+forecast-grpc-server = "forecasting.serving.server:main"
 
 [build-system]
 requires = ["setuptools>=68"]

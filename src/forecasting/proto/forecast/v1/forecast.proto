@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package forecast.v1;
+
+// Go import path for the future Go client (stubs not generated here).
+option go_package = "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+// ForecastService exposes online inference for the experimental CPU
+// forecasting model. It is a service-to-service contract: the Go backend
+// calls it; browsers/frontends must NOT connect directly.
+service ForecastService {
+  // Produces a 1-hour-ahead point forecast for an observed resource.
+  rpc Predict(PredictRequest) returns (PredictResponse);
+
+  // Returns static information about the loaded model artifact (readiness).
+  rpc GetModelInfo(GetModelInfoRequest) returns (GetModelInfoResponse);
+}
+
+message PredictRequest {
+  // Public, immutable resource identifier (core.resource.resource_uid in cco_data).
+  // Never the internal surrogate resource_id.
+  string resource_uid = 1;
+
+  // Target to forecast. Must equal the target of the loaded artifact
+  // (model_metadata.json -> "target"). Initially only
+  // "target_cpu_avg_next1h" is supported.
+  string target = 2;
+
+  // Forecast horizon in minutes. Initially only 60 (1 hour) is supported.
+  int32 horizon_minutes = 3;
+
+  // Optional correlation / request id propagated for tracing. Not an
+  // authorization token.
+  string request_id = 4;
+
+  // Optional cutover time. When omitted, the server uses the latest fully
+  // observed hourly window for the resource. When set, the latest window
+  // at or before this timestamp is used. Timestamps are in UTC.
+  google.protobuf.Timestamp cutoff_time = 5;
+}
+
+message PredictionInterval {
+  // Lower / upper bound of the prediction interval, same unit as `value`.
+  double lower = 1;
+  double upper = 2;
+  // Calibration method, e.g. "jackknife_plus" or "split_conformal".
+  string method = 3;
+  // Nominal coverage level used at calibration (0 < value < 1).
+  double nominal_coverage = 4;
+}
+
+message PredictResponse {
+  string resource_uid = 1;
+  string target = 2;
+  // Unit of the point value, e.g. "percent".
+  string unit = 3;
+  int32 horizon_minutes = 4;
+
+  // Future period being forecast (start of the window, UTC).
+  google.protobuf.Timestamp period_start_utc = 5;
+  // Server generation timestamp (UTC).
+  google.protobuf.Timestamp generated_at_utc = 6;
+
+  // Point prediction. Present only when status == "ok".
+  google.protobuf.DoubleValue value = 7;
+
+  string model_name = 8;
+  string model_version = 9;
+
+  // ok | insufficient_data | stale_data.
+  string status = 10;
+
+  // Always true in this release: evidence does not support a stronger claim.
+  bool experimental = 11;
+
+  // Echo of the request correlation id, if provided.
+  string request_id = 12;
+
+  // Prediction interval. Present only when the loaded artifact carries a
+  // calibrated interval; absent otherwise.
+  PredictionInterval interval = 13;
+}
+
+message GetModelInfoRequest {}
+
+message GetModelInfoResponse {
+  string model_name = 1;
+  string model_version = 2;
+  string target = 3;
+  int32 horizon_minutes = 4;
+  string unit = 5;
+  repeated string feature_list = 6;
+  bool ready = 7;
+  bool experimental = 8;
+  string prediction_interval_method = 9;
+}
