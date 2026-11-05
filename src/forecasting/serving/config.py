@@ -73,23 +73,36 @@ def load_settings() -> ServingSettings:
         raise ValueError(f"FORECAST_MODEL_DIR is not a directory: {model_dir}")
 
     try:
-        max_stale = int(_env("FORECAST_MAX_STALE_MINUTES", str(DEFAULT_MAX_STALE_MINUTES)))
+        max_stale = int(
+            _env("FORECAST_MAX_STALE_MINUTES", str(DEFAULT_MAX_STALE_MINUTES))
+        )
     except ValueError:
         max_stale = DEFAULT_MAX_STALE_MINUTES
     try:
-        horizon = int(_env("FORECAST_SUPPORTED_HORIZON_MINUTES", str(DEFAULT_SUPPORTED_HORIZON_MINUTES)))
+        horizon = int(
+            _env(
+                "FORECAST_SUPPORTED_HORIZON_MINUTES",
+                str(DEFAULT_SUPPORTED_HORIZON_MINUTES),
+            )
+        )
     except ValueError:
         horizon = DEFAULT_SUPPORTED_HORIZON_MINUTES
     try:
-        max_msg = int(_env("FORECAST_MAX_RECEIVE_MESSAGE_MB", str(DEFAULT_MAX_RECEIVE_MESSAGE_MB)))
+        max_msg = int(
+            _env("FORECAST_MAX_RECEIVE_MESSAGE_MB", str(DEFAULT_MAX_RECEIVE_MESSAGE_MB))
+        )
     except ValueError:
         max_msg = DEFAULT_MAX_RECEIVE_MESSAGE_MB
     try:
-        max_streams = int(_env("FORECAST_MAX_CONCURRENT_STREAMS", str(DEFAULT_MAX_CONCURRENT_STREAMS)))
+        max_streams = int(
+            _env("FORECAST_MAX_CONCURRENT_STREAMS", str(DEFAULT_MAX_CONCURRENT_STREAMS))
+        )
     except ValueError:
         max_streams = DEFAULT_MAX_CONCURRENT_STREAMS
     try:
-        db_timeout = int(_env("FORECAST_DB_TIMEOUT_SECONDS", str(DEFAULT_DB_TIMEOUT_SECONDS)))
+        db_timeout = int(
+            _env("FORECAST_DB_TIMEOUT_SECONDS", str(DEFAULT_DB_TIMEOUT_SECONDS))
+        )
     except ValueError:
         db_timeout = DEFAULT_DB_TIMEOUT_SECONDS
 
@@ -119,8 +132,12 @@ def load_settings() -> ServingSettings:
             f"(addr={grpc_addr})"
         )
     if tls_mode == "required" and not tls_cert:
-        raise ValueError("FORECAST_TLS_CERT_FILE is required when FORECAST_TLS_MODE=required")
+        raise ValueError(
+            "FORECAST_TLS_CERT_FILE is required when FORECAST_TLS_MODE=required"
+        )
     if tls_mode == "required" and not tls_key:
-        raise ValueError("FORECAST_TLS_KEY_FILE is required when FORECAST_TLS_MODE=required")
+        raise ValueError(
+            "FORECAST_TLS_KEY_FILE is required when FORECAST_TLS_MODE=required"
+        )
 
     return settings

@@ -15,8 +15,8 @@ from typing import Any
 
 import joblib
 
-from forecasting.transforms import DifferencedPredictor
 from forecasting.features import FeatureSpec, feature_definition_hash
+from forecasting.transforms import DifferencedPredictor
 
 MODEL_FILENAME = "model.joblib"
 METADATA_FILENAME = "model_metadata.json"
@@ -97,11 +97,14 @@ def _validate_object(model: Any, metadata: dict[str, Any]) -> None:
     kind = str(metadata.get("model_kind", "")).lower()
     is_differenced = isinstance(model, DifferencedPredictor)
     inner = getattr(model, "model", model) if is_differenced else model
-    if not hasattr(inner, "predict") or not callable(getattr(inner, "predict")):
+    if not hasattr(inner, "predict") or not callable(inner.predict):
         raise ModelArtifactError(
             "serialized model has no callable predict: not a Pipeline or DifferencedPredictor"
         )
-    if kind in ("random_forest", "gradient_boosting", "ridge", "linear") and not is_differenced:
+    if (
+        kind in ("random_forest", "gradient_boosting", "ridge", "linear")
+        and not is_differenced
+    ):
         if not hasattr(model, "named_steps"):
             raise ModelArtifactError("serialized level model is not a sklearn Pipeline")
 
@@ -139,13 +142,16 @@ def load(model_dir: str | Path) -> ModelArtifact:
 
     try:
         model = joblib.load(model_path)
-    except Exception as exc:  # noqa: BLE001 - any load failure is fatal
+    except Exception as exc:
         raise ModelArtifactError(f"cannot load model.joblib: {exc}") from exc
 
     _validate_object(model, metadata)
 
     expected_hash = feature_definition_hash(metadata["feature_list"], FeatureSpec())
-    if metadata.get("feature_definition_hash") and expected_hash != metadata["feature_definition_hash"]:
+    if (
+        metadata.get("feature_definition_hash")
+        and expected_hash != metadata["feature_definition_hash"]
+    ):
         raise ModelArtifactError(
             "feature_definition_hash mismatch: artifact was built with a "
             "different feature definition than the current serving code"

@@ -13,6 +13,7 @@ from concurrent import futures
 from datetime import UTC, datetime
 
 import grpc
+from google.protobuf.wrappers_pb2 import DoubleValue
 
 from forecasting.proto.forecast.v1 import forecast_pb2, forecast_pb2_grpc
 from forecasting.serving.config import load_settings
@@ -39,32 +40,36 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
         request_id = request.request_id or ""
         log.info(
             "Predict resource_uid=%s target=%s horizon=%s request_id=%s",
-            request.resource_uid, request.target, request.horizon_minutes,
+            request.resource_uid,
+            request.target,
+            request.horizon_minutes,
             request_id,
         )
 
         if self.engine.artifact is None:
-            context.abort(grpc.StatusCode.FAILED_PRECONDITION,
-                          "model artifact not loaded")
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION, "model artifact not loaded"
+            )
 
         # Target / horizon are validated against the loaded artifact only.
         try:
-            self.engine.validate_target_horizon(
-                request.target, request.horizon_minutes
-            )
+            self.engine.validate_target_horizon(request.target, request.horizon_minutes)
         except InferenceError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
 
         # Resolve the public uid: unknown resource -> NOT_FOUND.
+        # The lookup itself is inside the try; the NOT_FOUND abort is outside
+        # so it is not re-captured and converted into UNAVAILABLE.
         try:
-            if not self.reader.resource_exists(request.resource_uid):
-                context.abort(
-                    grpc.StatusCode.NOT_FOUND,
-                    "resource not found: %s" % request.resource_uid,
-                )
+            exists = self.reader.resource_exists(request.resource_uid)
         except Exception as exc:  # noqa: BLE001 - DB failure
             log.error("resource lookup failed: %s", exc)
             context.abort(grpc.StatusCode.UNAVAILABLE, "feature store unavailable")
+        if not exists:
+            context.abort(
+                grpc.StatusCode.NOT_FOUND,
+                "resource not found: %s" % request.resource_uid,
+            )
 
         cutoff = None
         if request.HasField("cutoff_time"):
@@ -98,7 +103,7 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
         resp.request_id = payload.get("request_id") or ""
 
         if payload.get("value") is not None:
-            resp.value = float(payload["value"])
+            resp.value.CopyFrom(DoubleValue(value=float(payload["value"])))
         if payload.get("period_start_utc") is not None:
             resp.period_start_utc.FromDatetime(
                 payload["period_start_utc"].to_pydatetime()
@@ -123,15 +128,16 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
     def GetModelInfo(self, request, context):
         artifact = self.engine.artifact
         if artifact is None:
-            context.abort(grpc.StatusCode.FAILED_PRECONDITION,
-                          "model artifact not loaded")
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION, "model artifact not loaded"
+            )
         resp = forecast_pb2.GetModelInfoResponse()
         resp.model_name = artifact.model_name
         resp.model_version = artifact.model_version
         resp.target = artifact.target
         resp.horizon_minutes = self.engine.supported_horizon_minutes
         resp.unit = "percent"
-        resp.feature_list = list(artifact.feature_list)
+        resp.feature_list.extend(list(artifact.feature_list))
         resp.ready = artifact is not None
         resp.experimental = True
         config = artifact.interval_config or {}
@@ -139,14 +145,20 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
         return resp
 
 
-def build_server(engine: InferenceEngine, reader: FeatureStoreReader, settings) -> grpc.Server:
+def build_server(
+    engine: InferenceEngine, reader: FeatureStoreReader, settings
+) -> grpc.Server:
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=max(4, settings.max_concurrent_streams)),
         options=[
-            ("grpc.max_receive_message_length",
-             settings.max_receive_message_mb * 1024 * 1024),
-            ("grpc.max_send_message_length",
-             settings.max_receive_message_mb * 1024 * 1024),
+            (
+                "grpc.max_receive_message_length",
+                settings.max_receive_message_mb * 1024 * 1024,
+            ),
+            (
+                "grpc.max_send_message_length",
+                settings.max_receive_message_mb * 1024 * 1024,
+            ),
             ("grpc.max_concurrent_streams", settings.max_concurrent_streams),
         ],
     )
@@ -178,8 +190,11 @@ def build_server(engine: InferenceEngine, reader: FeatureStoreReader, settings) 
             require_client_auth=root_certificates is not None,
         )
         server.add_secure_port(settings.grpc_addr, server_credentials)
-        log.info("listening on %s (TLS%s)", settings.grpc_addr,
-                 " with mTLS" if root_certificates else "")
+        log.info(
+            "listening on %s (TLS%s)",
+            settings.grpc_addr,
+            " with mTLS" if root_certificates else "",
+        )
     else:
         if not settings.is_loopback:
             raise ValueError(
@@ -196,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     parser = argparse.ArgumentParser(prog="forecast-grpc-server")
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
 
     try:
         settings = load_settings()
@@ -210,14 +225,18 @@ def main(argv: list[str] | None = None) -> int:
         artifact = load(settings.model_dir)
         log.info(
             "model loaded name=%s version=%s target=%s features=%d",
-            artifact.model_name, artifact.model_version, artifact.target,
+            artifact.model_name,
+            artifact.model_version,
+            artifact.target,
             len(artifact.feature_list),
         )
     except ModelArtifactError as exc:
         log.error("model not ready: %s", exc)
         artifact = None
 
-    reader = FeatureStoreReader(settings.data_dsn, timeout_seconds=settings.db_timeout_seconds)
+    reader = FeatureStoreReader(
+        settings.data_dsn, timeout_seconds=settings.db_timeout_seconds
+    )
     engine = InferenceEngine(
         artifact=artifact,
         reader=reader,

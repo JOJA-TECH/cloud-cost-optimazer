@@ -104,10 +104,6 @@ class InferenceEngine:
             if frame.empty:
                 return None, "insufficient_data"
 
-        missing = [c for c in self.artifact.feature_list if c not in frame.columns]
-        if missing:
-            return None, "insufficient_data"
-
         enriched = add_derived_features(frame.copy(), self.spec)
         modeling = build_modeling_frame(enriched, self.artifact.target, self.spec)
 
@@ -155,28 +151,40 @@ class InferenceEngine:
 
         if frame.empty:
             return self._response(
-                resource_uid, target, horizon_minutes, request_id,
+                resource_uid,
+                target,
+                horizon_minutes,
+                request_id,
                 status="insufficient_data",
             )
 
         last_ts = frame["period_start_utc"].iloc[-1]
         if self._is_stale(last_ts, now):
             return self._response(
-                resource_uid, target, horizon_minutes, request_id,
+                resource_uid,
+                target,
+                horizon_minutes,
+                request_id,
                 status="stale_data",
             )
 
         ok, _ = self._validate_history(frame)
         if not ok:
             return self._response(
-                resource_uid, target, horizon_minutes, request_id,
+                resource_uid,
+                target,
+                horizon_minutes,
+                request_id,
                 status="insufficient_data",
             )
 
         X, status = self.build_input_matrix(frame, cutoff)
         if X is None:
             return self._response(
-                resource_uid, target, horizon_minutes, request_id,
+                resource_uid,
+                target,
+                horizon_minutes,
+                request_id,
                 status=status,
             )
 
@@ -186,7 +194,7 @@ class InferenceEngine:
 
         try:
             values = self.artifact.predict(X)
-        except Exception as exc:  # noqa: BLE001 - prediction failure is fatal
+        except Exception as exc:
             raise InferenceError("model prediction failed: %s" % exc) from exc
 
         value = float(np.asarray(values).reshape(-1)[0])
