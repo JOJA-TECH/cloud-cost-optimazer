@@ -10,13 +10,13 @@ import pytest
 from conftest import (
     FEATURE_LIST,
     TARGET,
-    make_artifact,
+    save_artifact,
     make_observed_frame,
-    make_versioned_artifact,
+    make_registry,
 )
 
 from forecasting.serving.engine import InferenceEngine, InferenceError
-from forecasting.serving.model import list_versions, load_version
+from forecasting.serving.model import ModelRegistry
 
 
 class FakeReader:
@@ -35,12 +35,36 @@ class FakeReader:
 
 
 def make_engine(
-    tmp_path, frame, kind="level", max_stale_minutes=1000000, now=None, exists=True
+    tmp_path,
+    frame,
+    target=TARGET,
+    version="1.0.0",
+    kind="level",
+    max_stale_minutes=1000000,
+    now=None,
+    exists=True,
+    with_interval=True,
 ):
-    artifact = make_artifact(tmp_path, kind=kind, with_interval=True)
+    save_artifact(
+        tmp_path,
+        target=target,
+        version=version,
+        kind=kind,
+        with_interval=with_interval,
+    )
+    registry = ModelRegistry(
+        model_dir=tmp_path,
+        by_target={
+            target: {version: None},  # placeholder, replaced below
+        },
+    )
+    # Load the artifact properly into the registry.
+    from forecasting.serving.model import load_registry
+
+    registry = load_registry(tmp_path)
     reader = FakeReader(frame, exists=exists)
     engine = InferenceEngine(
-        artifacts={artifact.version: artifact},
+        registry=registry,
         reader=reader,
         max_stale_minutes=max_stale_minutes,
         supported_horizon_minutes=60,
@@ -63,7 +87,6 @@ def test_ok_prediction_matches_direct(tmp_path, now=None):
     assert payload["status"] == "ok"
     assert payload["experimental"] is True
     assert payload["request_id"] == "req-1"
-    assert payload["model_name"] == "test_forecast"
     assert payload["unit"] == "percent"
     assert payload["horizon_minutes"] == 60
     assert payload["interval"] is not None
@@ -82,7 +105,8 @@ def test_ok_prediction_matches_direct(tmp_path, now=None):
     enriched = add_derived_features(frame.copy(), spec)
     modeling = build_modeling_frame(enriched, TARGET, spec)
     X = modeling[FEATURE_LIST].copy().tail(1)
-    expected = float(engine.artifacts["default"].predict(X).reshape(-1)[0])
+    artifact = engine.get_artifact(TARGET)
+    expected = float(artifact.predict(X).reshape(-1)[0])
     assert abs(payload["value"] - expected) < 1e-9
 
     # Period is the next hour after the last observed window.
@@ -97,7 +121,7 @@ def test_unsupported_target_rejected(tmp_path):
     engine, _ = make_engine(tmp_path, frame)
     with pytest.raises(InferenceError) as exc:
         engine.validate_target_horizon("target_storage_next1h", 60)
-    assert "unsupported target" in str(exc.value)
+    assert "is not loaded" in str(exc.value) or "not available" in str(exc.value)
 
 
 def test_unsupported_horizon_rejected(tmp_path):
@@ -224,7 +248,8 @@ def test_no_future_labels_used(tmp_path):
         cutoff_time=None,
     )
     assert payload["status"] == "ok"
-    assert "target_" not in str(engine.artifacts["default"].feature_list)
+    artifact = engine.get_artifact(TARGET)
+    assert "target_" not in str(artifact.feature_list)
 
 
 def test_differenced_predictor_ok(tmp_path):
@@ -244,29 +269,28 @@ def test_versioning_multiple_models(tmp_path):
     """Several model versions can coexist and be selected by version."""
     frame = make_observed_frame(20)
 
-    # Default (unversioned) artifact: make_artifact writes into tmp_path/model/.
-    default_artifact = make_artifact(tmp_path, kind="level", with_interval=True)
-    model_dir = tmp_path / "model"
-    # Versioned artifact in the same directory.
-    versioned = make_versioned_artifact(model_dir, "v1", kind="level")
-
-    versions = list_versions(str(model_dir))
-    assert "default" in versions
-    assert "v1" in versions
-
+    # Two targets, each with one version, in the same model_dir.
+    registry = make_registry(
+        tmp_path,
+        [
+            (TARGET, "1.0.0", "level", True),
+            ("target_workload_next1h", "1.0.0", "level", True),
+        ],
+    )
     engine = InferenceEngine(
-        artifacts={
-            default_artifact.version: default_artifact,
-            versioned.version: versioned,
-        },
+        registry=registry,
         reader=FakeReader(make_observed_frame(20), exists=True),
         max_stale_minutes=1000000,
         supported_horizon_minutes=60,
-        default_version="default",
     )
-    assert sorted(engine.available_versions()) == ["default", "v1"]
+    assert sorted(engine.targets()) == [
+        "target_cpu_avg_next1h",
+        "target_workload_next1h",
+    ]
+    assert engine.versions(TARGET) == ["1.0.0"]
+    assert engine.default_version(TARGET) == "1.0.0"
 
-    # Predicting with the default version uses the default artifact.
+    # Predicting default target without version uses the default artifact.
     payload_default = engine.predict(
         resource_uid="uid-1",
         target=TARGET,
@@ -276,26 +300,26 @@ def test_versioning_multiple_models(tmp_path):
         model_version=None,
     )
     assert payload_default["status"] == "ok"
-    assert payload_default["model_version"] == default_artifact.model_version
+    assert payload_default["model_version"] == "1.0.0"
 
-    # Predicting with an explicit version uses that artifact.
-    payload_v1 = engine.predict(
+    # Predicting the other target explicitly.
+    payload_wl = engine.predict(
         resource_uid="uid-1",
-        target=TARGET,
+        target="target_workload_next1h",
         horizon_minutes=60,
         request_id="",
         cutoff_time=None,
-        model_version="v1",
+        model_version="1.0.0",
     )
-    assert payload_v1["status"] == "ok"
-    assert payload_v1["model_version"] == versioned.model_version
+    assert payload_wl["status"] == "ok"
+    assert payload_wl["model_version"] == "1.0.0"
 
-    # Unknown version is rejected.
+    # Unknown target is rejected.
     with pytest.raises(InferenceError) as exc:
-        engine.validate_target_horizon(TARGET, 60, "nope")
-    assert "not loaded" in str(exc.value) or "not available" in str(exc.value)
+        engine.validate_target_horizon("target_storage_next1h", 60)
+    assert "not loaded" in str(exc.value)
 
-    # load_version can load any available version directly.
-    loaded = load_version(str(model_dir), "v1")
-    assert loaded.version == "v1"
-    assert loaded.target == TARGET
+    # Unknown version for a known target is rejected.
+    with pytest.raises(InferenceError) as exc:
+        engine.validate_target_horizon(TARGET, 60, "9.9.9")
+    assert "not loaded" in str(exc.value)

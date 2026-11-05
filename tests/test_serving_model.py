@@ -6,19 +6,19 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import FEATURE_LIST, TARGET, make_artifact, make_level_target
+from conftest import FEATURE_LIST, TARGET, save_artifact, make_level_target
 
 from forecasting.serving.model import (
     ModelArtifact,
     ModelArtifactError,
-    load,
+    load_artifact,
 )
 
 
 def test_load_level_artifact(tmp_path):
-    artifact = make_artifact(tmp_path, kind="level", with_interval=True)
+    artifact = save_artifact(tmp_path, kind="level", with_interval=True)
     assert isinstance(artifact, ModelArtifact)
-    assert artifact.model_name == "test_forecast"
+    assert artifact.model_name == f"test_forecast_{TARGET}_1.0.0"
     assert artifact.model_version == "1.0.0"
     assert artifact.target == TARGET
     assert artifact.feature_list == FEATURE_LIST
@@ -27,14 +27,14 @@ def test_load_level_artifact(tmp_path):
 
 
 def test_load_differenced_artifact(tmp_path):
-    artifact = make_artifact(tmp_path, kind="diff", with_interval=False)
+    artifact = save_artifact(tmp_path, kind="diff", with_interval=False)
     assert artifact.is_differenced()
     assert artifact.target == TARGET
     assert artifact.interval_config is None
 
 
 def test_predict_matches_direct_estimator(tmp_path):
-    artifact = make_artifact(tmp_path, kind="level", with_interval=True)
+    artifact = save_artifact(tmp_path, kind="level", with_interval=True)
     import numpy as np
     from conftest import make_training_frame
 
@@ -58,7 +58,7 @@ def test_missing_artifact_file(tmp_path):
     missing = tmp_path / "nope"
     missing.mkdir()
     with pytest.raises(ModelArtifactError):
-        load(str(missing))
+        load_artifact(missing)
 
 
 def test_missing_metadata(tmp_path):
@@ -91,28 +91,28 @@ def test_missing_metadata(tmp_path):
     )
     joblib.dump(model, model_dir / "model.joblib")
     with pytest.raises(ModelArtifactError):
-        load(str(model_dir))
+        load_artifact(model_dir)
 
 
 def test_metadata_hash_mismatch(tmp_path):
-    artifact = make_artifact(tmp_path, kind="level", with_interval=True)
-    model_dir = Path(tmp_path / "model")
-    metadata = json.loads((model_dir / "model_metadata.json").read_text())
+    artifact = save_artifact(tmp_path, kind="level", with_interval=True)
+    artifact_dir = tmp_path / TARGET / "1.0.0"
+    metadata = json.loads((artifact_dir / "model_metadata.json").read_text())
     metadata["feature_definition_hash"] = "0000-mismatch"
-    (model_dir / "model_metadata.json").write_text(
+    (artifact_dir / "model_metadata.json").write_text(
         json.dumps(metadata), encoding="utf-8"
     )
     with pytest.raises(ModelArtifactError):
-        load(str(model_dir))
+        load_artifact(artifact_dir)
 
 
 def test_empty_feature_list_rejected(tmp_path):
-    artifact = make_artifact(tmp_path, kind="level", with_interval=True)
-    model_dir = Path(tmp_path / "model")
-    metadata = json.loads((model_dir / "model_metadata.json").read_text())
+    artifact = save_artifact(tmp_path, kind="level", with_interval=True)
+    artifact_dir = tmp_path / TARGET / "1.0.0"
+    metadata = json.loads((artifact_dir / "model_metadata.json").read_text())
     metadata["feature_list"] = []
-    (model_dir / "model_metadata.json").write_text(
+    (artifact_dir / "model_metadata.json").write_text(
         json.dumps(metadata), encoding="utf-8"
     )
     with pytest.raises(ModelArtifactError):
-        load(str(model_dir))
+        load_artifact(artifact_dir)

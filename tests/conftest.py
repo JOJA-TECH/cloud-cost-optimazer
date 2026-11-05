@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import joblib
 import numpy as np
 import pandas as pd
 
 from forecasting.features import FeatureSpec, feature_definition_hash
 from forecasting.models import ModelSpec, fit_model
-from forecasting.serving.model import ModelArtifact
+from forecasting.serving.model import ModelArtifact, ModelRegistry, load_registry
 from forecasting.transforms import DifferencedPredictor
 
 TARGET = "target_cpu_avg_next1h"
@@ -74,24 +76,9 @@ def make_level_target(df: pd.DataFrame, seed: int = 42) -> pd.Series:
     )
 
 
-def make_artifact(
-    tmp_path, kind: str = "level", with_interval: bool = True
-) -> ModelArtifact:
-    """Build and persist a small artifact + metadata in tmp_path.
-
-    Returns the loaded ModelArtifact (validated through the public loader).
-    """
-    df = make_training_frame()
-    spec = FeatureSpec()
-    ft = __import__("forecasting.features", fromlist=["add_derived_features"])
-    enriched = ft.add_derived_features(df.copy(), spec)
-    modeling = ft.build_modeling_frame(enriched, TARGET, spec)
-
-    X = modeling[FEATURE_LIST].copy()
-    y = make_level_target(modeling)
-
+def _build_model(kind: str, X: pd.DataFrame, y: pd.Series):
     if kind == "level":
-        model = fit_model(
+        return fit_model(
             ModelSpec(
                 "rf",
                 "random_forest",
@@ -100,26 +87,50 @@ def make_artifact(
             X,
             y,
         )
-    else:
-        level_index = FEATURE_LIST.index("cpu_avg")
-        model = DifferencedPredictor(
-            ModelSpec(
-                "rf-diff",
-                "random_forest",
-                {"n_estimators": 10, "max_depth": 3, "random_state": 42},
-            ),
-            level_index,
-        ).fit(X, y)
+    level_index = FEATURE_LIST.index("cpu_avg")
+    return DifferencedPredictor(
+        ModelSpec(
+            "rf-diff",
+            "random_forest",
+            {"n_estimators": 10, "max_depth": 3, "random_state": 42},
+        ),
+        level_index,
+    ).fit(X, y)
 
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    joblib.dump(model, model_dir / "model.joblib")
+
+def save_artifact(
+    tmp_path,
+    target: str = TARGET,
+    version: str = "1.0.0",
+    kind: str = "level",
+    with_interval: bool = True,
+) -> ModelArtifact:
+    """Persist an artifact in the new layout ``tmp_path/<target>/<version>/``.
+
+    Returns the loaded ModelArtifact validated through load_artifact.
+    """
+    from forecasting.serving.model import load_artifact
+
+    df = make_training_frame()
+    spec = FeatureSpec()
+    ft = __import__("forecasting.features", fromlist=["add_derived_features"])
+    enriched = ft.add_derived_features(df.copy(), spec)
+    modeling = ft.build_modeling_frame(enriched, target, spec)
+
+    X = modeling[FEATURE_LIST].copy()
+    y = make_level_target(modeling)
+
+    model = _build_model(kind, X, y)
+
+    artifact_dir = tmp_path / target / version
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, artifact_dir / "model.joblib")
 
     metadata = {
-        "model_name": "test_forecast",
-        "model_version": "1.0.0",
+        "model_name": f"test_forecast_{target}_{version}",
+        "model_version": version,
         "model_kind": kind,
-        "target": TARGET,
+        "target": target,
         "period_type": "1h",
         "feature_list": FEATURE_LIST,
         "feature_definition_hash": feature_definition_hash(FEATURE_LIST, spec),
@@ -136,82 +147,24 @@ def make_artifact(
             else None
         ),
     }
-    import json
 
-    (model_dir / "model_metadata.json").write_text(
+    (artifact_dir / "model_metadata.json").write_text(
         json.dumps(metadata), encoding="utf-8"
     )
-
-    from forecasting.serving.model import load
-
-    return load(str(model_dir))
+    return load_artifact(artifact_dir, target=target)
 
 
-def make_versioned_artifact(tmp_path, version: str, kind: str = "level") -> ModelArtifact:
-    """Build and persist a versioned artifact (model_<v>.joblib +
-    model_metadata_<v>.json) in tmp_path.
-
-    Returns the loaded ModelArtifact validated through load_version.
-    """
-    df = make_training_frame()
-    spec = FeatureSpec()
-    ft = __import__("forecasting.features", fromlist=["add_derived_features"])
-    enriched = ft.add_derived_features(df.copy(), spec)
-    modeling = ft.build_modeling_frame(enriched, TARGET, spec)
-
-    X = modeling[FEATURE_LIST].copy()
-    y = make_level_target(modeling)
-
-    if kind == "level":
-        model = fit_model(
-            ModelSpec(
-                "rf",
-                "random_forest",
-                {"n_estimators": 10, "max_depth": 3, "random_state": 42},
-            ),
-            X,
-            y,
+def make_registry(tmp_path, entries) -> ModelRegistry:
+    """Build a ModelRegistry from a list of (target, version, kind, with_interval)."""
+    for target, version, kind, with_interval in entries:
+        save_artifact(
+            tmp_path,
+            target=target,
+            version=version,
+            kind=kind,
+            with_interval=with_interval,
         )
-    else:
-        level_index = FEATURE_LIST.index("cpu_avg")
-        model = DifferencedPredictor(
-            ModelSpec(
-                "rf-diff",
-                "random_forest",
-                {"n_estimators": 10, "max_depth": 3, "random_state": 42},
-            ),
-            level_index,
-        ).fit(X, y)
-
-    model_dir = tmp_path
-    joblib.dump(model, model_dir / f"model_{version}.joblib")
-
-    metadata = {
-        "model_name": "test_forecast_v%s" % version,
-        "model_version": "1.0.0",
-        "model_kind": kind,
-        "target": TARGET,
-        "period_type": "1h",
-        "feature_list": FEATURE_LIST,
-        "feature_definition_hash": feature_definition_hash(FEATURE_LIST, spec),
-        "dataset_hash": "test-dataset-hash",
-        "target_transform": "level",
-        "prediction_interval": {
-            "primary_method": "jackknife_plus",
-            "lower_offset": -1.5,
-            "upper_offset": 1.5,
-            "formal_guarantee_level": 0.80,
-        },
-    }
-    import json
-
-    (model_dir / f"model_metadata_{version}.json").write_text(
-        json.dumps(metadata), encoding="utf-8"
-    )
-
-    from forecasting.serving.model import load_version
-
-    return load_version(str(model_dir), version)
+    return load_registry(tmp_path)
 
 
 def make_observed_frame(n_rows: int = 20, seed: int = 7) -> pd.DataFrame:

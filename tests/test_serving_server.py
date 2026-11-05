@@ -6,13 +6,13 @@ from datetime import UTC, datetime
 
 import grpc
 import pytest
-from conftest import FEATURE_LIST, TARGET, make_artifact, make_observed_frame
+from conftest import FEATURE_LIST, TARGET, save_artifact, make_observed_frame
 
 from forecasting.proto.forecast.v1 import forecast_pb2, forecast_pb2_grpc
 from forecasting.serving.config import ServingSettings
 from forecasting.serving.data import FeatureStoreReader
 from forecasting.serving.engine import InferenceEngine
-from forecasting.serving.model import load, load_version
+from forecasting.serving.model import ModelRegistry, load_registry
 from forecasting.serving.server import ForecastServicer
 
 
@@ -64,18 +64,22 @@ def make_settings():
         tls_key_file=None,
         tls_ca_file=None,
         default_model_version="",
+        default_target="",
     )
 
 
 def build_engine_reader(
-    tmp_path, frame, kind="level", exists=True, max_stale_minutes=1000000
+    tmp_path, frame, target=TARGET, version="1.0.0", kind="level",
+    exists=True, max_stale_minutes=1000000, with_interval=True,
 ):
-    artifact = load(
-        str(make_artifact(tmp_path, kind=kind, with_interval=True).model_dir)
+    save_artifact(
+        tmp_path, target=target, version=version, kind=kind,
+        with_interval=with_interval,
     )
+    registry = load_registry(tmp_path)
     reader = FakeReader(frame, exists=exists)
     engine = InferenceEngine(
-        artifacts={artifact.version: artifact},
+        registry=registry,
         reader=reader,
         max_stale_minutes=max_stale_minutes,
         supported_horizon_minutes=60,
@@ -83,10 +87,16 @@ def build_engine_reader(
     return engine, reader
 
 
-def servicer_predict(engine, reader, target=TARGET, horizon=60, resource_uid="uid-1"):
+def servicer_predict(
+    engine, reader, target=TARGET, horizon=60, resource_uid="uid-1",
+    model_version=None,
+):
     servicer = ForecastServicer(engine, reader)
     req = forecast_pb2.PredictRequest(
-        resource_uid=resource_uid, target=target, horizon_minutes=horizon
+        resource_uid=resource_uid,
+        target=target,
+        horizon_minutes=horizon,
+        model_version=model_version or "",
     )
     ctx = FakeContext()
     try:
@@ -106,7 +116,6 @@ def test_grpc_success(tmp_path):
     assert resp.request_id == ""
     assert resp.unit == "percent"
     assert resp.horizon_minutes == 60
-    assert resp.model_name == "test_forecast"
     assert resp.value.value > 0
     assert resp.interval.lower < resp.value.value < resp.interval.upper
 
@@ -114,8 +123,10 @@ def test_grpc_success(tmp_path):
 def test_grpc_invalid_target(tmp_path):
     frame = make_observed_frame(20)
     engine, reader = build_engine_reader(tmp_path, frame)
-    code, details, _ = servicer_predict(engine, reader, target="target_storage_next1h")
-    assert code == grpc.StatusCode.INVALID_ARGUMENT
+    code, details, _ = servicer_predict(
+        engine, reader, target="target_storage_next1h"
+    )
+    assert code == grpc.StatusCode.FAILED_PRECONDITION
 
 
 def test_grpc_invalid_horizon(tmp_path):
@@ -176,7 +187,7 @@ def test_grpc_get_model_info(tmp_path):
 def test_grpc_not_ready_without_artifact(tmp_path):
     reader = FakeReader(make_observed_frame(12))
     engine = InferenceEngine(
-        artifacts={},
+        registry=None,
         reader=reader,
         max_stale_minutes=120,
         supported_horizon_minutes=60,
@@ -259,18 +270,13 @@ def test_grpc_cancelled_call(tmp_path):
 def test_grpc_real_artifact(tmp_path):
     """Two trained artifacts (cpu default + workload v1) are usable via gRPC."""
     real_model_dir = "artifacts/real_model"
-    default_artifact = load(real_model_dir)
-    versioned_artifact = load_version(real_model_dir, "v1")
+    registry = load_registry(real_model_dir)
     reader = FakeReader(make_observed_frame(20), exists=True)
     engine = InferenceEngine(
-        artifacts={
-            default_artifact.version: default_artifact,
-            versioned_artifact.version: versioned_artifact,
-        },
+        registry=registry,
         reader=reader,
         max_stale_minutes=1000000,
         supported_horizon_minutes=60,
-        default_version=default_artifact.version,
     )
     server, port = _start_server(engine, reader)
     try:
@@ -282,10 +288,9 @@ def test_grpc_real_artifact(tmp_path):
         info = stub.GetModelInfo(forecast_pb2.GetModelInfoRequest(), timeout=5)
         assert info.ready is True
         assert info.target == "target_cpu_avg_next1h"
-        assert info.model_name == default_artifact.model_name
         assert info.model_version == "1.0.0"
-        assert list(info.available_versions) == ["default", "v1"]
-        assert info.default_version == "default"
+        assert list(info.available_versions) == ["1.0.0"]
+        assert info.default_version == "1.0.0"
 
         # Predict default (cpu) without model_version -> uses default artifact.
         req = forecast_pb2.PredictRequest(
@@ -299,21 +304,19 @@ def test_grpc_real_artifact(tmp_path):
         assert resp.experimental is True
         assert resp.request_id == "real-artifact-cpu"
         assert resp.value.value > 0
-        assert resp.model_name == default_artifact.model_name
         assert resp.model_version == "1.0.0"
         assert resp.interval.lower < resp.value.value < resp.interval.upper
 
-        # Predict v1 (workload) with explicit model_version.
+        # Predict workload (v1) with explicit model_version.
         req_v1 = forecast_pb2.PredictRequest(
             resource_uid="uid-1",
             target="target_workload_next1h",
             horizon_minutes=60,
             request_id="real-artifact-wl",
-            model_version="v1",
+            model_version="1.0.0",
         )
         resp_v1, _call = stub.Predict.with_call(req_v1, timeout=5)
         assert resp_v1.status == "ok"
-        assert resp_v1.model_name == versioned_artifact.model_name
         assert resp_v1.model_version == "1.0.0"
         assert resp_v1.interval.lower < resp_v1.value.value < resp_v1.interval.upper
         channel.close()

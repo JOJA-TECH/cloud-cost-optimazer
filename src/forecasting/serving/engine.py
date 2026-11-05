@@ -37,13 +37,11 @@ class InferenceEngine:
         reader: FeatureStoreReader,
         max_stale_minutes: int,
         supported_horizon_minutes: int,
-        default_version: str | None = None,
     ) -> None:
         self.registry = registry
         self.reader = reader
         self.max_stale_minutes = max_stale_minutes
         self.supported_horizon_minutes = supported_horizon_minutes
-        self.default_version = default_version
         self.spec = FeatureSpec()
 
     # ------------------------------------------------------------------ #
@@ -55,15 +53,23 @@ class InferenceEngine:
         When ``version`` is None the default (latest) version for the target is
         used.
         """
+        if self.registry is None:
+            return None
         return self.registry.get(target, version)
 
     def targets(self) -> list[str]:
+        if self.registry is None:
+            return []
         return self.registry.targets()
 
     def versions(self, target: str) -> list[str]:
+        if self.registry is None:
+            return []
         return self.registry.versions(target)
 
     def default_version(self, target: str) -> str | None:
+        if self.registry is None:
+            return None
         return self.registry.default_version(target)
 
     # ------------------------------------------------------------------ #
