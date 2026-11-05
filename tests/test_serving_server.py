@@ -12,7 +12,7 @@ from forecasting.proto.forecast.v1 import forecast_pb2, forecast_pb2_grpc
 from forecasting.serving.config import ServingSettings
 from forecasting.serving.data import FeatureStoreReader
 from forecasting.serving.engine import InferenceEngine
-from forecasting.serving.model import load
+from forecasting.serving.model import load, load_version
 from forecasting.serving.server import ForecastServicer
 
 
@@ -257,16 +257,20 @@ def test_grpc_cancelled_call(tmp_path):
 
 
 def test_grpc_real_artifact(tmp_path):
-    """A real trained artifact (artifacts/real_model) is usable via gRPC."""
+    """Two trained artifacts (cpu default + workload v1) are usable via gRPC."""
     real_model_dir = "artifacts/real_model"
-    artifact = load(real_model_dir)
+    default_artifact = load(real_model_dir)
+    versioned_artifact = load_version(real_model_dir, "v1")
     reader = FakeReader(make_observed_frame(20), exists=True)
     engine = InferenceEngine(
-        artifacts={artifact.version: artifact},
+        artifacts={
+            default_artifact.version: default_artifact,
+            versioned_artifact.version: versioned_artifact,
+        },
         reader=reader,
         max_stale_minutes=1000000,
         supported_horizon_minutes=60,
-        default_version=artifact.version,
+        default_version=default_artifact.version,
     )
     server, port = _start_server(engine, reader)
     try:
@@ -274,30 +278,44 @@ def test_grpc_real_artifact(tmp_path):
         grpc.channel_ready_future(channel).result(timeout=5)
         stub = forecast_pb2_grpc.ForecastServiceStub(channel)
 
-        # GetModelInfo reports the real model metadata.
+        # GetModelInfo reports both served versions.
         info = stub.GetModelInfo(forecast_pb2.GetModelInfoRequest(), timeout=5)
         assert info.ready is True
         assert info.target == "target_cpu_avg_next1h"
-        assert info.model_name == "ridge_a2.0"
+        assert info.model_name == default_artifact.model_name
         assert info.model_version == "1.0.0"
-        assert info.available_versions == ["default"]
+        assert list(info.available_versions) == ["default", "v1"]
         assert info.default_version == "default"
 
-        # Predict returns a numeric point forecast for the real model.
+        # Predict default (cpu) without model_version -> uses default artifact.
         req = forecast_pb2.PredictRequest(
             resource_uid="uid-1",
             target="target_cpu_avg_next1h",
             horizon_minutes=60,
-            request_id="real-artifact-check",
+            request_id="real-artifact-cpu",
         )
         resp, _call = stub.Predict.with_call(req, timeout=5)
         assert resp.status == "ok"
         assert resp.experimental is True
-        assert resp.request_id == "real-artifact-check"
+        assert resp.request_id == "real-artifact-cpu"
         assert resp.value.value > 0
-        assert resp.model_name == "ridge_a2.0"
+        assert resp.model_name == default_artifact.model_name
         assert resp.model_version == "1.0.0"
         assert resp.interval.lower < resp.value.value < resp.interval.upper
+
+        # Predict v1 (workload) with explicit model_version.
+        req_v1 = forecast_pb2.PredictRequest(
+            resource_uid="uid-1",
+            target="target_workload_next1h",
+            horizon_minutes=60,
+            request_id="real-artifact-wl",
+            model_version="v1",
+        )
+        resp_v1, _call = stub.Predict.with_call(req_v1, timeout=5)
+        assert resp_v1.status == "ok"
+        assert resp_v1.model_name == versioned_artifact.model_name
+        assert resp_v1.model_version == "1.0.0"
+        assert resp_v1.interval.lower < resp_v1.value.value < resp_v1.interval.upper
         channel.close()
     finally:
         server.stop(grace=1)
