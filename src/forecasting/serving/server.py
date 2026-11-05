@@ -263,7 +263,6 @@ def main(argv: list[str] | None = None) -> int:
         reader=reader,
         max_stale_minutes=settings.max_stale_minutes,
         supported_horizon_minutes=settings.supported_horizon_minutes,
-        default_version=settings.default_model_version or None,
     )
 
     server = build_server(engine, reader, settings)
