@@ -1,6 +1,8 @@
 # Online inference engine for the forecasting artifact.
 # Builds the input matrix from observed feature-store rows (no future labels),
 # validates temporal quality, and runs the loaded artifact once per request.
+# Supports multiple model versions so different metrics/targets can be served
+# and inferred independently.
 
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from forecasting.serving.data import (
     REQUIRED_HISTORY_HOURS,
     FeatureStoreReader,
 )
-from forecasting.serving.model import ModelArtifact
+from forecasting.serving.model import DEFAULT_VERSION, ModelArtifact
 
 
 class InferenceError(RuntimeError):
@@ -31,25 +33,45 @@ class InferenceError(RuntimeError):
 class InferenceEngine:
     def __init__(
         self,
-        artifact: ModelArtifact,
+        artifacts: dict[str, ModelArtifact],
         reader: FeatureStoreReader,
         max_stale_minutes: int,
         supported_horizon_minutes: int,
+        default_version: str = DEFAULT_VERSION,
     ) -> None:
-        self.artifact = artifact
+        self.artifacts = artifacts
         self.reader = reader
         self.max_stale_minutes = max_stale_minutes
         self.supported_horizon_minutes = supported_horizon_minutes
+        self.default_version = default_version or DEFAULT_VERSION
         self.spec = FeatureSpec()
+
+    # ------------------------------------------------------------------ #
+    # artifact resolution
+    # ------------------------------------------------------------------ #
+    def get_artifact(self, version: str | None) -> ModelArtifact | None:
+        """Return the artifact for ``version``, or the default artifact."""
+        key = version or self.default_version
+        return self.artifacts.get(key)
+
+    def available_versions(self) -> list[str]:
+        return sorted(self.artifacts.keys())
 
     # ------------------------------------------------------------------ #
     # request validation
     # ------------------------------------------------------------------ #
-    def validate_target_horizon(self, target: str, horizon_minutes: int) -> None:
-        if target != self.artifact.target:
+    def validate_target_horizon(
+        self, target: str, horizon_minutes: int, version: str | None = None
+    ) -> None:
+        artifact = self.get_artifact(version)
+        if artifact is None:
             raise InferenceError(
-                "unsupported target %r; the loaded artifact serves %r"
-                % (target, self.artifact.target)
+                "model version %r is not loaded" % (version or self.default_version)
+            )
+        if target != artifact.target:
+            raise InferenceError(
+                "unsupported target %r; version %r serves %r"
+                % (target, artifact.version, artifact.target)
             )
         if horizon_minutes != self.supported_horizon_minutes:
             raise InferenceError(
@@ -92,7 +114,10 @@ class InferenceEngine:
     # feature matrix
     # ------------------------------------------------------------------ #
     def build_input_matrix(
-        self, frame: pd.DataFrame, cutoff: pd.Timestamp | None
+        self,
+        frame: pd.DataFrame,
+        cutoff: pd.Timestamp | None,
+        artifact: ModelArtifact,
     ) -> tuple[Any, str]:
         # Build the single-row input matrix for the latest usable window.
         # Returns (X, status). X is None when data is insufficient/stale.
@@ -105,7 +130,7 @@ class InferenceEngine:
                 return None, "insufficient_data"
 
         enriched = add_derived_features(frame.copy(), self.spec)
-        modeling = build_modeling_frame(enriched, self.artifact.target, self.spec)
+        modeling = build_modeling_frame(enriched, artifact.target, self.spec)
 
         if modeling.empty:
             return None, "insufficient_data"
@@ -120,11 +145,11 @@ class InferenceEngine:
             return None, "insufficient_data"
 
         available = feature_columns(modeling, self.spec)
-        for column in self.artifact.feature_list:
+        for column in artifact.feature_list:
             if column not in available:
                 return None, "insufficient_data"
 
-        X = last[self.artifact.feature_list].copy()
+        X = last[artifact.feature_list].copy()
         return X, "ok"
 
     # ------------------------------------------------------------------ #
@@ -137,11 +162,19 @@ class InferenceEngine:
         horizon_minutes: int,
         request_id: str | None,
         cutoff_time: str | None,
+        model_version: str | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         # Run one prediction and return a response payload dict.
         now = now or datetime.now(UTC)
-        self.validate_target_horizon(target, horizon_minutes)
+        artifact = self.get_artifact(model_version)
+        if artifact is None:
+            raise InferenceError(
+                "model version %r is not available"
+                % (model_version or self.default_version)
+            )
+
+        self.validate_target_horizon(target, horizon_minutes, model_version)
 
         cutoff = None
         if cutoff_time:
@@ -151,6 +184,7 @@ class InferenceEngine:
 
         if frame.empty:
             return self._response(
+                artifact,
                 resource_uid,
                 target,
                 horizon_minutes,
@@ -161,6 +195,7 @@ class InferenceEngine:
         last_ts = frame["period_start_utc"].iloc[-1]
         if self._is_stale(last_ts, now):
             return self._response(
+                artifact,
                 resource_uid,
                 target,
                 horizon_minutes,
@@ -171,6 +206,7 @@ class InferenceEngine:
         ok, _ = self._validate_history(frame)
         if not ok:
             return self._response(
+                artifact,
                 resource_uid,
                 target,
                 horizon_minutes,
@@ -178,9 +214,10 @@ class InferenceEngine:
                 status="insufficient_data",
             )
 
-        X, status = self.build_input_matrix(frame, cutoff)
+        X, status = self.build_input_matrix(frame, cutoff, artifact)
         if X is None:
             return self._response(
+                artifact,
                 resource_uid,
                 target,
                 horizon_minutes,
@@ -193,7 +230,7 @@ class InferenceEngine:
         X = X.replace([np.inf, -np.inf], np.nan)
 
         try:
-            values = self.artifact.predict(X)
+            values = artifact.predict(X)
         except Exception as exc:
             raise InferenceError("model prediction failed: %s" % exc) from exc
 
@@ -205,6 +242,7 @@ class InferenceEngine:
         period_future = period_start + pd.Timedelta(hours=1)
 
         return self._response(
+            artifact,
             resource_uid,
             target,
             horizon_minutes,
@@ -212,7 +250,7 @@ class InferenceEngine:
             status="ok",
             value=value,
             period_start_utc=period_future,
-            interval=self._build_interval(value),
+            interval=self._build_interval(artifact, value),
         )
 
     # ------------------------------------------------------------------ #
@@ -220,6 +258,7 @@ class InferenceEngine:
     # ------------------------------------------------------------------ #
     def _response(
         self,
+        artifact: ModelArtifact,
         resource_uid: str,
         target: str,
         horizon_minutes: int,
@@ -237,8 +276,8 @@ class InferenceEngine:
             "unit": "percent",
             "horizon_minutes": horizon_minutes,
             "generated_at_utc": now,
-            "model_name": self.artifact.model_name,
-            "model_version": self.artifact.model_version,
+            "model_name": artifact.model_name,
+            "model_version": artifact.model_version,
             "status": status,
             "experimental": True,
             "request_id": request_id or "",
@@ -250,8 +289,8 @@ class InferenceEngine:
             payload["period_start_utc"] = period_start_utc
         return payload
 
-    def _build_interval(self, value: float) -> dict[str, Any] | None:
-        config = self.artifact.interval_config
+    def _build_interval(self, artifact: ModelArtifact, value: float) -> dict[str, Any] | None:
+        config = artifact.interval_config
         if not config:
             return None
         lower_offset = config.get("lower_offset")
