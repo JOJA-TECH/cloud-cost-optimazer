@@ -19,6 +19,7 @@ DEFAULT_MAX_RECEIVE_MESSAGE_MB = 4
 DEFAULT_MAX_CONCURRENT_STREAMS = 100
 DEFAULT_DB_TIMEOUT_SECONDS = 10
 DEFAULT_TLS_MODE = "disabled"
+DEFAULT_MODEL_VERSION = ""
 
 
 def _env(name: str, default: str = "") -> str:
@@ -45,6 +46,7 @@ class ServingSettings:
     tls_cert_file: str | None
     tls_key_file: str | None
     tls_ca_file: str | None
+    default_model_version: str
 
     @property
     def is_loopback(self) -> bool:
@@ -111,6 +113,8 @@ def load_settings() -> ServingSettings:
     tls_key = _env("FORECAST_TLS_KEY_FILE") or None
     tls_ca = _env("FORECAST_TLS_CA_FILE") or None
 
+    default_model_version = _env("FORECAST_MODEL_VERSION", DEFAULT_MODEL_VERSION)
+
     settings = ServingSettings(
         grpc_addr=grpc_addr,
         model_dir=model_dir,
@@ -124,6 +128,7 @@ def load_settings() -> ServingSettings:
         tls_cert_file=tls_cert,
         tls_key_file=tls_key,
         tls_ca_file=tls_ca,
+        default_model_version=default_model_version,
     )
 
     if settings.require_tls() and tls_mode != "required":
