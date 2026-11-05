@@ -2,6 +2,9 @@
 # Exposes forecast.v1.ForecastService (Predict + GetModelInfo) and a
 # grpc.health.v1.Health endpoint. Service-to-service only: the Go backend
 # is the intended client; browsers/frontends must not connect directly.
+#
+# Models are versioned so multiple metrics/targets can be served and inferred
+# independently.
 
 from __future__ import annotations
 
@@ -11,15 +14,21 @@ import signal
 import sys
 from concurrent import futures
 from datetime import UTC, datetime
+from pathlib import Path
 
 import grpc
 from google.protobuf.wrappers_pb2 import DoubleValue
 
 from forecasting.proto.forecast.v1 import forecast_pb2, forecast_pb2_grpc
-from forecasting.serving.config import load_settings
+from forecasting.serving.config import DEFAULT_MODEL_VERSION, load_settings
 from forecasting.serving.data import FeatureStoreReader
 from forecasting.serving.engine import InferenceEngine, InferenceError
-from forecasting.serving.model import ModelArtifactError, load
+from forecasting.serving.model import (
+    DEFAULT_VERSION,
+    ModelArtifactError,
+    list_versions,
+    load_version,
+)
 
 try:  # grpc.health.v1 ships with grpcio
     from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -38,22 +47,29 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
 
     def Predict(self, request, context):
         request_id = request.request_id or ""
+        model_version = request.model_version or None
         log.info(
-            "Predict resource_uid=%s target=%s horizon=%s request_id=%s",
+            "Predict resource_uid=%s target=%s horizon=%s version=%s request_id=%s",
             request.resource_uid,
             request.target,
             request.horizon_minutes,
+            model_version,
             request_id,
         )
 
-        if self.engine.artifact is None:
+        artifact = self.engine.get_artifact(model_version)
+        if artifact is None:
             context.abort(
-                grpc.StatusCode.FAILED_PRECONDITION, "model artifact not loaded"
+                grpc.StatusCode.FAILED_PRECONDITION,
+                "model version %s not loaded"
+                % (model_version or self.engine.default_version),
             )
 
-        # Target / horizon are validated against the loaded artifact only.
+        # Target / horizon are validated against the selected artifact only.
         try:
-            self.engine.validate_target_horizon(request.target, request.horizon_minutes)
+            self.engine.validate_target_horizon(
+                request.target, request.horizon_minutes, model_version
+            )
         except InferenceError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
 
@@ -82,6 +98,7 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
                 horizon_minutes=request.horizon_minutes,
                 request_id=request_id,
                 cutoff_time=cutoff,
+                model_version=model_version,
             )
         except InferenceError as exc:
             context.abort(grpc.StatusCode.INTERNAL, str(exc))
@@ -126,22 +143,26 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
         return resp
 
     def GetModelInfo(self, request, context):
-        artifact = self.engine.artifact
-        if artifact is None:
+        # Default artifact for the static info block.
+        default_artifact = self.engine.get_artifact(None)
+        if default_artifact is None:
             context.abort(
-                grpc.StatusCode.FAILED_PRECONDITION, "model artifact not loaded"
+                grpc.StatusCode.FAILED_PRECONDITION,
+                "no model version loaded",
             )
         resp = forecast_pb2.GetModelInfoResponse()
-        resp.model_name = artifact.model_name
-        resp.model_version = artifact.model_version
-        resp.target = artifact.target
+        resp.model_name = default_artifact.model_name
+        resp.model_version = default_artifact.model_version
+        resp.target = default_artifact.target
         resp.horizon_minutes = self.engine.supported_horizon_minutes
         resp.unit = "percent"
-        resp.feature_list.extend(list(artifact.feature_list))
-        resp.ready = artifact is not None
+        resp.feature_list.extend(list(default_artifact.feature_list))
+        resp.ready = True
         resp.experimental = True
-        config = artifact.interval_config or {}
+        config = default_artifact.interval_config or {}
         resp.prediction_interval_method = str(config.get("primary_method", ""))
+        resp.available_versions.extend(self.engine.available_versions())
+        resp.default_version = self.engine.default_version
         return resp
 
 
@@ -170,7 +191,7 @@ def build_server(
         health_servicer = health.HealthServer()
         serving = health_pb2.HealthCheckResponse.SERVING
         not_serving = health_pb2.HealthCheckResponse.NOT_SERVING
-        status = serving if engine.artifact is not None else not_serving
+        status = serving if engine.artifacts else not_serving
         health_servicer.set("", status)
         health_servicer.set("forecast.v1.ForecastService", status)
         health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
@@ -205,6 +226,58 @@ def build_server(
     return server
 
 
+def _load_artifacts(model_dir: Path, default_version: str) -> dict[str, Any]:
+    """Load every available model version; return {version: artifact}.
+
+    The default version (``default_version`` env or ``default``) is loaded
+    first. Any failure to load a non-default version is logged and skipped so
+    a single bad artifact does not take down the whole service.
+    """
+    directory = Path(model_dir)
+    artifacts: dict[str, Any] = {}
+
+    versions = list_versions(directory)
+    if not versions:
+        return artifacts
+
+    # Resolve which version is the default: env override, else "default" if
+    # present, else the only available version.
+    resolved_default = default_version or DEFAULT_VERSION
+    if resolved_default not in versions:
+        resolved_default = versions[0]
+
+    # Load the default version first.
+    try:
+        artifacts[resolved_default] = load_version(directory, resolved_default)
+        log.info(
+            "default model loaded version=%s name=%s target=%s features=%d",
+            resolved_default,
+            artifacts[resolved_default].model_name,
+            artifacts[resolved_default].target,
+            len(artifacts[resolved_default].feature_list),
+        )
+    except ModelArtifactError as exc:
+        log.error("default model not ready: %s", exc)
+
+    # Load the remaining versions (best effort).
+    for version in versions:
+        if version in artifacts:
+            continue
+        try:
+            artifacts[version] = load_version(directory, version)
+            log.info(
+                "model loaded version=%s name=%s target=%s features=%d",
+                version,
+                artifacts[version].model_name,
+                artifacts[version].target,
+                len(artifacts[version].feature_list),
+            )
+        except ModelArtifactError as exc:
+            log.error("model version %s not ready: %s", version, exc)
+
+    return artifacts
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -219,29 +292,21 @@ def main(argv: list[str] | None = None) -> int:
         log.error("configuration error: %s", exc)
         return 2
 
-    # Load the artifact once at startup. Failure -> not ready, clear error.
-    artifact = None
-    try:
-        artifact = load(settings.model_dir)
-        log.info(
-            "model loaded name=%s version=%s target=%s features=%d",
-            artifact.model_name,
-            artifact.model_version,
-            artifact.target,
-            len(artifact.feature_list),
-        )
-    except ModelArtifactError as exc:
-        log.error("model not ready: %s", exc)
-        artifact = None
+    # Load all available model versions once at startup. No training happens
+    # here. Failure to load the default version -> service not ready.
+    artifacts = _load_artifacts(
+        settings.model_dir, settings.default_model_version
+    )
 
     reader = FeatureStoreReader(
         settings.data_dsn, timeout_seconds=settings.db_timeout_seconds
     )
     engine = InferenceEngine(
-        artifact=artifact,
+        artifacts=artifacts,
         reader=reader,
         max_stale_minutes=settings.max_stale_minutes,
         supported_horizon_minutes=settings.supported_horizon_minutes,
+        default_version=settings.default_model_version or DEFAULT_VERSION,
     )
 
     server = build_server(engine, reader, settings)
