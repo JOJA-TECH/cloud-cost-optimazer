@@ -26,7 +26,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from google.protobuf import wrappers_pb2 as google_dot_protobuf_dot_wrappers__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,forecasting/proto/forecast/v1/forecast.proto\x12\x0b\x66orecast.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\x94\x01\n\x0ePredictRequest\x12\x14\n\x0cresource_uid\x18\x01 \x01(\t\x12\x0e\n\x06target\x18\x02 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x03 \x01(\x05\x12\x12\n\nrequest_id\x18\x04 \x01(\t\x12/\n\x0b\x63utoff_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\\\n\x12PredictionInterval\x12\r\n\x05lower\x18\x01 \x01(\x01\x12\r\n\x05upper\x18\x02 \x01(\x01\x12\x0e\n\x06method\x18\x03 \x01(\t\x12\x18\n\x10nominal_coverage\x18\x04 \x01(\x01\"\x8f\x03\n\x0fPredictResponse\x12\x14\n\x0cresource_uid\x18\x01 \x01(\t\x12\x0e\n\x06target\x18\x02 \x01(\t\x12\x0c\n\x04unit\x18\x03 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x04 \x01(\x05\x12\x34\n\x10period_start_utc\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x34\n\x10generated_at_utc\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12+\n\x05value\x18\x07 \x01(\x0b\x32\x1c.google.protobuf.DoubleValue\x12\x12\n\nmodel_name\x18\x08 \x01(\t\x12\x15\n\rmodel_version\x18\t \x01(\t\x12\x0e\n\x06status\x18\n \x01(\t\x12\x14\n\x0c\x65xperimental\x18\x0b \x01(\x08\x12\x12\n\nrequest_id\x18\x0c \x01(\t\x12\x31\n\x08interval\x18\r \x01(\x0b\x32\x1f.forecast.v1.PredictionInterval\"\x15\n\x13GetModelInfoRequest\"\xd7\x01\n\x14GetModelInfoResponse\x12\x12\n\nmodel_name\x18\x01 \x01(\t\x12\x15\n\rmodel_version\x18\x02 \x01(\t\x12\x0e\n\x06target\x18\x03 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x04 \x01(\x05\x12\x0c\n\x04unit\x18\x05 \x01(\t\x12\x14\n\x0c\x66\x65\x61ture_list\x18\x06 \x03(\t\x12\r\n\x05ready\x18\x07 \x01(\x08\x12\x14\n\x0c\x65xperimental\x18\x08 \x01(\x08\x12\"\n\x1aprediction_interval_method\x18\t \x01(\t2\xac\x01\n\x0f\x46orecastService\x12\x44\n\x07Predict\x12\x1b.forecast.v1.PredictRequest\x1a\x1c.forecast.v1.PredictResponse\x12S\n\x0cGetModelInfo\x12 .forecast.v1.GetModelInfoRequest\x1a!.forecast.v1.GetModelInfoResponseBSZQgithub.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n,forecasting/proto/forecast/v1/forecast.proto\x12\x0b\x66orecast.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\xab\x01\n\x0ePredictRequest\x12\x14\n\x0cresource_uid\x18\x01 \x01(\t\x12\x0e\n\x06target\x18\x02 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x03 \x01(\x05\x12\x12\n\nrequest_id\x18\x04 \x01(\t\x12/\n\x0b\x63utoff_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x15\n\rmodel_version\x18\x06 \x01(\t\"\\\n\x12PredictionInterval\x12\r\n\x05lower\x18\x01 \x01(\x01\x12\r\n\x05upper\x18\x02 \x01(\x01\x12\x0e\n\x06method\x18\x03 \x01(\t\x12\x18\n\x10nominal_coverage\x18\x04 \x01(\x01\"\x8f\x03\n\x0fPredictResponse\x12\x14\n\x0cresource_uid\x18\x01 \x01(\t\x12\x0e\n\x06target\x18\x02 \x01(\t\x12\x0c\n\x04unit\x18\x03 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x04 \x01(\x05\x12\x34\n\x10period_start_utc\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x34\n\x10generated_at_utc\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12+\n\x05value\x18\x07 \x01(\x0b\x32\x1c.google.protobuf.DoubleValue\x12\x12\n\nmodel_name\x18\x08 \x01(\t\x12\x15\n\rmodel_version\x18\t \x01(\t\x12\x0e\n\x06status\x18\n \x01(\t\x12\x14\n\x0c\x65xperimental\x18\x0b \x01(\x08\x12\x12\n\nrequest_id\x18\x0c \x01(\t\x12\x31\n\x08interval\x18\r \x01(\x0b\x32\x1f.forecast.v1.PredictionInterval\"\x15\n\x13GetModelInfoRequest\"\x8c\x02\n\x14GetModelInfoResponse\x12\x12\n\nmodel_name\x18\x01 \x01(\t\x12\x15\n\rmodel_version\x18\x02 \x01(\t\x12\x0e\n\x06target\x18\x03 \x01(\t\x12\x17\n\x0fhorizon_minutes\x18\x04 \x01(\x05\x12\x0c\n\x04unit\x18\x05 \x01(\t\x12\x14\n\x0c\x66\x65\x61ture_list\x18\x06 \x03(\t\x12\r\n\x05ready\x18\x07 \x01(\x08\x12\x14\n\x0c\x65xperimental\x18\x08 \x01(\x08\x12\"\n\x1aprediction_interval_method\x18\t \x01(\t\x12\x1a\n\x12\x61vailable_versions\x18\n \x03(\t\x12\x17\n\x0f\x64\x65\x66\x61ult_version\x18\x0b \x01(\t2\xac\x01\n\x0f\x46orecastService\x12\x44\n\x07Predict\x12\x1b.forecast.v1.PredictRequest\x1a\x1c.forecast.v1.PredictResponse\x12S\n\x0cGetModelInfo\x12 .forecast.v1.GetModelInfoRequest\x1a!.forecast.v1.GetModelInfoResponseBSZQgithub.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,15 +35,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZQgithub.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1'
   _globals['_PREDICTREQUEST']._serialized_start=127
-  _globals['_PREDICTREQUEST']._serialized_end=275
-  _globals['_PREDICTIONINTERVAL']._serialized_start=277
-  _globals['_PREDICTIONINTERVAL']._serialized_end=369
-  _globals['_PREDICTRESPONSE']._serialized_start=372
-  _globals['_PREDICTRESPONSE']._serialized_end=771
-  _globals['_GETMODELINFOREQUEST']._serialized_start=773
-  _globals['_GETMODELINFOREQUEST']._serialized_end=794
-  _globals['_GETMODELINFORESPONSE']._serialized_start=797
-  _globals['_GETMODELINFORESPONSE']._serialized_end=1012
-  _globals['_FORECASTSERVICE']._serialized_start=1015
-  _globals['_FORECASTSERVICE']._serialized_end=1187
+  _globals['_PREDICTREQUEST']._serialized_end=298
+  _globals['_PREDICTIONINTERVAL']._serialized_start=300
+  _globals['_PREDICTIONINTERVAL']._serialized_end=392
+  _globals['_PREDICTRESPONSE']._serialized_start=395
+  _globals['_PREDICTRESPONSE']._serialized_end=794
+  _globals['_GETMODELINFOREQUEST']._serialized_start=796
+  _globals['_GETMODELINFOREQUEST']._serialized_end=817
+  _globals['_GETMODELINFORESPONSE']._serialized_start=820
+  _globals['_GETMODELINFORESPONSE']._serialized_end=1088
+  _globals['_FORECASTSERVICE']._serialized_start=1091
+  _globals['_FORECASTSERVICE']._serialized_end=1263
 # @@protoc_insertion_point(module_scope)

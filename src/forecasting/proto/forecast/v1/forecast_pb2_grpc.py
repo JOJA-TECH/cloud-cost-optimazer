@@ -26,9 +26,10 @@ if _version_not_supported:
 
 
 class ForecastServiceStub:
-    """ForecastService exposes online inference for the experimental CPU
-    forecasting model. It is a service-to-service contract: the Go backend
-    calls it; browsers/frontends must NOT connect directly.
+    """ForecastService exposes online inference for forecasting models.
+    Models are versioned so multiple metrics/targets can be served and
+    inferred independently. It is a service-to-service contract: the Go
+    backend calls it; browsers/frontends must NOT connect directly.
     """
 
     def __init__(self, channel):
@@ -50,20 +51,23 @@ class ForecastServiceStub:
 
 
 class ForecastServiceServicer:
-    """ForecastService exposes online inference for the experimental CPU
-    forecasting model. It is a service-to-service contract: the Go backend
-    calls it; browsers/frontends must NOT connect directly.
+    """ForecastService exposes online inference for forecasting models.
+    Models are versioned so multiple metrics/targets can be served and
+    inferred independently. It is a service-to-service contract: the Go
+    backend calls it; browsers/frontends must NOT connect directly.
     """
 
     def Predict(self, request, context):
         """Produces a 1-hour-ahead point forecast for an observed resource.
+        When model_version is omitted the server uses the default version.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetModelInfo(self, request, context):
-        """Returns static information about the loaded model artifact (readiness).
+        """Returns static information about the loaded model artifact (readiness)
+        and the list of available model versions.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -91,9 +95,10 @@ def add_ForecastServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ForecastService:
-    """ForecastService exposes online inference for the experimental CPU
-    forecasting model. It is a service-to-service contract: the Go backend
-    calls it; browsers/frontends must NOT connect directly.
+    """ForecastService exposes online inference for forecasting models.
+    Models are versioned so multiple metrics/targets can be served and
+    inferred independently. It is a service-to-service contract: the Go
+    backend calls it; browsers/frontends must NOT connect directly.
     """
 
     @staticmethod

@@ -8,14 +8,17 @@ option go_package = "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 
-// ForecastService exposes online inference for the experimental CPU
-// forecasting model. It is a service-to-service contract: the Go backend
-// calls it; browsers/frontends must NOT connect directly.
+// ForecastService exposes online inference for forecasting models.
+// Models are versioned so multiple metrics/targets can be served and
+// inferred independently. It is a service-to-service contract: the Go
+// backend calls it; browsers/frontends must NOT connect directly.
 service ForecastService {
   // Produces a 1-hour-ahead point forecast for an observed resource.
+  // When model_version is omitted the server uses the default version.
   rpc Predict(PredictRequest) returns (PredictResponse);
 
-  // Returns static information about the loaded model artifact (readiness).
+  // Returns static information about the loaded model artifact (readiness)
+  // and the list of available model versions.
   rpc GetModelInfo(GetModelInfoRequest) returns (GetModelInfoResponse);
 }
 
@@ -40,6 +43,11 @@ message PredictRequest {
   // observed hourly window for the resource. When set, the latest window
   // at or before this timestamp is used. Timestamps are in UTC.
   google.protobuf.Timestamp cutoff_time = 5;
+
+  // Optional model version to use for inference. When omitted the server
+  // uses the default version (FORECAST_MODEL_VERSION env, or the only
+  // available version). Must match one of GetModelInfo.available_versions.
+  string model_version = 6;
 }
 
 message PredictionInterval {
@@ -96,4 +104,8 @@ message GetModelInfoResponse {
   bool ready = 7;
   bool experimental = 8;
   string prediction_interval_method = 9;
+  // All model versions available for inference in this server.
+  repeated string available_versions = 10;
+  // The version used when Predict omits model_version.
+  string default_version = 11;
 }
