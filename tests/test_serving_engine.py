@@ -12,9 +12,11 @@ from conftest import (
     TARGET,
     make_artifact,
     make_observed_frame,
+    make_versioned_artifact,
 )
 
 from forecasting.serving.engine import InferenceEngine, InferenceError
+from forecasting.serving.model import list_versions, load_version
 
 
 class FakeReader:
@@ -38,7 +40,7 @@ def make_engine(
     artifact = make_artifact(tmp_path, kind=kind, with_interval=True)
     reader = FakeReader(frame, exists=exists)
     engine = InferenceEngine(
-        artifact=artifact,
+        artifacts={artifact.version: artifact},
         reader=reader,
         max_stale_minutes=max_stale_minutes,
         supported_horizon_minutes=60,
@@ -80,7 +82,7 @@ def test_ok_prediction_matches_direct(tmp_path, now=None):
     enriched = add_derived_features(frame.copy(), spec)
     modeling = build_modeling_frame(enriched, TARGET, spec)
     X = modeling[FEATURE_LIST].copy().tail(1)
-    expected = float(engine.artifact.predict(X).reshape(-1)[0])
+    expected = float(engine.artifacts["default"].predict(X).reshape(-1)[0])
     assert abs(payload["value"] - expected) < 1e-9
 
     # Period is the next hour after the last observed window.
@@ -222,7 +224,7 @@ def test_no_future_labels_used(tmp_path):
         cutoff_time=None,
     )
     assert payload["status"] == "ok"
-    assert "target_" not in str(engine.artifact.feature_list)
+    assert "target_" not in str(engine.artifacts["default"].feature_list)
 
 
 def test_differenced_predictor_ok(tmp_path):
@@ -236,3 +238,64 @@ def test_differenced_predictor_ok(tmp_path):
         cutoff_time=None,
     )
     assert payload["status"] == "ok"
+
+
+def test_versioning_multiple_models(tmp_path):
+    """Several model versions can coexist and be selected by version."""
+    frame = make_observed_frame(20)
+
+    # Default (unversioned) artifact: make_artifact writes into tmp_path/model/.
+    default_artifact = make_artifact(tmp_path, kind="level", with_interval=True)
+    model_dir = tmp_path / "model"
+    # Versioned artifact in the same directory.
+    versioned = make_versioned_artifact(model_dir, "v1", kind="level")
+
+    versions = list_versions(str(model_dir))
+    assert "default" in versions
+    assert "v1" in versions
+
+    engine = InferenceEngine(
+        artifacts={
+            default_artifact.version: default_artifact,
+            versioned.version: versioned,
+        },
+        reader=FakeReader(make_observed_frame(20), exists=True),
+        max_stale_minutes=1000000,
+        supported_horizon_minutes=60,
+        default_version="default",
+    )
+    assert sorted(engine.available_versions()) == ["default", "v1"]
+
+    # Predicting with the default version uses the default artifact.
+    payload_default = engine.predict(
+        resource_uid="uid-1",
+        target=TARGET,
+        horizon_minutes=60,
+        request_id="",
+        cutoff_time=None,
+        model_version=None,
+    )
+    assert payload_default["status"] == "ok"
+    assert payload_default["model_version"] == default_artifact.model_version
+
+    # Predicting with an explicit version uses that artifact.
+    payload_v1 = engine.predict(
+        resource_uid="uid-1",
+        target=TARGET,
+        horizon_minutes=60,
+        request_id="",
+        cutoff_time=None,
+        model_version="v1",
+    )
+    assert payload_v1["status"] == "ok"
+    assert payload_v1["model_version"] == versioned.model_version
+
+    # Unknown version is rejected.
+    with pytest.raises(InferenceError) as exc:
+        engine.validate_target_horizon(TARGET, 60, "nope")
+    assert "not loaded" in str(exc.value) or "not available" in str(exc.value)
+
+    # load_version can load any available version directly.
+    loaded = load_version(str(model_dir), "v1")
+    assert loaded.version == "v1"
+    assert loaded.target == TARGET

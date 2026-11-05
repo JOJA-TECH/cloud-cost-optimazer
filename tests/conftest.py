@@ -147,6 +147,73 @@ def make_artifact(
     return load(str(model_dir))
 
 
+def make_versioned_artifact(tmp_path, version: str, kind: str = "level") -> ModelArtifact:
+    """Build and persist a versioned artifact (model_<v>.joblib +
+    model_metadata_<v>.json) in tmp_path.
+
+    Returns the loaded ModelArtifact validated through load_version.
+    """
+    df = make_training_frame()
+    spec = FeatureSpec()
+    ft = __import__("forecasting.features", fromlist=["add_derived_features"])
+    enriched = ft.add_derived_features(df.copy(), spec)
+    modeling = ft.build_modeling_frame(enriched, TARGET, spec)
+
+    X = modeling[FEATURE_LIST].copy()
+    y = make_level_target(modeling)
+
+    if kind == "level":
+        model = fit_model(
+            ModelSpec(
+                "rf",
+                "random_forest",
+                {"n_estimators": 10, "max_depth": 3, "random_state": 42},
+            ),
+            X,
+            y,
+        )
+    else:
+        level_index = FEATURE_LIST.index("cpu_avg")
+        model = DifferencedPredictor(
+            ModelSpec(
+                "rf-diff",
+                "random_forest",
+                {"n_estimators": 10, "max_depth": 3, "random_state": 42},
+            ),
+            level_index,
+        ).fit(X, y)
+
+    model_dir = tmp_path
+    joblib.dump(model, model_dir / f"model_{version}.joblib")
+
+    metadata = {
+        "model_name": "test_forecast_v%s" % version,
+        "model_version": "1.0.0",
+        "model_kind": kind,
+        "target": TARGET,
+        "period_type": "1h",
+        "feature_list": FEATURE_LIST,
+        "feature_definition_hash": feature_definition_hash(FEATURE_LIST, spec),
+        "dataset_hash": "test-dataset-hash",
+        "target_transform": "level",
+        "prediction_interval": {
+            "primary_method": "jackknife_plus",
+            "lower_offset": -1.5,
+            "upper_offset": 1.5,
+            "formal_guarantee_level": 0.80,
+        },
+    }
+    import json
+
+    (model_dir / f"model_metadata_{version}.json").write_text(
+        json.dumps(metadata), encoding="utf-8"
+    )
+
+    from forecasting.serving.model import load_version
+
+    return load_version(str(model_dir), version)
+
+
 def make_observed_frame(n_rows: int = 20, seed: int = 7) -> pd.DataFrame:
     """Observed feature-store rows (no target_* / future labels)."""
     rng = np.random.default_rng(seed)

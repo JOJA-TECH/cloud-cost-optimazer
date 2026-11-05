@@ -63,6 +63,7 @@ def make_settings():
         tls_cert_file=None,
         tls_key_file=None,
         tls_ca_file=None,
+        default_model_version="",
     )
 
 
@@ -74,7 +75,7 @@ def build_engine_reader(
     )
     reader = FakeReader(frame, exists=exists)
     engine = InferenceEngine(
-        artifact=artifact,
+        artifacts={artifact.version: artifact},
         reader=reader,
         max_stale_minutes=max_stale_minutes,
         supported_horizon_minutes=60,
@@ -175,7 +176,7 @@ def test_grpc_get_model_info(tmp_path):
 def test_grpc_not_ready_without_artifact(tmp_path):
     reader = FakeReader(make_observed_frame(12))
     engine = InferenceEngine(
-        artifact=None,
+        artifacts={},
         reader=reader,
         max_stale_minutes=120,
         supported_horizon_minutes=60,
@@ -251,5 +252,52 @@ def test_grpc_cancelled_call(tmp_path):
             assert code == grpc.StatusCode.CANCELLED
             return
         pytest.fail("expected the cancelled call to raise")
+    finally:
+        server.stop(grace=1)
+
+
+def test_grpc_real_artifact(tmp_path):
+    """A real trained artifact (artifacts/real_model) is usable via gRPC."""
+    real_model_dir = "artifacts/real_model"
+    artifact = load(real_model_dir)
+    reader = FakeReader(make_observed_frame(20), exists=True)
+    engine = InferenceEngine(
+        artifacts={artifact.version: artifact},
+        reader=reader,
+        max_stale_minutes=1000000,
+        supported_horizon_minutes=60,
+        default_version=artifact.version,
+    )
+    server, port = _start_server(engine, reader)
+    try:
+        channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+        grpc.channel_ready_future(channel).result(timeout=5)
+        stub = forecast_pb2_grpc.ForecastServiceStub(channel)
+
+        # GetModelInfo reports the real model metadata.
+        info = stub.GetModelInfo(forecast_pb2.GetModelInfoRequest(), timeout=5)
+        assert info.ready is True
+        assert info.target == "target_cpu_avg_next1h"
+        assert info.model_name == "ridge_a2.0"
+        assert info.model_version == "1.0.0"
+        assert info.available_versions == ["default"]
+        assert info.default_version == "default"
+
+        # Predict returns a numeric point forecast for the real model.
+        req = forecast_pb2.PredictRequest(
+            resource_uid="uid-1",
+            target="target_cpu_avg_next1h",
+            horizon_minutes=60,
+            request_id="real-artifact-check",
+        )
+        resp, _call = stub.Predict.with_call(req, timeout=5)
+        assert resp.status == "ok"
+        assert resp.experimental is True
+        assert resp.request_id == "real-artifact-check"
+        assert resp.value.value > 0
+        assert resp.model_name == "ridge_a2.0"
+        assert resp.model_version == "1.0.0"
+        assert resp.interval.lower < resp.value.value < resp.interval.upper
+        channel.close()
     finally:
         server.stop(grace=1)
