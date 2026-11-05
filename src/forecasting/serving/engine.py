@@ -1,8 +1,8 @@
 # Online inference engine for the forecasting artifact.
 # Builds the input matrix from observed feature-store rows (no future labels),
 # validates temporal quality, and runs the loaded artifact once per request.
-# Supports multiple model versions so different metrics/targets can be served
-# and inferred independently.
+# Supports multiple targets (metrics) and versions so different models can be
+# served and inferred independently.
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from forecasting.serving.data import (
     REQUIRED_HISTORY_HOURS,
     FeatureStoreReader,
 )
-from forecasting.serving.model import DEFAULT_VERSION, ModelArtifact
+from forecasting.serving.model import ModelArtifact, ModelRegistry
 
 
 class InferenceError(RuntimeError):
@@ -33,29 +33,38 @@ class InferenceError(RuntimeError):
 class InferenceEngine:
     def __init__(
         self,
-        artifacts: dict[str, ModelArtifact],
+        registry: ModelRegistry,
         reader: FeatureStoreReader,
         max_stale_minutes: int,
         supported_horizon_minutes: int,
-        default_version: str = DEFAULT_VERSION,
+        default_version: str | None = None,
     ) -> None:
-        self.artifacts = artifacts
+        self.registry = registry
         self.reader = reader
         self.max_stale_minutes = max_stale_minutes
         self.supported_horizon_minutes = supported_horizon_minutes
-        self.default_version = default_version or DEFAULT_VERSION
+        self.default_version = default_version
         self.spec = FeatureSpec()
 
     # ------------------------------------------------------------------ #
     # artifact resolution
     # ------------------------------------------------------------------ #
-    def get_artifact(self, version: str | None) -> ModelArtifact | None:
-        """Return the artifact for ``version``, or the default artifact."""
-        key = version or self.default_version
-        return self.artifacts.get(key)
+    def get_artifact(self, target: str, version: str | None = None) -> ModelArtifact | None:
+        """Return the artifact for ``target``/``version``.
 
-    def available_versions(self) -> list[str]:
-        return sorted(self.artifacts.keys())
+        When ``version`` is None the default (latest) version for the target is
+        used.
+        """
+        return self.registry.get(target, version)
+
+    def targets(self) -> list[str]:
+        return self.registry.targets()
+
+    def versions(self, target: str) -> list[str]:
+        return self.registry.versions(target)
+
+    def default_version(self, target: str) -> str | None:
+        return self.registry.default_version(target)
 
     # ------------------------------------------------------------------ #
     # request validation
@@ -63,15 +72,14 @@ class InferenceEngine:
     def validate_target_horizon(
         self, target: str, horizon_minutes: int, version: str | None = None
     ) -> None:
-        artifact = self.get_artifact(version)
+        artifact = self.get_artifact(target, version)
         if artifact is None:
             raise InferenceError(
-                "model version %r is not loaded" % (version or self.default_version)
+                "target %r / version %r is not loaded" % (target, version)
             )
         if target != artifact.target:
             raise InferenceError(
-                "unsupported target %r; version %r serves %r"
-                % (target, artifact.version, artifact.target)
+                "unsupported target %r; artifact serves %r" % (target, artifact.target)
             )
         if horizon_minutes != self.supported_horizon_minutes:
             raise InferenceError(
@@ -167,11 +175,11 @@ class InferenceEngine:
     ) -> dict[str, Any]:
         # Run one prediction and return a response payload dict.
         now = now or datetime.now(UTC)
-        artifact = self.get_artifact(model_version)
+        artifact = self.get_artifact(target, model_version)
         if artifact is None:
             raise InferenceError(
-                "model version %r is not available"
-                % (model_version or self.default_version)
+                "target %r / version %r is not available"
+                % (target, model_version)
             )
 
         self.validate_target_horizon(target, horizon_minutes, model_version)

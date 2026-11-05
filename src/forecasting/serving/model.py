@@ -5,25 +5,31 @@ The serialized object may be a sklearn Pipeline or a DifferencedPredictor
 wrapper; both are supported through a uniform predict interface. No training
 happens here.
 
-Model versioning
-----------------
-Several model versions can coexist in the same ``model_dir`` so different
-metrics/targets can be served and inferred independently. The accepted
-layouts are:
+Model storage layout
+--------------------
+Artifacts are stored in folders independent per target (the metric being
+predicted) and, inside each target, in folders per version::
 
-* ``model.joblib`` + ``model_metadata.json``            -> version ``default``
-* ``model_<v>.joblib`` + ``model_metadata_<v>.json``    -> version ``<v>``
-* ``<v>/model.joblib`` + ``<v>/model_metadata.json``    -> version ``<v>``
+    model_dir/
+        <target>/                       <- name of the metric, e.g. target_cpu_avg_next1h
+            <version>/                  <- model_version, e.g. 1.0.0, 1.0.1
+                model.joblib
+                model_metadata.json
 
-The ``version`` reported by :class:`ModelArtifact`` is the ``model_version``
-from its metadata when present, otherwise the directory key above.
+A new version is created when:
+
+* the user explicitly indicates a version, or
+* training adds different values that alter the model behaviour
+  (different features, hyperparameters, target or dataset hash).
+
+The :class:`ModelRegistry` discovers every ``<target>/<version>/`` pair under
+``FORECAST_MODEL_DIR`` and loads them once at startup.
 """
 
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,13 +38,8 @@ import joblib
 from forecasting.features import FeatureSpec, feature_definition_hash
 from forecasting.transforms import DifferencedPredictor
 
-DEFAULT_VERSION = "default"
-
 MODEL_FILENAME = "model.joblib"
 METADATA_FILENAME = "model_metadata.json"
-
-_VERSIONED_MODEL_RE = re.compile(r"^model_(.+)\.joblib$")
-_VERSIONED_META_RE = re.compile(r"^model_metadata_(.+)\.json$")
 
 
 class ModelArtifactError(RuntimeError):
@@ -51,8 +52,9 @@ class ModelArtifact:
 
     model: Any
     metadata: dict[str, Any]
-    model_dir: Path
-    version: str
+    model_dir: Path       # directory that contains this artifact (<target>/<version>/)
+    target: str           # metric this artifact predicts
+    version: str          # model_version of this artifact
 
     @property
     def model_name(self) -> str:
@@ -65,10 +67,6 @@ class ModelArtifact:
     @property
     def model_kind(self) -> str:
         return str(self.metadata.get("model_kind", ""))
-
-    @property
-    def target(self) -> str:
-        return str(self.metadata.get("target", ""))
 
     @property
     def period_type(self) -> str:
@@ -102,6 +100,51 @@ class ModelArtifact:
         if isinstance(self.model, DifferencedPredictor):
             return self.model.predict(X)
         return self.model.predict(X)
+
+
+@dataclass
+class ModelRegistry:
+    """In-memory index of all model artifacts discovered in ``model_dir``.
+
+    Keys are target names; values map version strings to :class:`ModelArtifact`.
+    Loaded exactly once at startup; no training happens here.
+    """
+
+    model_dir: Path
+    by_target: dict[str, dict[str, ModelArtifact]] = field(default_factory=dict)
+
+    def targets(self) -> list[str]:
+        """Return the sorted list of targets (metrics) with at least one version."""
+        return sorted(self.by_target.keys())
+
+    def versions(self, target: str) -> list[str]:
+        """Return the sorted list of versions available for ``target``."""
+        return sorted(self.by_target.get(target, {}).keys())
+
+    def default_version(self, target: str) -> str | None:
+        """Return the default version for ``target``: the latest by version string."""
+        vs = self.versions(target)
+        if not vs:
+            return None
+        return vs[-1]
+
+    def get(self, target: str, version: str | None = None) -> ModelArtifact | None:
+        """Return the artifact for ``target``/``version``.
+
+        When ``version`` is None the default (latest) version for the target is
+        returned. Returns None when the target or version does not exist.
+        """
+        versions_map = self.by_target.get(target)
+        if not versions_map:
+            return None
+        if version is None:
+            version = self.default_version(target)
+        if version is None:
+            return None
+        return versions_map.get(version)
+
+    def has_target(self, target: str) -> bool:
+        return target in self.by_target
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -139,21 +182,41 @@ def _validate_metadata(metadata: dict[str, Any]) -> None:
             raise ModelArtifactError("metadata.feature_list must contain only strings")
 
 
-def _artifact_paths(directory: Path, version: str) -> tuple[Path, Path]:
-    """Return the (model, metadata) paths for ``version``."""
-    if version == DEFAULT_VERSION:
-        return directory / MODEL_FILENAME, directory / METADATA_FILENAME
-    model_path = directory / f"model_{version}.joblib"
-    meta_path = directory / f"model_metadata_{version}.json"
-    if model_path.is_file() and meta_path.is_file():
-        return model_path, meta_path
-    subdir = directory / version
-    return subdir / MODEL_FILENAME, subdir / METADATA_FILENAME
+def _validate_single(directory: Path, metadata: dict[str, Any], model: Any) -> ModelArtifact:
+    """Validate and build a ModelArtifact for one artifact directory."""
+    expected_hash = feature_definition_hash(metadata["feature_list"], FeatureSpec())
+    if (
+        metadata.get("feature_definition_hash")
+        and expected_hash != metadata["feature_definition_hash"]
+    ):
+        raise ModelArtifactError(
+            "feature_definition_hash mismatch: artifact was built with a "
+            "different feature definition than the current serving code"
+        )
+    target = str(metadata.get("target", ""))
+    version = str(metadata.get("model_version", "") or directory.name)
+    return ModelArtifact(
+        model=model,
+        metadata=metadata,
+        model_dir=directory,
+        target=target,
+        version=version,
+    )
 
 
-def _load_single(directory: Path, version: str) -> ModelArtifact:
-    """Load and validate one artifact version."""
-    model_path, metadata_path = _artifact_paths(directory, version)
+def load_artifact(
+    directory: Path, target: str | None = None
+) -> ModelArtifact:
+    """Load and validate a single artifact from ``directory``.
+
+    ``directory`` is expected to contain ``model.joblib`` and
+    ``model_metadata.json``. When ``target`` is given it overrides the
+    target read from metadata (useful when the folder name is the canonical
+    metric name).
+    """
+    directory = Path(directory)
+    model_path = directory / MODEL_FILENAME
+    metadata_path = directory / METADATA_FILENAME
     if not model_path.is_file():
         raise ModelArtifactError(f"model artifact not found: {model_path}")
     if not metadata_path.is_file():
@@ -168,78 +231,62 @@ def _load_single(directory: Path, version: str) -> ModelArtifact:
         raise ModelArtifactError(f"cannot load model artifact: {model_path}: {exc}") from exc
 
     _validate_object(model, metadata)
-
-    expected_hash = feature_definition_hash(metadata["feature_list"], FeatureSpec())
-    if (
-        metadata.get("feature_definition_hash")
-        and expected_hash != metadata["feature_definition_hash"]
-    ):
-        raise ModelArtifactError(
-            "feature_definition_hash mismatch: artifact was built with a "
-            "different feature definition than the current serving code"
+    artifact = _validate_single(directory, metadata, model)
+    if target is not None:
+        artifact = ModelArtifact(
+            model=artifact.model,
+            metadata=artifact.metadata,
+            model_dir=artifact.model_dir,
+            target=target,
+            version=artifact.version,
         )
-
-    return ModelArtifact(
-        model=model, metadata=metadata, model_dir=directory, version=version
-    )
+    return artifact
 
 
-def list_versions(model_dir: str | Path) -> list[str]:
-    """Return the sorted list of model versions available in ``model_dir``.
+def discover_artifacts(model_dir: str | Path) -> list[ModelArtifact]:
+    """Discover every ``<target>/<version>/`` artifact under ``model_dir``.
 
-    Discovers versioned artifacts following the conventions documented in this
-    module. Returns an empty list when no artifact is present.
+    Returns a list of validated :class:`ModelArtifact`. Any directory that does
+    not contain a valid artifact is skipped and logged.
     """
-    directory = Path(model_dir)
-    if not directory.is_dir():
+    root = Path(model_dir)
+    if not root.is_dir():
         return []
-    versions: set[str] = set()
-    # Default (unversioned) artifact.
-    if (directory / MODEL_FILENAME).is_file() and (
-        directory / METADATA_FILENAME
-    ).is_file():
-        versions.add(DEFAULT_VERSION)
-    # Versioned files: model_<v>.joblib / model_metadata_<v>.json.
-    for path in directory.iterdir():
-        match = _VERSIONED_MODEL_RE.match(path.name)
-        if match:
-            meta = directory / f"model_metadata_{match.group(1)}.json"
-            if meta.is_file():
-                versions.add(match.group(1))
+    artifacts: list[ModelArtifact] = []
+    for target_dir in sorted(root.iterdir()):
+        if not target_dir.is_dir():
             continue
-        match = _VERSIONED_META_RE.match(path.name)
-        if match:
-            model = directory / f"model_{match.group(1)}.joblib"
-            if model.is_file():
-                versions.add(match.group(1))
-            continue
-        # Subdirectory layout: <v>/model.joblib + <v>/model_metadata.json.
-        if path.is_dir() and (path / MODEL_FILENAME).is_file() and (
-            path / METADATA_FILENAME
-        ).is_file():
-            versions.add(path.name)
-    return sorted(versions)
+        target = target_dir.name
+        for version_dir in sorted(target_dir.iterdir()):
+            if not version_dir.is_dir():
+                continue
+            if not (version_dir / MODEL_FILENAME).is_file():
+                continue
+            if not (version_dir / METADATA_FILENAME).is_file():
+                continue
+            try:
+                artifact = load_artifact(version_dir, target=target_dir.name)
+                artifacts.append(artifact)
+            except ModelArtifactError as exc:  # noqa: BLE001 - skip bad artifacts
+                import logging
+
+                logging.getLogger("forecast.grpc").warning(
+                    "skipping artifact %s/%s: %s", target, version_dir.name, exc
+                )
+    return artifacts
 
 
-def load(model_dir: str | Path) -> ModelArtifact:
-    """Load and validate the default artifact from ``model_dir``.
+def load_registry(model_dir: str | Path) -> ModelRegistry:
+    """Load every artifact under ``model_dir`` into a :class:`ModelRegistry`.
 
-    Equivalent to :func:`load_version` with ``version=None``. Raises
-    ModelArtifactError if the artifact is missing, incompatible or fails
-    validation. The caller must treat the service as not ready.
+    This is the recommended entry point for the server: it discovers all
+    targets and versions once at startup.
     """
-    return load_version(model_dir, None)
-
-
-def load_version(model_dir: str | Path, version: str | None = None) -> ModelArtifact:
-    """Load and validate a single model version from ``model_dir``.
-
-    When ``version`` is None the default (unversioned) artifact is loaded.
-    Raises ModelArtifactError if the requested version cannot be loaded. The
-    caller must treat the service as not ready for that version.
-    """
-    directory = Path(model_dir)
-    if not directory.is_dir():
-        raise ModelArtifactError(f"model directory not found: {directory}")
-    version = version or DEFAULT_VERSION
-    return _load_single(directory, version)
+    root = Path(model_dir)
+    if not root.is_dir():
+        raise ModelArtifactError(f"model directory not found: {root}")
+    artifacts = discover_artifacts(root)
+    by_target: dict[str, dict[str, ModelArtifact]] = {}
+    for artifact in artifacts:
+        by_target.setdefault(artifact.target, {})[artifact.version] = artifact
+    return ModelRegistry(model_dir=root, by_target=by_target)
