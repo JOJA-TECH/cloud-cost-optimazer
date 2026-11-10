@@ -19,7 +19,9 @@ resource "azurerm_linux_virtual_machine" "vm" {
   size                            = var.vm_size
   admin_username                  = var.admin_username
   disable_password_authentication = true
-  tags                            = local.tags
+  # Matches the platform default; without it azurerm 3.x plans a no-op flip.
+  vm_agent_platform_updates_enabled = true
+  tags                              = local.tags
 
   network_interface_ids = [azurerm_network_interface.vm.id]
 
@@ -77,7 +79,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
     max_experiment_hours      = var.max_experiment_hours
     auto_stop_after_hours     = var.auto_stop_after_hours
 
-    azure_sql_resource_id = local.primary_target != null ? azurerm_mssql_database.loadtest[local.primary_target_key].id : ""
+    azure_sql_resource_id = local.primary_target != null ? azapi_resource.loadtest[local.primary_target_key].id : ""
     azure_subscription_id = local.primary_target != null ? local.primary_target.subscription_id : var.subscription_id
     azure_resource_group  = local.primary_target != null ? local.primary_target.resource_group : local.vm.resource_group
     azure_location        = local.primary_target != null ? local.primary_target.location : var.location
@@ -99,7 +101,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
         auto_pause_delay_minutes = target.auto_pause_delay_minutes
         max_size_gb              = target.max_size_gb
         free_tier                = target.free_tier
-        resource_id              = azurerm_mssql_database.loadtest[key].id
+        resource_id              = azapi_resource.loadtest[key].id
       }
     ])
 

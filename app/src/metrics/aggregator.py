@@ -79,7 +79,7 @@ def select_canonical(per_source: List[dict]) -> tuple:
 def aggregate_hour(cfg: Config, hour_start: dt.datetime) -> Optional[dict]:
     start = _hour_start(hour_start)
     end = start + HOUR
-    resource_uid = cfg.resource_uid()
+    resource_uid = cfg.primary_resource_uid()
 
     with db_supabase.transaction(cfg) as conn:
         per_source = db_supabase.query(

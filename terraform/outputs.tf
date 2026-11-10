@@ -62,7 +62,7 @@ output "database_targets" {
       sku_name             = target.sku_name
       free_tier            = target.free_tier
       resource_uid         = target.resource_uid
-      database_resource_id = azurerm_mssql_database.loadtest[key].id
+      database_resource_id = azapi_resource.loadtest[key].id
       server_resource_id   = azurerm_mssql_server.main[key].id
       resource_group_id    = azurerm_resource_group.sql[key].id
     }
@@ -72,7 +72,7 @@ output "database_targets" {
 }
 
 output "sql_database_sku" {
-  value       = length(var.database_targets) >= 1 ? values(azurerm_mssql_database.loadtest)[0].sku_name : null
+  value       = length(var.database_targets) >= 1 ? local.primary_target.sku_name : null
   description = "Effective serverless SKU of the primary (pilot) database."
 }
 

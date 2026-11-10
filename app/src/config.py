@@ -157,6 +157,15 @@ class Config:
     sql_auto_pause_delay_minutes: int = 60
     free_quota_margin_percent: float = 20.0  # stop starting phases below this %
 
+    # Azure Monitor: delayed window + lookback so metrics published late are
+    # recovered (deduplicated by the raw idempotency key).
+    azure_monitor_delay_seconds: int = 90
+    azure_monitor_lookback_seconds: int = 300
+
+    # When false the collector only reads Azure Monitor (control plane, which
+    # does not resume SQL) and skips DMV/Query Store outside active blocks.
+    collect_sql_diagnostics: bool = True
+
     # Supabase connection string used by psycopg2/asyncpg or the pooler.
     def supabase_dsn(self) -> str:
         return (
@@ -207,6 +216,23 @@ class Config:
     def storage_capacity_bytes(self) -> int:
         """Configured maximum storage (bytes) used to validate storage metrics."""
         return int(self.azure_sql_max_size_gb) * 1024 * 1024 * 1024
+
+    def primary_target(self) -> Optional[dict]:
+        """First configured database target (pilot uses exactly one)."""
+        if self.azure_sql_targets:
+            return self.azure_sql_targets[0]
+        return None
+
+    def primary_resource_id(self) -> Optional[str]:
+        t = self.primary_target()
+        return t.get("resource_id") if t else None
+
+    def primary_resource_uid(self) -> str:
+        """UUID used as ``resource_uid`` in Supabase for the primary target."""
+        t = self.primary_target()
+        if t and t.get("resource_uid"):
+            return t["resource_uid"]
+        return self.resource_uid()
 
     def has_required_secrets(self) -> bool:
         required = [
@@ -286,17 +312,6 @@ def from_env() -> Config:
         # reanuda SQL) y salta DMV/Query Store fuera de bloques activos.
         collect_sql_diagnostics=_env_bool("COLLECT_SQL_DIAGNOSTICS", True),
     )
-
-    def primary_target(self) -> Optional[dict]:
-        """First configured database target (pilot uses exactly one)."""
-        if self.azure_sql_targets:
-            return self.azure_sql_targets[0]
-        return None
-
-    def primary_resource_id(self) -> Optional[str]:
-        t = self.primary_target()
-        return t.get("resource_id") if t else None
-
 
 def _redact(text: str) -> str:
     return text if not text else "***"

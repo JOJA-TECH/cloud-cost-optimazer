@@ -48,29 +48,47 @@ resource "azurerm_mssql_server" "main" {
   })
 }
 
-# Serverless database per target. Free Tier / auto-pause honoured per target.
-resource "azurerm_mssql_database" "loadtest" {
+# Serverless database per target. The Azure SQL free tier is only available at
+# creation through the REST properties useFreeLimit/freeLimitExhaustionBehavior,
+# which azurerm_mssql_database does not expose; azapi manages the database.
+resource "azapi_resource" "loadtest" {
   for_each  = var.database_targets
-  provider  = azurerm
+  type      = "Microsoft.Sql/servers/databases@2023-08-01"
   name      = each.value.database
-  server_id = azurerm_mssql_server.main[each.key].id
-  collation = "SQL_Latin1_General_CP1_CI_AS"
+  parent_id = azurerm_mssql_server.main[each.key].id
+  location  = azurerm_resource_group.sql[each.key].location
 
-  sku_name                    = each.value.sku_name
-  min_capacity                = each.value.min_capacity
-  auto_pause_delay_in_minutes = each.value.auto_pause_delay_minutes
-  max_size_gb                 = each.value.max_size_gb
-  zone_redundant              = false
-  read_scale                  = false
+  body = {
+    sku = {
+      # REST SKU name for serverless General Purpose (capacity is separate).
+      name     = "GP_S_Gen5"
+      tier     = "GeneralPurpose"
+      family   = "Gen5"
+      capacity = each.value.max_capacity
+    }
+    properties = {
+      createMode   = "Default"
+      collation    = "SQL_Latin1_General_CP1_CI_AS"
+      maxSizeBytes = each.value.max_size_gb * 1024 * 1024 * 1024
+      minCapacity  = each.value.min_capacity
+      # Free tier rejects an explicit delay; Azure applies its fixed default.
+      autoPauseDelay                   = each.value.free_tier ? null : each.value.auto_pause_delay_minutes
+      requestedBackupStorageRedundancy = "Local"
+      # Keep real booleans: merge() with an empty object would stringify them.
+      useFreeLimit                = each.value.free_tier ? true : null
+      freeLimitExhaustionBehavior = each.value.free_tier ? "AutoPause" : null
+    }
+  }
+
+  # Null free-tier properties are omitted from the request for paid targets.
+  ignore_null_property = true
 
   tags = merge(local.tags, {
     sql_target          = each.key
     sql_subscription_id = each.value.subscription_id
   })
 
-  lifecycle {
-    ignore_changes = []
-  }
+  response_export_values = ["sku"]
 }
 
 # The app subnet has the Microsoft.Sql service endpoint, so Azure SQL sees the
@@ -97,7 +115,7 @@ resource "azurerm_mssql_firewall_rule" "vm" {
 locals {
   sql_target_resource_ids = {
     for key, target in var.database_targets : key => {
-      id              = azurerm_mssql_database.loadtest[key].id
+      id              = azapi_resource.loadtest[key].id
       subscription_id = target.subscription_id
       resource_group  = target.resource_group
       server          = target.server

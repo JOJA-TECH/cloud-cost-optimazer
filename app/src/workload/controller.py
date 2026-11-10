@@ -214,7 +214,7 @@ class WorkloadController:
     def ensure_experiment(self, workload_class: str, random_seed: int, config_json: dict) -> None:
         """Idempotently create the experiment on both stores if missing."""
         exp_uid = self.cfg.experiment_uid
-        resource_uid = self.cfg.resource_uid()
+        resource_uid = self.cfg.primary_resource_uid()
         now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
         azure_status = self.azure_status()

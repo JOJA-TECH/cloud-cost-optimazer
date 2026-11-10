@@ -91,7 +91,7 @@ def start_collector_run(cfg, source: str) -> str:
                 " random_seed, status, config_json) "
                 "values (%s, %s, now(), 'collector', 0, 'CREATED', '{}'::jsonb) "
                 "on conflict (experiment_uid) do nothing",
-                (cfg.experiment_uid, cfg.resource_uid()),
+                (cfg.experiment_uid, cfg.primary_resource_uid()),
             )
             db_supabase.query(
                 conn,

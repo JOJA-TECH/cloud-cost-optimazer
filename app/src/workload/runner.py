@@ -385,7 +385,7 @@ class WorkloadRunner:
                         workload_class=phase.workload_class,
                         config_snapshot_id=phase.config_snapshot_id,
                         origin="worker",
-                        resource_uid=self.cfg.primary_resource_id(),
+                        resource_uid=self.cfg.primary_resource_uid(),
                     )
                     with stats["lock"]:
                         stats["batch_seq"] += 1

@@ -59,3 +59,9 @@ provider "azurerm" {
 }
 
 provider "random" {}
+
+# Azure SQL free tier is only exposed through the REST API (useFreeLimit), not
+# through azurerm_mssql_database, so the databases are managed with azapi.
+provider "azapi" {
+  subscription_id = var.subscription_id
+}

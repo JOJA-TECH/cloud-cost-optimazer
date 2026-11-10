@@ -68,8 +68,12 @@ RESOURCE_COLUMNS = [
 def fetch(cfg: Config, resource_uid: str, sku_name: Optional[str] = None) -> List[MetricReading]:
     readings: List[MetricReading] = []
     last_seen = _LAST_SEEN.get(resource_uid)
+    # SQL Server rejects ISO strings with a UTC offset for datetime comparisons;
+    # pass a naive datetime (the column is UTC) or a safe floor.
     last_seen_sql = (
-        last_seen.isoformat() if isinstance(last_seen, dt.datetime) else "1900-01-01"
+        last_seen.replace(tzinfo=None)
+        if isinstance(last_seen, dt.datetime)
+        else dt.datetime(1900, 1, 1)
     )
 
     conn = None

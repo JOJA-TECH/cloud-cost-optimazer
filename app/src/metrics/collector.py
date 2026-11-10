@@ -26,8 +26,6 @@ import sys
 import time
 from typing import List, Tuple
 
-import hashlib
-
 from ..config import Config, from_env, load_env_file
 from ..sync import writer
 from . import aggregator, azure_monitor, query_store, sql_diagnostics, workload_observations
@@ -35,6 +33,7 @@ from .normalizer import MetricReading
 from .quality import evaluate_reading
 
 from ..workload.controller import WorkloadController
+from ..workload.runner import seed_for
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +116,7 @@ def collect_once(cfg: Config, collector_run_uid: str) -> writer.WriteResult:
     observations, workload_stats = workload_observations.drain(cfg, start, end)
     # Las observaciones de workload pertenecen al experimento; se etiquetan con
     # el target primario (en piloto es el único).
-    primary_uid = cfg.primary_resource_id()
+    primary_uid = cfg.primary_resource_uid()
     for r in observations + workload_stats:
         if r.resource_uid is None:
             r.resource_uid = primary_uid
@@ -158,10 +157,9 @@ def run_forever(cfg: Config, interval_seconds: int | None = None) -> int:
     # Ensure the experiment exists in both stores so the collector's FKs hold
     # even if the workload runner or migrations never ran. Idempotent.
     try:
-        seed = int(hashlib.sha256(cfg.experiment_uid.encode("utf-8")).hexdigest()[:8], 16)
         WorkloadController(cfg).ensure_experiment(
             workload_class="collector",
-            random_seed=seed,
+            random_seed=seed_for(cfg),
             config_json={"profile": cfg.deployment_profile},
         )
     except Exception as exc:  # noqa: BLE001 - collector still runs, spools data
