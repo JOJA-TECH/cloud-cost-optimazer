@@ -11,7 +11,7 @@ import (
 // using only roles from the static rolePermission maps, so each case is
 // isolated (OrgRole "" and ProjectRole nil grant nothing).
 func TestPermissionEngineCan(t *testing.T) {
-	engine := iam.NewPermissionEngine()
+	engine := iam.NewPermissionEngine(nil)
 
 	tests := []struct {
 		name        string

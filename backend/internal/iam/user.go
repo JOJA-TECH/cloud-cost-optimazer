@@ -21,9 +21,8 @@ func (r *userRepository) CreateUser(ctx context.Context, input CreateUserInput) 
 	if input.Email == "" || input.DisplayName == "" {
 		return UserDTO{}, errors.New("email and display name are required")
 	}
-	// shortcut: no unique constraint on email in dev SQLite; checking here
-	// prevents duplicates at the application layer. Upgrade: add a unique
-	// index on iam.users(email) and let the DB reject duplicates.
+	// Unique index on iam.users(email) rejects duplicates at the DB level;
+	// this pre-check maps that case to a friendly ErrUserExists.
 	var existing database.UserModel
 	if err := r.db.WithContext(ctx).Table(database.TableName(r.db, "iam", "users")).
 		Where("email = ?", input.Email).First(&existing).Error; err == nil {
