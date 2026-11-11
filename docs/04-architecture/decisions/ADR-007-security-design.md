@@ -1,6 +1,6 @@
 # ADR-007 — Diseño de seguridad del módulo Identidad y Acceso (IAM)
 
-- **Estado:** Aceptada para la fase inicial
+- **Estado:** Aceptada para la fase inicial; parcialmente superada por [ADR-008](ADR-008-valkey-shared-state.md) (estado compartido de rate limiting y lockout en Valkey) y la fase de endurecimiento IAM (CHG-009)
 - **Fecha:** 2026-10-30
 - **Decisores:** Equipo del proyecto
 - **Relacionado con:** RNF-02, RNF-13, RNF-15, ADR-004, ADR-006

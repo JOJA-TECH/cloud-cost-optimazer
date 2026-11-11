@@ -184,7 +184,7 @@ func TestIAMStackEndToEnd(t *testing.T) {
 		CorrelationID:  "corr-1",
 		TokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	}
-	engine := iam.NewPermissionEngine()
+	engine := iam.NewPermissionEngine(db)
 
 	ok, err := engine.Can(context.Background(), ic, "resources", "read")
 	if err != nil || !ok {

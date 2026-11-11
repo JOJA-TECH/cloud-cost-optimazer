@@ -24,7 +24,7 @@ func Migrate(db *gorm.DB) error {
 		schema string
 		models []any
 	}{
-		{"iam", []any{&UserModel{}, &ExternalIdentityModel{}, &RoleModel{}, &PermissionModel{}, &RolePermissionModel{}, &UserRoleModel{}}},
+		{"iam", []any{&UserModel{}, &ExternalIdentityModel{}, &RoleModel{}, &PermissionModel{}, &RolePermissionModel{}, &UserRoleModel{}, &RefreshTokenModel{}}},
 		{"organization", []any{&OrganizationModel{}, &MemberModel{}, &ProjectModel{}}},
 		{"cloud", []any{&CloudAccountModel{}, &AccountProjectModel{}, &ResourceBindingModel{}}},
 		{"app", []any{&DashboardPreferenceModel{}, &NotificationModel{}, &NotificationDeliveryModel{}, &SavedViewModel{}, &UserPreferenceModel{}, &RecommendationInteractionModel{}, &ReportRequestModel{}, &ReportArtifactModel{}}},
@@ -54,6 +54,8 @@ func modelTable(model any) string {
 		return "role_permissions"
 	case *UserRoleModel:
 		return "user_roles"
+	case *RefreshTokenModel:
+		return "refresh_tokens"
 	case *OrganizationModel:
 		return "organizations"
 	case *MemberModel:

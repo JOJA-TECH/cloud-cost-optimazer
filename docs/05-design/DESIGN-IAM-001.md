@@ -38,7 +38,7 @@ Casos de uso cubiertos en Report 1.0:
 - Comprobar si un actor puede ejecutar una operación sobre un recurso (`Can(resource, action)`).
 - Registrar usuarios, roles, permisos, membresías organizacionales y proyectos.
 - Vincular identidades externas (OIDC subject) a usuarios locales.
-- Exponer endpoints HTTP públicos de autenticación (`/auth/register`, `/auth/login`, `/auth/m2m/token`) y protegidos mediante middleware.
+- Exponer endpoints HTTP públicos de autenticación (`/auth/register`, `/auth/login`, `/auth/oidc/login`, `/auth/oidc/callback`, `/auth/m2m/token`, `/auth/token/refresh`) y protegidos mediante middleware.
 
 Entidades propias del modelo:
 
@@ -66,9 +66,9 @@ type AuthenticationProvider interface {
 
 Implementaciones:
 - `adapters.PasswordAdapter` — email + contraseña (Argon2id), solo dev/local.
-- `adapters.OIDCAdapter` — Entra ID / Keycloak / Google (Authorization Code + PKCE). Existe como adapter pero no está conectado al flujo de autenticación en Report 1.0 por limitaciones de tiempo.
+- `adapters.OIDCAdapter` — Entra ID / Keycloak / Google (Authorization Code + PKCE). Flujo completo conectado: exchange del código → verificación del ID token → par de JWT CCO como cookies HttpOnly `cco_access`/`cco_refresh`.
 - `adapters.ServicePrincipalAdapter` — `client_credentials` para colectores y ML.
-- `adapters.ManagedIdentityAdapter` — Azure Managed Identity (firma RS256 pendiente, `shortcut` marcado).
+- `adapters.ManagedIdentityAdapter` — Azure Managed Identity (firma RS256 verificada contra el JWKS de Entra ID).
 
 ### `TokenValidator`
 
@@ -124,10 +124,10 @@ Agrupa todos los repositorios de persistencia:
 | `/healthz` | GET | — | Health check |
 | `/auth/register` | POST | `RegisterRequest` (email, display_name, password?) | Registrar usuario |
 | `/auth/login` | POST | `LoginRequest` (email, password) | Login con contraseña |
-| `/auth/oidc/login` | GET | — | Redirect a proveedor OIDC (no disponible en Report 1.0) |
-| `/auth/oidc/callback` | GET | query `code`, `state` | Callback OIDC (no disponible en Report 1.0) |
+| `/auth/oidc/login` | GET | — | Redirect a proveedor OIDC |
+| `/auth/oidc/callback` | GET | query `code`, `state` | Callback OIDC (exchange → cookies `cco_access`/`cco_refresh`) |
 | `/auth/m2m/token` | POST | `M2MTokenRequest` (client_id, client_secret, scope?) | Token máquina a máquina |
-| `/auth/token/refresh` | POST | — | Refresh token (pendiente) |
+| `/auth/token/refresh` | POST | — | Refresh token (rotación consume-on-use) |
 
 ### HTTP (endpoints protegidos)
 
@@ -186,7 +186,7 @@ Todas las respuestas de error usan formato:
 ### Tokens
 
 - **Access token**: JWT HS256, TTL 15 min, contiene claims `sub`, `email`, `name`, `amr`, `roles`, `org`, `org_r`, `prj`, `prj_r`, `perm`, `rid`, `cid`, `iat`, `exp`, `iss`, `aud`.
-- **Refresh token**: string opaca base64url, TTL 7 días (storage pendiente, `shortcut` marcado).
+- **Refresh token**: string opaca base64url, TTL 7 días, persistido como hash SHA-256 en `iam.refresh_tokens` y consumido al usarse (rotación); fallback en memoria si no hay DB.
 
 ## Dependencias
 
@@ -203,6 +203,8 @@ Todas las dependencias entre archivos de `internal/iam/` son internas al paquete
 | `golang.org/x/crypto/argon2` | Hash de contraseñas (Argon2id) |
 | `github.com/coreos/go-oidc/v3` | Descubrimiento y verificación de proveedores OIDC |
 | `golang.org/x/oauth2` | Flujo Authorization Code OIDC |
+| `github.com/valkey-io/valkey-go` | Cliente Valkey oficial: estado compartido de rate limiting y lockout (fork de Redis compatible RESP) |
+| `github.com/alicebob/miniredis/v2` | Servidor RESP en proceso para tests deterministas (solo test) |
 | `gorm.io/gorm` + `gorm.io/driver/postgres` + `gorm.io/driver/sqlite` | Persistencia portable |
 | `gorm.io/datatypes` | Campos JSON (usados por otros modelos de `platform/database`) |
 
@@ -228,6 +230,7 @@ El módulo IAM persiste en los schemas `iam` y `organization` de `cco_app` (Post
 | `iam` | `role_permissions` | RolePermission | Relación rol ↔ permiso |
 | `iam` | `user_roles` | UserRole | Asignación usuario ↔ rol |
 | `iam` | `external_identities` | ExternalIdentity | Mapeo OIDC subject |
+| `iam` | `refresh_tokens` | RefreshToken | Hash SHA-256 del refresh token con expiración |
 | `organization` | `organizations` | Organization | Referenciada por membresías |
 | `organization` | `members` | Membership | Usuario ↔ organización con rol |
 | `organization` | `projects` | Project | Proyectos por organización |
@@ -258,7 +261,7 @@ El módulo IAM persiste en los schemas `iam` y `organization` de `cco_app` (Post
 
 ### PermissionEngine
 
-1. `EffectivePermissions(ic)` → une permisos de `SystemRoles` (mapa estático `rolePermissions`) + `OrgRole` (mapa estático `membershipRolePermissions`) + `ProjectRole` si está definido.
+1. `EffectivePermissions(ic)` → une permisos de `SystemRoles` (mapa rol→permisos cargado de `iam.roles`/`iam.role_permissions`/`iam.permissions` al arranque; mapa estático solo como fallback) + `OrgRole` (mapa estático `membershipRolePermissions`) + `ProjectRole` si está definido.
 2. `Can(ctx, ic, resource, action)` → verifica si existe `resource:action`, `resource:*` o `*:*` en el conjunto de permisos efectivos.
 
 ### MembershipResolver
@@ -320,11 +323,11 @@ Permite envolver errores con un código legible por máquina para respuestas HTT
 
 ### Autenticación
 
-- **Contraseñas:** Hash Argon2id con parámetros fijos (64 MB, 3 iter, 4 threads, 32 bytes clave, 16 bytes sal). Es el único método de autenticación de usuarios en Report 1.0, tanto en desarrollo como en producción.
-- **JWT:** HS256 con clave única en variable de entorno `CCO_JWT_SIGNING_KEY`. TTL de access token: 15 minutos.
-- **OIDC:** Adapter existe (`go-oidc/v3`) pero no está conectado al flujo de autenticación en Report 1.0 por limitaciones de tiempo.
+- **Contraseñas:** Hash Argon2id con parámetros fijos (64 MB, 3 iter, 4 threads, 32 bytes clave, 16 bytes sal) — fijados por decisión: el formato "salt.hash" no embebe parámetros y cambiarlos en runtime invalidaría hashes existentes. Método de usuarios en dev/local.
+- **JWT:** HS256 con clave en `CCO_JWT_SIGNING_KEY`, obligatoria cuando `CCO_ENV=prod` (la app no arranca sin ella). TTL de access token: 15 minutos.
+- **OIDC:** Flujo Authorization Code completo (`go-oidc/v3`): exchange del código → verificación del ID token → par JWT CCO como cookies HttpOnly `cco_access`/`cco_refresh`; state CSRF por request en cookie `cco_oidc_state` (10 min).
 - **Service Principal:** Flujo `client_credentials` para colectores y servicio ML.
-- **Managed Identity:** Validación de tokens de Azure IMDS (firma RS256 pendiente, `shortcut` marcado).
+- **Managed Identity:** Tokens de Azure IMDS con firma RS256 verificada contra el JWKS de Entra ID (cache 1 h; issuer v1 y v2 aceptados).
 
 ### Autorización
 
@@ -378,26 +381,16 @@ No hay consultas a base de datos en el path caliente de cada request más allá 
 
 Ejecución: `go test ./... -count=1` desde `backend/`.
 
-## Shortcuts marcados (techo conocido y camino de upgrade)
+## Limitaciones conocidas y caminos de upgrade
 
-| Shortcut | Código | Techo | Camino de upgrade |
+Los shortcuts de Report 1.0 fueron resueltos en la fase de endurecimiento IAM (ver DEC-032–DEC-035 en `docs/registry/DECISION-LOG.md` y `ADR-008`). Quedan abiertos:
+
+| Limitación | Código | Techo | Camino de upgrade |
 |----------|--------|-------|-------------------|
 | JWT HS256 simétrico | `auth.go` | Una clave en env; rotación coordinada en múltiples instancias | RS256 + JWKS |
-| PermissionEngine mapa estático | `auth.go` | Permisos no se leen de `iam.role_permissions` | Cargar desde DB con caché |
-| Project access = org membership | `project_repository.go` | Sin tabla `project_members` | Añadir tabla cuando per-project ACLs sea requisito |
-| Refresh token storage | `handlers.go` | `POST /auth/token/refresh` devuelve 501 | Almacenar refresh tokens hasheados en DB con expiración |
-| OIDC callback | `handlers.go` | Devuelve 501 "pendiente de implementación" | Implementar `oauth2.Config.Exchange()` |
-| MI token sin verificación RS256 | `managed_identity_adapter.go` | Acepta estructura JWT sin verificar firma | go-jose o Azure SDK contra JWKS de Microsoft |
-| CSRF state estático en OIDC | `handlers.go` | `"dev-state"` fijo | State por request en cookie de sesión segura |
-| Password solo dev | `password_adapter.go` | Producción debe forzar OIDC | Passkeys/WebAuthn, MFA TOTP |
-| Password es el único método | `password_adapter.go` | Únicamente password disponible en Report 1.0 (dev y prod) | OIDC se conectará cuando haya tiempo; el adapter ya existe |
+| Project access = org membership | `project_repository.go` | Sin ACL por proyecto (decisión DEC-035) | Tabla `project_members` si los ACLs por proyecto se vuelven requisito |
+| Password en dev/local | `password_adapter.go` | Producción debe forzar OIDC | OIDC forzado + Passkeys/WebAuthn, MFA TOTP |
 | `PasswordHash` columna | `models.go` | No existe en `cco_app.sql` de producción | `ALTER TABLE iam.users ADD COLUMN password_hash` |
-| Email único en registro | `handlers.go` | `FindUserByEmail` antes de `CreateUser`; race condition posible en concurrencia alta | Unique constraint en DB como fuente de verdad final |
-| Rate limiting | `middleware/security.go` | Almacenamiento en memoria (`sync.Map`); se reinicia al reiniciar | Redis-backed limiter para múltiples instancias |
-| Account lockout | `auth.go` (`LoginLockout`) | Almacenamiento en memoria; bloqueo temporal de 15 min | Persistir en DB/Redis con coordinación distribuida |
-| Security headers | `middleware/security.go` | CSP permisiva para desarrollo | Endurecer directivas CSP para producción |
-| CORS orígenes | `middleware/security.go` | `Access-Control-Allow-Origin: *` | Restringir a dominios explícitos en producción |
-| Refresh token storage | `auth.go` (`TokenManager.refreshTokens`) | `sync.Map` en memoria; rotación básica | Persistir a DB/Redis con detección de reuso |
 
 ## Notas de implementación
 
@@ -440,14 +433,9 @@ time=2026-10-30T10:15:12Z level=INFO msg="authenticated request" request_id=... 
 {"time":"2026-10-30T10:15:12Z","level":"INFO","msg":"authenticated request","request_id":"...","correlation_id":"...","user_id":"...","email":"ana@example.com","auth_method":"password","org_id":"...","org_role":"viewer","path":"/api/v1/can","method":"POST"}
 ```
 
-### shortcuit
+### Decisión
 
-```go
-// shortcut: un solo handler global; upgrade: handler por módulo con niveles
-// diferentes si el volumen de logs lo justifica.
-```
-
-Este shortcut está marcado en `cmd/cco-app/main.go` donde se inicializa `slog`.
+Un solo handler global a `stdout` basta a escala prototipo; handler por módulo con niveles diferentes solo si el volumen de logs lo justifica (DEC-034).
 
 ### Véase también
 
@@ -462,11 +450,13 @@ Este shortcut está marcado en `cmd/cco-app/main.go` donde se inicializa `slog`.
 |--------|---------------|--------|
 | Hash de contraseñas | `auth.go` — `HashPassword` / `VerifyPassword` con Argon2id | ✅ Activo |
 | Firma JWT | `auth.go` — `TokenManager` con HS256 | ✅ Activo |
-| Refresh token con rotación | `auth.go` — `TokenManager.refreshTokens`, `handlers.go` — `TokenRefreshHandler` | ✅ Activo |
-| Rate limiting | `middleware/security.go` — `RateLimitMiddleware` | ✅ Activo |
-| Account lockout | `auth.go` — `LoginLockout`, `handlers.go` — `LoginHandler` | ✅ Activo |
-| Security headers | `middleware/security.go` — `SecurityHeaders` | ✅ Activo |
-| CORS | `middleware/security.go` — `CORS` | ✅ Activo |
+| Refresh token con rotación | `auth.go` — `TokenManager` (persistidos y hasheados en `iam.refresh_tokens`, consume-on-use), `handlers.go` — `TokenRefreshHandler` | ✅ Activo |
+| Rate limiting | `middleware/security.go` — `RateLimitMiddleware` (ventana fija en Valkey, fallback en memoria) | ✅ Activo |
+| Account lockout | `auth.go` — `AccountLockout` (estado en Valkey, fallback en memoria), `handlers.go` — `LoginHandler` | ✅ Activo |
+| Security headers | `middleware/security.go` — `SecurityHeaders` (CSP sobrescribible con `CCO_CSP`) | ✅ Activo |
+| CORS | `middleware/security.go` — `CORS` (orígenes por `CCO_ALLOWED_ORIGINS`) | ✅ Activo |
+| OIDC callback | `handlers.go` — `OIDCCallbackHandler` (exchange + cookies + state CSRF por request) | ✅ Activo |
+| Firma de tokens MI | `managed_identity_adapter.go` — RS256 contra JWKS de Entra ID | ✅ Activo |
 | Trazabilidad | `identity_context.go` — `IdentityContext`, `auth_middleware.go` | ✅ Activo |
 
 ### Hash de contraseñas: Argon2id
@@ -483,7 +473,7 @@ Las contraseñas se hashean con **Argon2id** (ganador del Password Hashing Compe
 
 **Formato almacenado:** `base64(salt) + "." + base64(hash)`
 
-**shortcut:** Parámetros fijos en código; upgrade: hacer configurables vía variables de entorno.
+**Decisión (DEC-033):** parámetros fijos en código — el formato `salt.hash` no embebe parámetros (a diferencia del formato PHC `$argon2id$...`), por lo que configurarlos en runtime invalidaría silenciosamente los hashes existentes. Upgrade: migrar a formato PHC y evolucionar parámetros por hash.
 
 ### ¿Qué es más seguro que el actual?
 
@@ -491,16 +481,16 @@ Las contraseñas se hashean con **Argon2id** (ganador del Password Hashing Compe
 |------------|---------------------|----------------------|---------|
 | Hash de password | Argon2id (64 MB, 3 iter, 4 threads) | Argon2id con memoria >64 MB, más iteraciones, o **scrypt** | Mayor memoria e iteraciones aumentan el costo para atacantes con GPU/ASIC |
 | Firma JWT | HS256 (clave simétrica) | **RS256** (RSA) o **EdDSA/Ed25519** | Firma asimétrica: clave privada solo firma, pública verifica; rotación de claves sin compartir secretos |
-| Refresh tokens | `sync.Map` en memoria | **DB / Redis** con rotación y detección de reuso | Persistencia y detección de uso simultáneo (posible robo) |
+| Refresh tokens | DB (`iam.refresh_tokens`, hash SHA-256, consume-on-use) | Detección de reuso explícita (revocación de familia de tokens) | Persistencia resuelta; falta detectar robo y reuso del token |
 
 ### Rate limiting
 
 - **Límite:** 60 requests por minuto por IP.
-- **Ventana:** Deslizante de 60 segundos.
+- **Ventana:** Fija de 60 segundos sobre Valkey (`cco:rl:<ip>`: `INCR` + `EXPIRE NX`).
 - **Respuesta:** `429 Too Many Requests`.
 - **Detección de IP:** `X-Forwarded-For` o `RemoteAddr`.
-
-**shortcut:** Memoria (`sync.Map`); se reinicia al reiniciar. Upgrade: Redis-backed limiter.
+- **Política de fallo:** fail-open ante error de Valkey (se permite la request y se registra warning).
+- **Fallback:** sin `CCO_VALKEY_ADDR` se usa el limitador en memoria (estado se pierde al reiniciar; modo single-instance dev).
 
 ### Account lockout
 
@@ -508,8 +498,7 @@ Las contraseñas se hashean con **Argon2id** (ganador del Password Hashing Compe
 - **Bloqueo:** 15 minutos tras alcanzar el umbral.
 - **Reinicio:** Contador se resetea en login exitoso.
 - **Respuesta durante bloqueo:** `429 Too Many Requests`.
-
-**shortcut:** Memoria; no sobrevive reinicios. Upgrade: DB/Redis con coordinación distribuida.
+- **Estado:** Valkey (`cco:lock:attempts:<email>` con `EXPIRE NX`, `cco:lock:locked:<email>` con TTL); los intentos decaen tras 15 min de inactividad. Fail-open ante error de Valkey; fallback en memoria sin Valkey.
 
 ### Security headers (todas las respuestas)
 
@@ -521,15 +510,13 @@ Las contraseñas se hashean con **Argon2id** (ganador del Password Hashing Compe
 | `Content-Security-Policy` | `default-src 'self'; ...` | Restringe fuentes de contenido |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Fuerza HTTPS |
 
-**shortcut:** CSP permisiva para dev; upgrade: endurecer CSP en producción.
+**Configuración:** la política por defecto es la de dev; en producción se sobrescribe con `CCO_CSP`.
 
 ### CORS
 
-- Orígenes: `*` (todos en dev)
+- Orígenes: `*` por defecto (dev); con `CCO_ALLOWED_ORIGINS` (coma-separada) solo los orígenes listados reciben headers CORS (+ credenciales).
 - Métodos: GET, POST, OPTIONS, PUT, DELETE
 - Headers: Authorization, Content-Type, X-Request-ID, X-Correlation-ID, X-Org-ID, X-Project-ID
-
-**shortcut:** Permite todos los orígenes; upgrade: restringir a dominios explícitos en producción.
 
 ### Véase también
 

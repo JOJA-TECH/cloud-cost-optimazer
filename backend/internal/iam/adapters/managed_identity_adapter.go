@@ -20,6 +20,7 @@ type ManagedIdentityAdapter struct {
 	tenantID         string
 	allowedClientIDs map[string][]string // client_id -> allowed roles
 	httpClient       *http.Client
+	jwks             *jwksCache
 }
 
 // MIConfig holds managed identity configuration.
@@ -43,12 +44,18 @@ func NewManagedIdentityAdapter(cfg MIConfig) *ManagedIdentityAdapter {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
+	jwksURL := fmt.Sprintf("https://login.microsoftonline.com/%s/discovery/v2.0/keys", cfg.TenantID)
+	if cfg.TenantID == "" {
+		// No tenant configured: use the multi-tenant "common" JWKS endpoint.
+		jwksURL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+	}
 	return &ManagedIdentityAdapter{
 		tokenManager:     cfg.TokenManager,
 		repo:             cfg.Repo,
 		tenantID:         cfg.TenantID,
 		allowedClientIDs: cfg.AllowedClientIDs,
 		httpClient:       client,
+		jwks:             newJWKSCache(jwksURL),
 	}
 }
 
@@ -115,15 +122,21 @@ func (a *ManagedIdentityAdapter) Validate(ctx context.Context, token string) (ia
 	return a.tokenManager.ValidateAccessToken(token)
 }
 
-// validateMIToken validates an Azure MI token.
-// Supports tokens from IMDS (http://169.254.169.254) or Azure SDK.
-// shortcut: signature verification is not implemented; accepts JWT structure + claims only.
-// upgrade: use go-jose or Azure SDK to verify RS256 signature against Microsoft JWKS endpoint.
+// validateMIToken validates an Azure MI token (RS256 signature against Entra ID JWKS).
+// The first validation per hour performs an outbound HTTPS GET to login.microsoftonline.com (JWKS cache).
 func (a *ManagedIdentityAdapter) validateMIToken(ctx context.Context, token, expectedClientID string) (jwt.MapClaims, error) {
-	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
-	parsed, _, err := parser.ParseUnverified(token, jwt.MapClaims{})
+	parsed, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok || token.Header["alg"] != "RS256" {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		kid, _ := token.Header["kid"].(string)
+		if kid == "" {
+			return nil, errors.New("token missing kid header")
+		}
+		return a.jwks.publicKey(ctx, kid)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("parse token: %w", err)
+		return nil, fmt.Errorf("validate token: %w", err)
 	}
 
 	claims, ok := parsed.Claims.(jwt.MapClaims)
@@ -131,11 +144,12 @@ func (a *ManagedIdentityAdapter) validateMIToken(ctx context.Context, token, exp
 		return nil, errors.New("invalid claims")
 	}
 
-	// Verify issuer
+	// Verify issuer (accept v1 and v2 issuer formats)
 	iss, _ := claims["iss"].(string)
 	if iss != "" && a.tenantID != "" {
-		expectedIss := fmt.Sprintf("https://sts.windows.net/%s/", a.tenantID)
-		if iss != expectedIss {
+		v1Iss := fmt.Sprintf("https://sts.windows.net/%s/", a.tenantID)
+		v2Iss := fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", a.tenantID)
+		if iss != v1Iss && iss != v2Iss {
 			return nil, fmt.Errorf("invalid issuer: %s", iss)
 		}
 	}

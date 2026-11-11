@@ -1,6 +1,10 @@
 package iam
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -59,14 +63,15 @@ type LoginRequest struct {
 }
 
 // NewLoginHandler creates a LoginHandler.
-func NewLoginHandler(adapter AuthenticationProvider, tokenMgr *TokenManager) *LoginHandler {
-	return &LoginHandler{adapter: adapter, tokenMgr: tokenMgr}
+func NewLoginHandler(adapter AuthenticationProvider, tokenMgr *TokenManager, lockout *AccountLockout) *LoginHandler {
+	return &LoginHandler{adapter: adapter, tokenMgr: tokenMgr, lockout: lockout}
 }
 
 // LoginHandler handles POST /auth/login (password auth, dev/local only).
 type LoginHandler struct {
 	adapter  AuthenticationProvider
 	tokenMgr *TokenManager
+	lockout  *AccountLockout
 }
 
 func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +82,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Account lockout: reject if email is currently locked out
-	if LoginLockout.IsLocked(req.Email) {
+	if h.lockout.IsLocked(req.Email) {
 		writeError(w, http.StatusTooManyRequests, CodeInvalidCredentials,
 			"account temporarily locked due to too many failed login attempts")
 		return
@@ -89,7 +94,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Password: req.Password,
 	})
 	if err != nil {
-		LoginLockout.RecordFailure(req.Email)
+		h.lockout.RecordFailure(req.Email)
 		slog.Warn("login failed", "email", req.Email, "error", err.Error())
 		code := MapErrorToCode(err)
 		status := http.StatusUnauthorized
@@ -100,7 +105,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LoginLockout.RecordSuccess(req.Email)
+	h.lockout.RecordSuccess(req.Email)
 
 	pair, err := h.tokenMgr.GenerateTokenPair(ic)
 	if err != nil {
@@ -199,40 +204,123 @@ func (h *M2MTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// NewOIDCLoginHandler creates an OIDCLoginHandler.
-func NewOIDCLoginHandler(adapter oidcAuthURLProvider, state string) *OIDCLoginHandler {
-	return &OIDCLoginHandler{adapter: adapter, state: state}
+// oidcCodeExchanger is implemented by *adapters.OIDCAdapter.
+type oidcCodeExchanger interface {
+	ExchangeCode(ctx context.Context, code string) (IdentityContext, error)
 }
 
-// OIDCLoginHandler redirects to the OIDC provider authorization endpoint.
+// NewOIDCLoginHandler creates an OIDCLoginHandler.
+func NewOIDCLoginHandler(adapter oidcAuthURLProvider, cookieDomain string, cookieSecure bool) *OIDCLoginHandler {
+	return &OIDCLoginHandler{adapter: adapter, cookieDomain: cookieDomain, cookieSecure: cookieSecure}
+}
+
+// OIDCLoginHandler redirects to the OIDC provider authorization endpoint,
+// generating a per-request CSRF state bound to an HttpOnly cookie.
 type OIDCLoginHandler struct {
-	adapter oidcAuthURLProvider
-	state   string // CSRF token (dev: static; prod: per-request session cookie)
+	adapter      oidcAuthURLProvider
+	cookieDomain string
+	cookieSecure bool
 }
 
 func (h *OIDCLoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// shortcut: static CSRF state for dev; upgrade: per-request state stored in secure session cookie.
-	http.Redirect(w, r, h.adapter.AuthURL(h.state), http.StatusFound)
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	state := base64.RawURLEncoding.EncodeToString(b)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cco_oidc_state",
+		Value:    state,
+		Path:     "/auth/oidc/callback",
+		Domain:   h.cookieDomain,
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, h.adapter.AuthURL(state), http.StatusFound)
 }
 
-// OIDCCallbackHandler exchanges the authorization code for tokens.
-// shortcut: token exchange via Authorization Code flow not implemented here;
-// upgrade: implement oauth2.Config.Exchange() and verify ID token, then issue JWT.
-type OIDCCallbackHandler struct{}
+// OIDCCallbackHandler exchanges the authorization code for tokens and sets
+// session cookies after verifying the CSRF state.
+type OIDCCallbackHandler struct {
+	exchanger    oidcCodeExchanger
+	tokenMgr     *TokenManager
+	cookieDomain string
+	cookieSecure bool
+}
+
+// NewOIDCCallbackHandler creates an OIDCCallbackHandler.
+func NewOIDCCallbackHandler(exchanger oidcCodeExchanger, tokenMgr *TokenManager, cookieDomain string, cookieSecure bool) *OIDCCallbackHandler {
+	return &OIDCCallbackHandler{exchanger: exchanger, tokenMgr: tokenMgr, cookieDomain: cookieDomain, cookieSecure: cookieSecure}
+}
+
+func (h *OIDCCallbackHandler) clearStateCookie(w http.ResponseWriter, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cco_oidc_state",
+		Value:    "",
+		Path:     "/auth/oidc/callback",
+		Domain:   h.cookieDomain,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
 
 func (h *OIDCCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	if code == "" || state != "dev-state" {
+	expected, err := r.Cookie("cco_oidc_state")
+	if code == "" || err != nil || expected.Value == "" ||
+		subtle.ConstantTimeCompare([]byte(state), []byte(expected.Value)) != 1 {
+		h.clearStateCookie(w, -1)
 		writeError(w, http.StatusBadRequest, CodeInvalidToken, "missing or invalid code/state")
 		return
 	}
-	writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "OIDC callback token exchange pending implementation")
+	h.clearStateCookie(w, -1)
+
+	ic, err := h.exchanger.ExchangeCode(r.Context(), code)
+	if err != nil {
+		slog.Warn("oidc code exchange failed", "error", err.Error())
+		writeError(w, http.StatusUnauthorized, CodeInvalidToken, err.Error())
+		return
+	}
+
+	pair, err := h.tokenMgr.GenerateTokenPair(ic)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cco_access",
+		Value:    pair.AccessToken,
+		Path:     "/",
+		Domain:   h.cookieDomain,
+		MaxAge:   int(h.tokenMgr.AccessTokenTTL().Seconds()),
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cco_refresh",
+		Value:    pair.RefreshToken,
+		Path:     "/",
+		Domain:   h.cookieDomain,
+		MaxAge:   int(h.tokenMgr.RefreshTokenTTL().Seconds()),
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	slog.Info("oidc login completed", "user_id", ic.UserID, "email", ic.Email)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // TokenRefreshHandler rotates access/refresh tokens.
-// shortcut: refresh tokens are stored in memory (sync.Map); upgrade: persist to DB/Redis
-// with rotation and reuse detection when running multiple instances.
+// Refresh tokens are persisted (hashed) and consumed on rotation by TokenManager.
 type TokenRefreshHandler struct {
 	tokenMgr *TokenManager
 	userRepo UserRepository
