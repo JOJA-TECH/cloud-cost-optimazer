@@ -1,0 +1,16 @@
+[Unit]
+Description=CCO scheduled load test (rotating profiles, collector burst)
+After=network-online.target
+Wants=network-online.target
+Documentation=file:/opt/cco/app/docs/OPERATIONS.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cco/app
+EnvironmentFile=/opt/cco/.env
+ExecStart=/opt/cco/venv/bin/python -m src.workload.scheduled
+TimeoutStartSec=3600
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

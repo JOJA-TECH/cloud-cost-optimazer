@@ -1,0 +1,10 @@
+[Unit]
+Description=Run a CCO load test every 8 hours
+
+[Timer]
+OnCalendar=*-*-* 00/8:00:00
+Persistent=true
+Unit=cco-scheduled-experiment.service
+
+[Install]
+WantedBy=timers.target

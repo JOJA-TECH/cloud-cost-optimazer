@@ -189,8 +189,8 @@ write_files:
     content: |
       [Unit]
       Description=CCO experiment watchdog (auto-stop safety net)
-      After=network-online.target cco-collector.service
-      Wants=network-online.target cco-collector.service
+      After=network-online.target
+      Wants=network-online.target
 
       [Service]
       Type=simple
@@ -204,6 +204,41 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/cco-scheduled-experiment.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=CCO scheduled load test (rotating profiles, collector burst)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      WorkingDirectory=${app_dir}/app
+      EnvironmentFile=${app_dir}/.env
+      ExecStart=${app_dir}/venv/bin/python -m src.workload.scheduled
+      TimeoutStartSec=3600
+      Nice=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/cco-scheduled-experiment.timer
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Run a CCO load test every 8 hours
+
+      [Timer]
+      OnCalendar=*-*-* 00/8:00:00
+      Persistent=true
+      Unit=cco-scheduled-experiment.service
+
+      [Install]
+      WantedBy=timers.target
 
 runcmd:
   - [bash, -lc, "install -d -m 0755 ${app_dir}"]
@@ -219,8 +254,8 @@ runcmd:
   - [bash, -lc, "if [ -f ${app_dir}/app/requirements.txt ]; then ${app_dir}/venv/bin/pip install --upgrade pip && ${app_dir}/venv/bin/pip install -r ${app_dir}/app/requirements.txt; fi"]
   - [bash, -lc, "chown -R root:root ${app_dir}/app 2>/dev/null || true"]
   - [bash, -lc, "systemctl daemon-reload"]
-  - [bash, -lc, "systemctl enable cco-migrate.service cco-workload.service cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
+  - [bash, -lc, "systemctl enable cco-migrate.service cco-telegram-bot.service cco-supervisor.service cco-scheduled-experiment.timer"]
   - [bash, -lc, "systemctl start cco-migrate.service || true"]
-  - [bash, -lc, "systemctl start cco-workload.service cco-collector.service cco-telegram-bot.service cco-supervisor.service"]
+  - [bash, -lc, "systemctl start cco-telegram-bot.service cco-supervisor.service cco-scheduled-experiment.timer"]
 
 final_message: "CCO collector VM ready. Control the experiment with the Telegram bot. AUTO_START is false by default."

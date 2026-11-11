@@ -36,6 +36,11 @@ rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
   --exclude '.env' --exclude 'spool' \
   "${REPO_ROOT}/app/" "${TARGET}:${APP_DIR}/app/"
 
+echo "[deploy] syncing systemd units"
+rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
+  --rsync-path="sudo rsync" --chown=root:root \
+  "${REPO_ROOT}/systemd/" "${TARGET}:${APP_DIR}/systemd/"
+
 echo "[deploy] installing dependencies, applying migrations and restarting services"
 ssh "${SSH_OPTS[@]}" "${TARGET}" sudo bash -s <<REMOTE
 set -euo pipefail
@@ -46,14 +51,22 @@ if [[ ! -x "\${APP_DIR}/venv/bin/python" ]]; then
 fi
 "\${APP_DIR}/venv/bin/pip" install --quiet --upgrade pip
 "\${APP_DIR}/venv/bin/pip" install --quiet -r "\${APP_DIR}/app/requirements.txt"
+install -m 0644 "\${APP_DIR}"/systemd/cco-*.service "\${APP_DIR}"/systemd/cco-*.timer /etc/systemd/system/
 systemctl daemon-reload
 
 # Migrations must succeed before the collector starts writing rows.
 systemctl restart cco-migrate.service
 systemctl --no-pager --lines=0 status cco-migrate.service || true
 
-systemctl restart cco-collector.service cco-telegram-bot.service cco-supervisor.service
-systemctl --no-pager --lines=0 status cco-collector.service || true
+if systemctl is-enabled --quiet cco-scheduled-experiment.timer 2>/dev/null; then
+  # Scheduled mode: the timer starts a short collector burst per tick; a
+  # continuous collector would keep the free-tier database awake.
+  echo "[deploy] scheduled experiment active; collector/workload left stopped"
+  systemctl restart cco-telegram-bot.service cco-supervisor.service
+else
+  systemctl restart cco-collector.service cco-telegram-bot.service cco-supervisor.service
+  systemctl --no-pager --lines=0 status cco-collector.service || true
+fi
 
 # The workload generator has Requires=cco-migrate, so restarting migrations
 # stops it. Bring it back only when the experiment is meant to auto-start.
