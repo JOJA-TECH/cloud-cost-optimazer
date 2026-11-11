@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -9,6 +10,15 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/google/uuid"
 )
+
+// writeJSONError devuelve un error JSON con Content-Type application/json y
+// escapa correctamente el mensaje (evita JSON roto por comillas o saltos de
+// línea en err.Error()). Todos los errores de la API deben ser JSON.
+func writeJSONError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": message})
+}
 
 // AuthMiddleware extracts Bearer token, validates it, resolves org/project context,
 // and injects IdentityContext into request context.
@@ -52,14 +62,14 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 
 		if authHeader == "" {
 			slog.Warn("auth failed: missing authorization header", "path", r.URL.Path, "remote", r.RemoteAddr)
-			http.Error(w, `{"code":"UNAUTHORIZED","message":"missing authorization header"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, iam.CodeUnauthorized, "missing authorization header")
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			slog.Warn("auth failed: invalid authorization format", "path", r.URL.Path, "remote", r.RemoteAddr)
-			http.Error(w, `{"code":"UNAUTHORIZED","message":"invalid authorization format"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, iam.CodeUnauthorized, "invalid authorization format")
 			return
 		}
 
@@ -75,14 +85,14 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			}
 			slog.Warn("auth failed: token validation error",
 				"path", r.URL.Path, "remote", r.RemoteAddr, "error", err.Error(), "code", code)
-			http.Error(w, `{"code":"`+code+`","message":"`+err.Error()+`"}`, status)
+			writeJSONError(w, status, code, err.Error())
 			return
 		}
 
 		// Check token expiry (defense in depth)
 		if iam.IsTokenExpired(ic.TokenExpiresAt) {
 			slog.Warn("auth failed: token expired", "path", r.URL.Path, "user_id", ic.UserID)
-			http.Error(w, `{"code":"TOKEN_EXPIRED","message":"token expired"}`, http.StatusUnauthorized)
+			writeJSONError(w, http.StatusUnauthorized, iam.CodeTokenExpired, "token expired")
 			return
 		}
 
@@ -171,17 +181,17 @@ func RequirePermission(checker iam.PermissionChecker, resource, action string) f
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ic, ok := iam.IdentityContextFromContext(r.Context())
 			if !ok {
-				http.Error(w, `{"code":"UNAUTHORIZED","message":"no identity context"}`, http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, iam.CodeUnauthorized, "no identity context")
 				return
 			}
 
 			allowed, err := checker.Can(r.Context(), ic, resource, action)
 			if err != nil || !allowed {
-				code := "FORBIDDEN"
+				code := iam.CodeForbidden
 				if err != nil {
 					code = iam.MapErrorToCode(err)
 				}
-				http.Error(w, `{"code":"`+code+`","message":"insufficient permissions"}`, http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, code, "insufficient permissions")
 				return
 			}
 
@@ -196,7 +206,7 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ic, ok := iam.IdentityContextFromContext(r.Context())
 			if !ok {
-				http.Error(w, `{"code":"UNAUTHORIZED","message":"no identity context"}`, http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, iam.CodeUnauthorized, "no identity context")
 				return
 			}
 
@@ -209,7 +219,7 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 			}
 
 			if !hasRole {
-				http.Error(w, `{"code":"FORBIDDEN","message":"requires role `+role+`"}`, http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, iam.CodeForbidden, "requires role "+role)
 				return
 			}
 
@@ -229,12 +239,12 @@ func RequireOrgRole(roles ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ic, ok := iam.IdentityContextFromContext(r.Context())
 			if !ok {
-				http.Error(w, `{"code":"UNAUTHORIZED","message":"no identity context"}`, http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, iam.CodeUnauthorized, "no identity context")
 				return
 			}
 
 			if !roleSet[ic.OrgRole] {
-				http.Error(w, `{"code":"FORBIDDEN","message":"requires org role"}`, http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, iam.CodeForbidden, "requires org role")
 				return
 			}
 

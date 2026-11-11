@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
@@ -15,6 +16,7 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/middleware"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/valkey"
 	"github.com/google/uuid"
 )
 
@@ -151,8 +153,8 @@ func main() {
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
 	// Fluentd). No hay dependencia extra; log/slog es estándar desde Go 1.21.
-	// shortcut: un solo handler global; upgrade: handler por módulo con
-	// niveles diferentes si el volumen de logs lo justifica.
+	// Decisión: un solo handler global a stdout basta a escala prototipo;
+	// handler por módulo solo si el volumen de logs lo justifica.
 	var h slog.Handler
 	if os.Getenv("CCO_LOG_FORMAT") == "json" {
 		h = slog.NewJSONHandler(os.Stdout, nil)
@@ -165,7 +167,11 @@ func main() {
 	// ── Token manager ────────────────────────────────────────────────────
 	signingKey := []byte(os.Getenv("CCO_JWT_SIGNING_KEY"))
 	if len(signingKey) == 0 {
-		signingKey = []byte("dev-secret-change-in-production") // shortcut: dev-only default; upgrade: require env var in prod
+		if os.Getenv("CCO_ENV") == "prod" {
+			log.Fatalf("CCO_JWT_SIGNING_KEY is required when CCO_ENV=prod")
+		}
+		// Dev-only default so local runs without .env still boot.
+		signingKey = []byte("dev-secret-change-in-production")
 	}
 	tokenConfig := iam.TokenConfig{
 		SigningKey:      signingKey,
@@ -174,7 +180,15 @@ func main() {
 		Issuer:          "cco-app",
 		Audience:        "cco-api",
 	}
-	tokenMgr := iam.NewTokenManager(tokenConfig)
+	tokenMgr := iam.NewTokenManager(tokenConfig, db)
+
+	// ── Valkey (shared state for rate limiting + lockout) ────────────────
+	// nil client = single-instance dev mode; each component falls back to memory.
+	vc, err := valkey.NewFromEnv()
+	if err != nil {
+		log.Fatalf("valkey: %v", err)
+	}
+	lockout := iam.NewAccountLockout(5, 15*time.Minute, vc)
 
 	// ── Repositories ─────────────────────────────────────────────────────
 	userRepo := iam.NewUserRepository(db)
@@ -189,7 +203,7 @@ func main() {
 	}
 
 	// ── Authorization engine ─────────────────────────────────────────────
-	permEngine := iam.NewPermissionEngine()
+	permEngine := iam.NewPermissionEngine(db)
 
 	// ── Adapters ─────────────────────────────────────────────────────────
 	oidcCfg := adapters.OIDCConfig{
@@ -235,10 +249,11 @@ func main() {
 	mux.Handle("POST /auth/login", iam.NewLoginHandler(
 		adapters.NewPasswordAdapter(repo, tokenMgr),
 		tokenMgr,
+		lockout,
 	))
 	if oidcAdapter != nil {
-		mux.Handle("GET /auth/oidc/login", iam.NewOIDCLoginHandler(oidcAdapter, "dev-state"))
-		mux.Handle("GET /auth/oidc/callback", &iam.OIDCCallbackHandler{})
+		mux.Handle("GET /auth/oidc/login", iam.NewOIDCLoginHandler(oidcAdapter, oidcCfg.CookieDomain, oidcCfg.CookieSecure))
+		mux.Handle("GET /auth/oidc/callback", iam.NewOIDCCallbackHandler(oidcAdapter, tokenMgr, oidcCfg.CookieDomain, oidcCfg.CookieSecure))
 	}
 	mux.Handle("POST /auth/m2m/token", iam.NewM2MTokenHandler(spAdapter, tokenMgr))
 	mux.Handle("POST /auth/token/refresh", iam.NewTokenRefreshHandler(tokenMgr, userRepo))
@@ -262,12 +277,19 @@ func main() {
 	)
 
 	// ── Security middleware ────────────────────────────────────────────────
-	// CORS wraps all routes; rate limiting applies globally (simple, dev-ready).
-	// shortcut: in-memory rate limiter resets on restart; upgrade to Redis-backed
-	// limiter when running multiple instances.
-	handler := middleware.CORS(mux)
-	handler = middleware.SecurityHeaders(handler)
-	handler = middleware.RateLimitMiddleware(60, time.Minute, handler)
+	// CORS wraps all routes; rate limiting and lockout share the Valkey client
+	// (in-memory fallbacks when CCO_VALKEY_ADDR is unset).
+	var allowedOrigins []string
+	if v := os.Getenv("CCO_ALLOWED_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	}
+	handler := middleware.CORS(allowedOrigins, mux)
+	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
+	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
 
 	// ── Server ───────────────────────────────────────────────────────────
 	addr := os.Getenv("CCO_HTTP_ADDR")
@@ -292,7 +314,10 @@ func listUsers(repo iam.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ic, ok := iam.IdentityContextFromContext(r.Context())
 		if !ok {
-			http.Error(w, `{"code":"UNAUTHORIZED","message":"no identity context"}`, http.StatusUnauthorized)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"code":    iam.CodeUnauthorized,
+				"message": "no identity context",
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -309,12 +334,18 @@ func canHandler(engine *iam.PermissionEngine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ic, ok := iam.IdentityContextFromContext(r.Context())
 		if !ok {
-			http.Error(w, `{"code":"UNAUTHORIZED","message":"no identity context"}`, http.StatusUnauthorized)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"code":    iam.CodeUnauthorized,
+				"message": "no identity context",
+			})
 			return
 		}
 		allowed, err := engine.Can(r.Context(), ic, "resources", "read")
 		if err != nil {
-			http.Error(w, `{"code":"INTERNAL_ERROR","message":"permission check failed"}`, http.StatusInternalServerError)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"code":    "INTERNAL_ERROR",
+				"message": "permission check failed",
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
