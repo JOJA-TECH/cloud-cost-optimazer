@@ -310,4 +310,16 @@ func (a *OIDCAdapter) ClearAuthCookies(w http.ResponseWriter) {
 	})
 }
 
-// shortcut: refresh token rotation not implemented; upgrade: store hashed refresh tokens in DB with expiry.
+// ExchangeCode exchanges an OAuth2 authorization code for tokens and returns
+// the authenticated identity (callback half of the Authorization Code flow).
+func (a *OIDCAdapter) ExchangeCode(ctx context.Context, code string) (iam.IdentityContext, error) {
+	tok, err := a.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		return iam.IdentityContext{}, fmt.Errorf("oidc code exchange: %w", err)
+	}
+	rawIDToken, _ := tok.Extra("id_token").(string)
+	if rawIDToken == "" {
+		return iam.IdentityContext{}, errors.New("no id_token in token response")
+	}
+	return a.Authenticate(ctx, iam.Credentials{Type: "oidc", IDToken: rawIDToken})
+}
