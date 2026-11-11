@@ -3,17 +3,24 @@ package iam
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/valkey-io/valkey-go"
 	"golang.org/x/crypto/argon2"
+	"gorm.io/gorm"
 )
 
 // ============================================================================
@@ -47,10 +54,13 @@ type TokenPair struct {
 	ExpiresAt    int64 // unix ms
 }
 
-// TokenManager handles JWT creation and validation.
+// TokenManager handles JWT creation and validation. Refresh tokens are
+// persisted hashed in the DB when one is provided; otherwise an in-memory
+// store is used as fallback (single instance only).
 type TokenManager struct {
 	config        TokenConfig
-	refreshTokens sync.Map // token -> refreshTokenEntry
+	db            *gorm.DB
+	refreshTokens sync.Map // token -> refreshTokenEntry (fallback when db == nil)
 }
 
 type refreshTokenEntry struct {
@@ -58,9 +68,10 @@ type refreshTokenEntry struct {
 	expiresAt time.Time
 }
 
-// NewTokenManager creates a new TokenManager.
-func NewTokenManager(config TokenConfig) *TokenManager {
-	return &TokenManager{config: config}
+// NewTokenManager creates a new TokenManager. db may be nil to keep refresh
+// tokens in memory (dev/tests).
+func NewTokenManager(config TokenConfig, db *gorm.DB) *TokenManager {
+	return &TokenManager{config: config, db: db}
 }
 
 // GenerateAccessToken creates a short-lived access token.
@@ -105,6 +116,11 @@ func (m *TokenManager) AccessTokenTTL() time.Duration {
 	return m.config.AccessTokenTTL
 }
 
+// RefreshTokenTTL returns the refresh token TTL.
+func (m *TokenManager) RefreshTokenTTL() time.Duration {
+	return m.config.RefreshTokenTTL
+}
+
 // Validate implements iam.TokenValidator for TokenManager.
 func (m *TokenManager) Validate(ctx context.Context, token string) (IdentityContext, error) {
 	return m.ValidateAccessToken(token)
@@ -122,7 +138,7 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 	}
 	expiresAt := time.Now().Add(m.config.AccessTokenTTL).UnixMilli()
 	refreshExpiresAt := time.Now().Add(m.config.RefreshTokenTTL)
-	m.refreshTokens.Store(refresh, refreshTokenEntry{userID: ic.UserID, expiresAt: refreshExpiresAt})
+	m.persistRefreshToken(refresh, ic.UserID, refreshExpiresAt)
 	return TokenPair{
 		AccessToken:  access,
 		RefreshToken: refresh,
@@ -132,17 +148,38 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 
 // StoreRefreshToken stores a refresh token with its expiry.
 func (m *TokenManager) StoreRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
-	m.refreshTokens.Store(token, refreshTokenEntry{userID: userID, expiresAt: expiresAt})
+	m.persistRefreshToken(token, userID, expiresAt)
+}
+
+// persistRefreshToken stores a refresh token: hashed in the DB when available,
+// in memory otherwise. Persistence is best-effort — a failed write is logged
+// but does not fail the login.
+func (m *TokenManager) persistRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
+	if m.db == nil {
+		m.refreshTokens.Store(token, refreshTokenEntry{userID: userID, expiresAt: expiresAt})
+		return
+	}
+	row := database.RefreshTokenModel{TokenHash: hashToken(token), UserID: userID, ExpiresAt: expiresAt, CreatedAt: time.Now()}
+	if err := m.db.Table(database.TableName(m.db, "iam", "refresh_tokens")).Create(&row).Error; err != nil {
+		slog.Error("persist refresh token", "error", err)
+	}
+}
+
+// hashToken returns the SHA-256 hex digest of a raw token.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // ValidateRefreshToken validates a refresh token and returns the associated user ID.
 // Consumes (deletes) the token on validation so it cannot be reused — this is the
 // rotation mechanism: old token is invalidated when a new pair is issued.
 // Returns false if token is missing, expired, or invalid.
-// shortcut: in-memory sync.Map; refresh tokens reset on restart and are not shared
-// across instances. Upgrade: persist hashed refresh tokens to DB/Redis with
-// rotation and reuse detection.
+// Refresh tokens are persisted hashed (SHA-256) and consumed on rotation.
 func (m *TokenManager) ValidateRefreshToken(token string) (uuid.UUID, bool) {
+	if m.db != nil {
+		return m.validateDBRefreshToken(token)
+	}
 	val, ok := m.refreshTokens.LoadAndDelete(token)
 	if !ok {
 		return uuid.Nil, false
@@ -154,8 +191,31 @@ func (m *TokenManager) ValidateRefreshToken(token string) (uuid.UUID, bool) {
 	return entry.userID, true
 }
 
+// validateDBRefreshToken looks the token up by hash and deletes it in the same
+// call (consume-on-use). RowsAffected == 0 on delete means another request
+// already consumed it, so the token is rejected.
+func (m *TokenManager) validateDBRefreshToken(token string) (uuid.UUID, bool) {
+	table := database.TableName(m.db, "iam", "refresh_tokens")
+	var row database.RefreshTokenModel
+	if err := m.db.Table(table).Where("token_hash = ?", hashToken(token)).First(&row).Error; err != nil {
+		return uuid.Nil, false
+	}
+	del := m.db.Table(table).Where("token_hash = ?", hashToken(token)).Delete(&database.RefreshTokenModel{})
+	if del.Error != nil || del.RowsAffected == 0 {
+		return uuid.Nil, false
+	}
+	if time.Now().After(row.ExpiresAt) {
+		return uuid.Nil, false
+	}
+	return row.UserID, true
+}
+
 // RevokeRefreshToken removes a refresh token from the store.
 func (m *TokenManager) RevokeRefreshToken(token string) {
+	if m.db != nil {
+		m.db.Table(database.TableName(m.db, "iam", "refresh_tokens")).Where("token_hash = ?", hashToken(token)).Delete(&database.RefreshTokenModel{})
+		return
+	}
 	m.refreshTokens.Delete(token)
 }
 
@@ -250,8 +310,11 @@ func (m *TokenManager) claimsToIdentityContext(claims jwt.MapClaims) (IdentityCo
 // argon2Params defines the Argon2id parameters used for password hashing.
 // Memory: 64 MB, Iterations: 3, Parallelism: 4, Key length: 32 bytes.
 // These values are a balance between security and performance for Report 1.0.
-// shortcut: fixed parameters; upgrade: make configurable via env vars and
-// increase memory/iterations as hardware improves.
+// Argon2id params are intentionally fixed: the custom "salt.hash" encoding does
+// NOT embed the params (unlike the PHC string format), so changing them at
+// runtime would silently invalidate every existing hash. Upgrade path: migrate
+// to PHC-format hashes ($argon2id$...) with embedded params, then params can
+// evolve per hash.
 var argon2Params = struct {
 	memory      uint32 // 64 MiB
 	iterations  uint32 // 3 passes
@@ -313,30 +376,54 @@ func splitTwo(s, sep string) []string {
 // Account Lockout (brute-force protection)
 // ============================================================================
 
-// accountLockout tracks failed login attempts per email to prevent brute-force.
-// shortcut: in-memory map; reset on restart; upgrade: persist to DB/Redis with
-// distributed coordination for multi-instance deployments.
-type accountLockout struct {
+// AccountLockout tracks failed login attempts per email to prevent brute-force.
+// State lives in Valkey when a client is configured (shared across instances);
+// otherwise it is kept in memory (single instance only, reset on restart).
+type AccountLockout struct {
 	mu              sync.Mutex
-	attempts        map[string]int       // email (lowercase) -> failed count
-	lockedUntil     map[string]time.Time // email -> lockout expiry
+	attempts        map[string]int       // email (lowercase) -> failed count (in-memory mode only)
+	lockedUntil     map[string]time.Time // email -> lockout expiry (in-memory mode only)
 	maxAttempts     int
 	lockoutDuration time.Duration
+	valkey          valkey.Client
 }
 
-// LoginLockout is the global account lockout used by LoginHandler.
-var LoginLockout = &accountLockout{
-	attempts:        make(map[string]int),
-	lockedUntil:     make(map[string]time.Time),
-	maxAttempts:     5,
-	lockoutDuration: 15 * time.Minute,
+// NewAccountLockout creates an AccountLockout. vc may be nil to keep the state
+// in memory (dev/tests/single instance).
+func NewAccountLockout(maxAttempts int, lockoutDuration time.Duration, vc valkey.Client) *AccountLockout {
+	return &AccountLockout{
+		attempts:        make(map[string]int),
+		lockedUntil:     make(map[string]time.Time),
+		maxAttempts:     maxAttempts,
+		lockoutDuration: lockoutDuration,
+		valkey:          vc,
+	}
+}
+
+// attemptsKey returns the Valkey key holding the failure counter for an email.
+func (a *AccountLockout) attemptsKey(email string) string {
+	return "cco:lock:attempts:" + email
+}
+
+// lockedKey returns the Valkey key holding the lockout marker for an email.
+func (a *AccountLockout) lockedKey(email string) string {
+	return "cco:lock:locked:" + email
 }
 
 // IsLocked reports whether the email is currently locked out.
-func (a *accountLockout) IsLocked(email string) bool {
+func (a *AccountLockout) IsLocked(email string) bool {
+	email = strings.ToLower(email)
+	if a.valkey != nil {
+		n, err := a.valkey.Do(context.Background(), a.valkey.B().Exists().Key(a.lockedKey(email)).Build()).ToInt64()
+		if err != nil {
+			// Prototype policy: fail open — never block logins because the cache is down.
+			slog.Warn("lockout: valkey EXISTS failed, failing open", "error", err)
+			return false
+		}
+		return n > 0
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	email = strings.ToLower(email)
 	until, ok := a.lockedUntil[email]
 	if !ok {
 		return false
@@ -351,10 +438,31 @@ func (a *accountLockout) IsLocked(email string) bool {
 
 // RecordFailure increments the failure count for an email and locks it out
 // when the threshold is reached.
-func (a *accountLockout) RecordFailure(email string) {
+// Note: in the Valkey mode attempts decay after lockoutDuration of inactivity,
+// while the in-memory mode keeps them until a successful login — accepted
+// difference between the two modes.
+func (a *AccountLockout) RecordFailure(email string) {
+	email = strings.ToLower(email)
+	if a.valkey != nil {
+		ctx := context.Background()
+		n, err := a.valkey.Do(ctx, a.valkey.B().Incr().Key(a.attemptsKey(email)).Build()).ToInt64()
+		if err != nil {
+			slog.Warn("lockout: valkey INCR failed", "error", err)
+			return
+		}
+		seconds := int64(a.lockoutDuration / time.Second)
+		if n == 1 {
+			// NX: set the decay TTL only when creating the counter, so repeated
+			// failures don't extend the window.
+			a.valkey.Do(ctx, a.valkey.B().Expire().Key(a.attemptsKey(email)).Seconds(seconds).Nx().Build())
+		}
+		if n >= int64(a.maxAttempts) {
+			a.valkey.Do(ctx, a.valkey.B().Set().Key(a.lockedKey(email)).Value("1").ExSeconds(seconds).Build())
+		}
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	email = strings.ToLower(email)
 	a.attempts[email]++
 	if a.attempts[email] >= a.maxAttempts {
 		a.lockedUntil[email] = time.Now().Add(a.lockoutDuration)
@@ -362,19 +470,45 @@ func (a *accountLockout) RecordFailure(email string) {
 }
 
 // RecordSuccess clears the failure count for an email (called on successful login).
-func (a *accountLockout) RecordSuccess(email string) {
+func (a *AccountLockout) RecordSuccess(email string) {
+	email = strings.ToLower(email)
+	if a.valkey != nil {
+		ctx := context.Background()
+		// Two commands: a multi-key Del would cross hash slots and be rejected
+		// by the valkey-go builder.
+		a.valkey.Do(ctx, a.valkey.B().Del().Key(a.attemptsKey(email)).Build())
+		a.valkey.Do(ctx, a.valkey.B().Del().Key(a.lockedKey(email)).Build())
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	email = strings.ToLower(email)
 	delete(a.attempts, email)
 	delete(a.lockedUntil, email)
 }
 
 // RemainingAttempts returns the number of failed attempts remaining before lockout.
-func (a *accountLockout) RemainingAttempts(email string) int {
+func (a *AccountLockout) RemainingAttempts(email string) int {
+	email = strings.ToLower(email)
+	if a.valkey != nil {
+		n := int64(0)
+		s, err := a.valkey.Do(context.Background(), a.valkey.B().Get().Key(a.attemptsKey(email)).Build()).ToString()
+		if err != nil {
+			// Miss (nil) or error → no recorded attempts. Parse errors are
+			// impossible in practice: only INCR writes the counter.
+			if !valkey.IsValkeyNil(err) {
+				slog.Warn("lockout: valkey GET failed", "error", err)
+			}
+		} else if v, perr := strconv.ParseInt(s, 10, 64); perr == nil {
+			n = v
+		}
+		remaining := a.maxAttempts - int(n)
+		if remaining < 0 {
+			return 0
+		}
+		return remaining
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	email = strings.ToLower(email)
 	remaining := a.maxAttempts - a.attempts[email]
 	if remaining < 0 {
 		return 0
@@ -386,8 +520,8 @@ func (a *accountLockout) RemainingAttempts(email string) int {
 // Permission Engine (string-based RBAC)
 // ============================================================================
 
-// shortcut: PermissionEngine uses static role->permission map.
-// upgrade: load from DB (iam.permissions + iam.role_permissions) on startup with cache refresh.
+// Permissions load from the DB at startup; the static map below is the
+// fallback when there is no DB, the query fails, or the result is empty.
 
 // rolePermissions maps system role_code -> permission_codes.
 // Matches iam.roles + iam.permissions + iam.role_permissions in cco_app.
@@ -435,11 +569,46 @@ var membershipRolePermissions = map[string][]string{
 }
 
 // PermissionEngine evaluates permissions for an IdentityContext.
-type PermissionEngine struct{}
+type PermissionEngine struct {
+	rolePermissions map[string][]string
+}
 
-// NewPermissionEngine creates a new PermissionEngine.
-func NewPermissionEngine() *PermissionEngine {
-	return &PermissionEngine{}
+// NewPermissionEngine creates a new PermissionEngine, loading system role
+// permissions from iam.roles / iam.role_permissions / iam.permissions.
+func NewPermissionEngine(db *gorm.DB) *PermissionEngine {
+	return &PermissionEngine{rolePermissions: loadRolePermissions(db)}
+}
+
+// loadRolePermissions builds role_code -> permission_codes from the DB and
+// falls back to the static rolePermissions map on any failure.
+func loadRolePermissions(db *gorm.DB) map[string][]string {
+	if db == nil {
+		slog.Warn("permission engine: using static role map", "reason", "no database")
+		return rolePermissions
+	}
+	var rows []struct {
+		RoleCode       string
+		PermissionCode string
+	}
+	err := db.WithContext(context.Background()).
+		Table(database.TableName(db, "iam", "roles") + " r").
+		Select("r.role_code, p.permission_code").
+		Joins("JOIN " + database.TableName(db, "iam", "role_permissions") + " rp ON rp.role_id = r.role_id").
+		Joins("JOIN " + database.TableName(db, "iam", "permissions") + " p ON p.permission_id = rp.permission_id").
+		Scan(&rows).Error
+	if err != nil || len(rows) == 0 {
+		reason := "query error"
+		if err == nil {
+			reason = "empty result"
+		}
+		slog.Warn("permission engine: using static role map", "reason", reason, "error", err)
+		return rolePermissions
+	}
+	m := make(map[string][]string, len(rows))
+	for _, r := range rows {
+		m[r.RoleCode] = append(m[r.RoleCode], r.PermissionCode)
+	}
+	return m
 }
 
 // EffectivePermissions computes all permissions for an identity.
@@ -448,7 +617,7 @@ func (e *PermissionEngine) EffectivePermissions(ic IdentityContext) []string {
 
 	// System roles
 	for _, role := range ic.SystemRoles {
-		if perms, ok := rolePermissions[role]; ok {
+		if perms, ok := e.rolePermissions[role]; ok {
 			for _, p := range perms {
 				permSet[p] = struct{}{}
 			}
@@ -588,5 +757,5 @@ func (r *MembershipResolver) ResolvePermissions(ctx context.Context, userID uuid
 		Permissions: []string{}, // will be computed
 	}
 
-	return NewPermissionEngine().EffectivePermissions(ic), nil
+	return NewPermissionEngine(nil).EffectivePermissions(ic), nil
 }

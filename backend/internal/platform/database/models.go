@@ -11,7 +11,7 @@ import (
 // embed them; this keeps GORM and database types at the infrastructure edge.
 type UserModel struct {
 	UserID        uuid.UUID  `gorm:"column:user_id;type:uuid;primaryKey"`
-	Email         string     `gorm:"column:email;not null"`
+	Email         string     `gorm:"column:email;not null;uniqueIndex"`
 	DisplayName   string     `gorm:"column:display_name;not null"`
 	Status        string     `gorm:"column:status;not null;default:active"`
 	EmailVerified bool       `gorm:"column:email_verified;not null;default:false"`
@@ -268,3 +268,14 @@ type AuditEventModel struct {
 }
 
 func (AuditEventModel) TableName() string { return "events" }
+
+// RefreshTokenModel stores hashed IAM refresh tokens so they survive restarts
+// and are shared across instances. Only the SHA-256 hash is persisted.
+type RefreshTokenModel struct {
+	TokenHash string    `gorm:"column:token_hash;primaryKey"`
+	UserID    uuid.UUID `gorm:"column:user_id;type:uuid;not null;index"`
+	ExpiresAt time.Time `gorm:"column:expires_at;not null"`
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+}
+
+func (RefreshTokenModel) TableName() string { return "refresh_tokens" }

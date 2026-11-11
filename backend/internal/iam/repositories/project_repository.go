@@ -49,9 +49,10 @@ func (r *projectRepository) ListProjectsByOrg(ctx context.Context, orgID uuid.UU
 }
 
 // CheckUserProjectAccess reports whether the user is an active member of the
-// project's organization. Report 1.0 has no per-project membership table yet.
-// shortcut: project access = org membership; upgrade: add project_members table
-// when per-project ACLs become a requirement.
+// project's organization.
+// Decision: project access = org membership (no per-project ACLs in the
+// prototype). If per-project ACLs become a requirement, add a project_members
+// table (recorded in docs/01-governance/DECISION-LOG.md).
 func (r *projectRepository) CheckUserProjectAccess(ctx context.Context, userID, projectID uuid.UUID) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).

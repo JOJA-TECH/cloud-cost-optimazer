@@ -59,14 +59,15 @@ type LoginRequest struct {
 }
 
 // NewLoginHandler creates a LoginHandler.
-func NewLoginHandler(adapter AuthenticationProvider, tokenMgr *TokenManager) *LoginHandler {
-	return &LoginHandler{adapter: adapter, tokenMgr: tokenMgr}
+func NewLoginHandler(adapter AuthenticationProvider, tokenMgr *TokenManager, lockout *AccountLockout) *LoginHandler {
+	return &LoginHandler{adapter: adapter, tokenMgr: tokenMgr, lockout: lockout}
 }
 
 // LoginHandler handles POST /auth/login (password auth, dev/local only).
 type LoginHandler struct {
 	adapter  AuthenticationProvider
 	tokenMgr *TokenManager
+	lockout  *AccountLockout
 }
 
 func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Account lockout: reject if email is currently locked out
-	if LoginLockout.IsLocked(req.Email) {
+	if h.lockout.IsLocked(req.Email) {
 		writeError(w, http.StatusTooManyRequests, CodeInvalidCredentials,
 			"account temporarily locked due to too many failed login attempts")
 		return
@@ -89,7 +90,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Password: req.Password,
 	})
 	if err != nil {
-		LoginLockout.RecordFailure(req.Email)
+		h.lockout.RecordFailure(req.Email)
 		slog.Warn("login failed", "email", req.Email, "error", err.Error())
 		code := MapErrorToCode(err)
 		status := http.StatusUnauthorized
@@ -100,7 +101,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LoginLockout.RecordSuccess(req.Email)
+	h.lockout.RecordSuccess(req.Email)
 
 	pair, err := h.tokenMgr.GenerateTokenPair(ic)
 	if err != nil {
