@@ -107,20 +107,43 @@ type ProjectModel struct {
 func (ProjectModel) TableName() string { return "projects" }
 
 type CloudAccountModel struct {
-	CloudAccountID      uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;primaryKey"`
-	OrganizationID      uuid.UUID  `gorm:"column:organization_id;type:uuid;not null"`
-	ProviderCode        string     `gorm:"column:provider_code;not null"`
-	DisplayName         string     `gorm:"column:display_name;not null"`
-	SubscriptionID      string     `gorm:"column:subscription_id;not null"`
-	TenantID            *string    `gorm:"column:tenant_id"`
-	CredentialReference *string    `gorm:"column:credential_reference"`
-	Status              string     `gorm:"column:status;not null;default:pending"`
-	CreatedBy           *uuid.UUID `gorm:"column:created_by;type:uuid"`
-	CreatedAt           time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt           time.Time  `gorm:"column:updated_at;not null"`
+	CloudAccountID       uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;primaryKey"`
+	OrganizationID       uuid.UUID  `gorm:"column:organization_id;type:uuid;not null"`
+	ProviderCode         string     `gorm:"column:provider_code;not null"`
+	DisplayName          string     `gorm:"column:display_name;not null"`
+	SubscriptionID       string     `gorm:"column:subscription_id;not null"`
+	TenantID             *string    `gorm:"column:tenant_id"`
+	CredentialReference  *string    `gorm:"column:credential_reference"`
+	Status               string     `gorm:"column:status;not null;default:pending"`
+	ClientID             *string    `gorm:"column:client_id"`
+	LastConnectionError  *string    `gorm:"column:last_connection_error"`
+	CreatedBy            *uuid.UUID `gorm:"column:created_by;type:uuid"`
+	CreatedAt            time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (CloudAccountModel) TableName() string { return "accounts" }
+
+type ResourceModel struct {
+	ResourceUID     uuid.UUID  `gorm:"column:resource_uid;type:uuid;primaryKey"`
+	CloudAccountID  uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;not null"`
+	ProviderCode    string     `gorm:"column:provider_code;not null;default:azure"`
+	SubscriptionID  string     `gorm:"column:subscription_id;not null"`
+	ResourceGroup   string     `gorm:"column:resource_group;not null"`
+	ServerName      string     `gorm:"column:server_name;not null;default:''"`
+	DatabaseName    string     `gorm:"column:database_name;not null;default:''"`
+	AzureResourceID string     `gorm:"column:azure_resource_id;not null;uniqueIndex"`
+	RegionCode      string     `gorm:"column:region_code;not null;default:''"`
+	Kind            *string    `gorm:"column:kind"`
+	LifecycleStatus string     `gorm:"column:lifecycle_status;not null;default:active"`
+	RegisteredAt    time.Time  `gorm:"column:registered_at;not null"`
+	LastSeenAt      time.Time  `gorm:"column:last_seen_at;not null"`
+	DeactivatedAt   *time.Time `gorm:"column:deactivated_at"`
+	CreatedAt       time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (ResourceModel) TableName() string { return "resources" }
 
 type AccountProjectModel struct {
 	CloudAccountID uuid.UUID `gorm:"column:cloud_account_id;type:uuid;primaryKey"`

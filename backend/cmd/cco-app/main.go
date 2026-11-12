@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
+	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/adapters"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/middleware"
@@ -205,6 +208,25 @@ func main() {
 	// ── Authorization engine ─────────────────────────────────────────────
 	permEngine := iam.NewPermissionEngine(db)
 
+	// ── Cloud module (Module 2) ──────────────────────────────────────────
+	accountRepo := cloudrepos.NewAccountRepository(db)
+	resourceRepo := cloudrepos.NewResourceRepository(db)
+	bindingRepo := cloudrepos.NewDataSourceRepository(db)
+
+	// Adapter selection: default to the fake adapter; the real Azure adapter
+	// is added once credentials are available.
+	var validator cloud.ConnectionValidator
+	var provider cloud.ResourceProvider
+	mode := os.Getenv("CCO_CLOUD_PROVIDER_MODE")
+	if mode == "azure" {
+		validator = cloudadapters.NewAzureAdapter()
+		provider = cloudadapters.NewAzureAdapter()
+	} else {
+		validator = cloudadapters.NewFakeAdapter()
+		provider = cloudadapters.NewFakeAdapter()
+	}
+	cloudSvc := cloud.NewService(accountRepo, resourceRepo, bindingRepo, validator, provider)
+
 	// ── Adapters ─────────────────────────────────────────────────────────
 	oidcCfg := adapters.OIDCConfig{
 		IssuerURL:    os.Getenv("CCO_OIDC_ISSUER_URL"),
@@ -275,6 +297,9 @@ func main() {
 			),
 		),
 	)
+
+	// Cloud routes (Module 2)
+	cloud.RegisterRoutes(mux, cloudSvc, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client

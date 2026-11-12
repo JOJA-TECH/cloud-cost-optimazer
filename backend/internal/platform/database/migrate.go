@@ -26,7 +26,7 @@ func Migrate(db *gorm.DB) error {
 	}{
 		{"iam", []any{&UserModel{}, &ExternalIdentityModel{}, &RoleModel{}, &PermissionModel{}, &RolePermissionModel{}, &UserRoleModel{}, &RefreshTokenModel{}}},
 		{"organization", []any{&OrganizationModel{}, &MemberModel{}, &ProjectModel{}}},
-		{"cloud", []any{&CloudAccountModel{}, &AccountProjectModel{}, &ResourceBindingModel{}}},
+		{"cloud", []any{&CloudAccountModel{}, &AccountProjectModel{}, &ResourceBindingModel{}, &ResourceModel{}}},
 		{"app", []any{&DashboardPreferenceModel{}, &NotificationModel{}, &NotificationDeliveryModel{}, &SavedViewModel{}, &UserPreferenceModel{}, &RecommendationInteractionModel{}, &ReportRequestModel{}, &ReportArtifactModel{}}},
 		{"audit", []any{&AuditEventModel{}}},
 	}
@@ -68,6 +68,8 @@ func modelTable(model any) string {
 		return "account_projects"
 	case *ResourceBindingModel:
 		return "resource_bindings"
+	case *ResourceModel:
+		return "resources"
 	case *DashboardPreferenceModel:
 		return "dashboard_preferences"
 	case *NotificationModel:

@@ -529,6 +529,7 @@ var rolePermissions = map[string][]string{
 	"platform_admin": {"*:*"}, // wildcard handled in Can()
 	"db_admin": {
 		"cloud_accounts:*",
+		"data_sources:*",
 		"resources:read",
 		"analytics:read",
 		"recommendations:read",
@@ -562,9 +563,9 @@ var rolePermissions = map[string][]string{
 
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
-	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "resources:*", "analytics:*", "recommendations:*", "reports:*"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
-	"member": {"projects:create", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
+	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "resources:*", "analytics:*", "recommendations:*", "reports:*"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
+	"member": {"projects:create", "data_sources:read", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
 	"viewer": {"resources:read", "dashboards:read"},
 }
 
