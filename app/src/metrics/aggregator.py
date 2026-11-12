@@ -48,12 +48,13 @@ SOURCE_PRIORITY = {
 }
 DEFAULT_SOURCE_PRIORITY = 9
 
-# Per-metric overrides. The DMV samples every ~15 s and resolves CPU that
-# Azure Monitor's 1-minute resolution rounds to 0.00, so it is the better
-# CPU source for this experiment even though Azure Monitor is the platform
-# metric.
+# Per-metric overrides. The DMV samples every ~15 s and resolves CPU and I/O
+# that Azure Monitor's 1-minute resolution rounds to 0.00, so it is the better
+# source for those metrics even though Azure Monitor is the platform metric.
 SOURCE_PRIORITY_BY_METRIC = {
     "cpu_percent": {"sql_diagnostics": 0, "azure_monitor": 1},
+    "data_io_percent": {"sql_diagnostics": 0, "azure_monitor": 1},
+    "log_write_percent": {"sql_diagnostics": 0, "azure_monitor": 1},
 }
 
 
