@@ -530,6 +530,7 @@ var rolePermissions = map[string][]string{
 	"db_admin": {
 		"cloud_accounts:*",
 		"data_sources:*",
+		"acquisitions:*",
 		"resources:read",
 		"analytics:read",
 		"recommendations:read",
@@ -551,6 +552,8 @@ var rolePermissions = map[string][]string{
 	},
 	"collector": {
 		"metrics:write",
+		"acquisitions:run",
+		"acquisitions:read",
 		"config:read",
 		"resources:read",
 	},
@@ -563,10 +566,10 @@ var rolePermissions = map[string][]string{
 
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
-	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "resources:*", "analytics:*", "recommendations:*", "reports:*"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
-	"member": {"projects:create", "data_sources:read", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
-	"viewer": {"resources:read", "dashboards:read"},
+	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "analytics:*", "recommendations:*", "reports:*"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
+	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
+	"viewer": {"resources:read", "acquisitions:read", "dashboards:read"},
 }
 
 // PermissionEngine evaluates permissions for an IdentityContext.
