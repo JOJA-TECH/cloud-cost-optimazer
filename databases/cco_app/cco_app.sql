@@ -442,6 +442,8 @@ CREATE TABLE cloud.accounts (
     subscription_id character varying(128) NOT NULL,
     tenant_id character varying(128),
     credential_reference character varying(512),
+    client_id character varying(128),
+    last_connection_error text,
     status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -453,6 +455,49 @@ CREATE TABLE cloud.accounts (
 
 
 ALTER TABLE cloud.accounts OWNER TO postgres;
+
+--
+-- TOC entry 238 (class 1259 OID 17515)
+-- Name: resources; Type: TABLE; Schema: cloud; Owner: postgres
+--
+
+CREATE TABLE cloud.resources (
+    resource_uid uuid DEFAULT gen_random_uuid() NOT NULL,
+    cloud_account_id uuid NOT NULL,
+    provider_code character varying(30) NOT NULL DEFAULT 'azure'::character varying,
+    subscription_id character varying(128) NOT NULL,
+    resource_group character varying(160) NOT NULL,
+    server_name character varying(160) NOT NULL DEFAULT ''::character varying,
+    database_name character varying(160) NOT NULL DEFAULT ''::character varying,
+    azure_resource_id text NOT NULL,
+    region_code character varying(80) NOT NULL DEFAULT ''::character varying,
+    kind character varying(160),
+    lifecycle_status character varying(20) NOT NULL DEFAULT 'active'::character varying,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    deactivated_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_resources_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'deleted'::character varying, 'archived'::character varying])::text[])))
+);
+
+
+ALTER TABLE cloud.resources OWNER TO postgres;
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_pkey PRIMARY KEY (resource_uid);
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_cloud_account_id_fkey FOREIGN KEY (cloud_account_id) REFERENCES cloud.accounts(cloud_account_id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_azure_resource_id_key UNIQUE (azure_resource_id);
+
+CREATE INDEX ix_resources_account_server ON cloud.resources USING btree (cloud_account_id, server_name);
+
+CREATE INDEX ix_resources_account_lifecycle ON cloud.resources USING btree (cloud_account_id, lifecycle_status);
+
+CREATE TRIGGER trg_cloud_resources_updated_at BEFORE UPDATE ON cloud.resources FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
 
 --
 -- TOC entry 239 (class 1259 OID 17534)
