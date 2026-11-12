@@ -8,11 +8,15 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
+	acqadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/adapters"
+	acqrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
+	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/adapters"
@@ -227,6 +231,42 @@ func main() {
 	}
 	cloudSvc := cloud.NewService(accountRepo, resourceRepo, bindingRepo, validator, provider)
 
+	// ── Acquisition module (Module 3) ────────────────────────────────────
+	// Targets and credentials come from cco_app; telemetry lands in cco_data
+	// through a second connection (ADR-002: no cross-database FKs).
+	var acqRepo acquisition.AcquisitionRepository
+	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
+		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
+		if err != nil {
+			log.Fatalf("open cco_data database: %v", err)
+		}
+		acqRepo = acqrepos.NewDataRepository(dataDB)
+	}
+	acqTargets := acqrepos.NewTargetRepository(db)
+
+	var metricsProvider acquisition.MetricsProvider
+	var diagProvider acquisition.DiagnosticsProvider
+	var qstoreProvider acquisition.QueryStoreProvider
+	if mode == "azure" {
+		metricsProvider = acqadapters.NewAzureMonitorProvider()
+		sqlDiag := acqadapters.NewSQLServerDiagnostics()
+		diagProvider = sqlDiag
+		qstoreProvider = sqlDiag
+	} else {
+		metricsProvider = acqadapters.NewFakeMonitor()
+		diagProvider = acqadapters.NewFakeDiagnostics()
+		qstoreProvider = acqadapters.NewFakeQueryStore()
+	}
+	acqSvc := acquisition.NewService(acqTargets, acqRepo, metricsProvider, diagProvider, qstoreProvider, acquisition.Config{
+		MonitorDelay:    envSeconds("CCO_ACQ_MONITOR_DELAY_SECONDS", 90*time.Second),
+		MonitorLookback: envSeconds("CCO_ACQ_MONITOR_LOOKBACK_SECONDS", 300*time.Second),
+		SQLUser:         os.Getenv("CCO_ACQ_SQL_USER"),
+		SQLPassword:     os.Getenv("CCO_ACQ_SQL_PASSWORD"),
+	})
+	if acqRepo != nil {
+		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(context.Background())
+	}
+
 	// ── Adapters ─────────────────────────────────────────────────────────
 	oidcCfg := adapters.OIDCConfig{
 		IssuerURL:    os.Getenv("CCO_OIDC_ISSUER_URL"),
@@ -300,6 +340,9 @@ func main() {
 
 	// Cloud routes (Module 2)
 	cloud.RegisterRoutes(mux, cloudSvc, authMiddleware, permEngine)
+
+	// Acquisition routes (Module 3)
+	acquisition.RegisterRoutes(mux, acqSvc, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
@@ -386,4 +429,15 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// envSeconds parses a positive integer of seconds from the environment
+// falling back to def on missing or invalid values.
+func envSeconds(name string, def time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return def
 }
