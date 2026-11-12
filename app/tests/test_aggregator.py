@@ -12,15 +12,25 @@ def _row(source, code, avg):
     }
 
 
-def test_canonical_prefers_azure_monitor_over_dmv():
+def test_canonical_prefers_dmv_for_cpu_percent():
     canonical, sources = select_canonical(
         [
             _row("sql_diagnostics", "cpu_percent", 40.0),
             _row("azure_monitor", "cpu_percent", 42.0),
         ]
     )
-    assert sources["cpu_percent"] == "azure_monitor"
-    assert canonical["cpu_percent"]["avg_value"] == 42.0
+    assert sources["cpu_percent"] == "sql_diagnostics"
+    assert canonical["cpu_percent"]["avg_value"] == 40.0
+
+
+def test_canonical_prefers_azure_monitor_for_other_metrics():
+    _, sources = select_canonical(
+        [
+            _row("sql_diagnostics", "data_io_percent", 40.0),
+            _row("azure_monitor", "data_io_percent", 42.0),
+        ]
+    )
+    assert sources["data_io_percent"] == "azure_monitor"
 
 
 def test_canonical_falls_back_when_preferred_source_absent():

@@ -48,6 +48,14 @@ SOURCE_PRIORITY = {
 }
 DEFAULT_SOURCE_PRIORITY = 9
 
+# Per-metric overrides. The DMV samples every ~15 s and resolves CPU that
+# Azure Monitor's 1-minute resolution rounds to 0.00, so it is the better
+# CPU source for this experiment even though Azure Monitor is the platform
+# metric.
+SOURCE_PRIORITY_BY_METRIC = {
+    "cpu_percent": {"sql_diagnostics": 0, "azure_monitor": 1},
+}
+
 
 def _hour_start(moment: dt.datetime) -> dt.datetime:
     return moment.replace(minute=0, second=0, microsecond=0)
@@ -67,9 +75,10 @@ def select_canonical(per_source: List[dict]) -> tuple:
     canonical: Dict[str, dict] = {}
     canonical_sources: Dict[str, str] = {}
     for code, sources in by_code.items():
+        priority = SOURCE_PRIORITY_BY_METRIC.get(code, SOURCE_PRIORITY)
         best = min(
             sources,
-            key=lambda s: (SOURCE_PRIORITY.get(s, DEFAULT_SOURCE_PRIORITY), s),
+            key=lambda s: (priority.get(s, DEFAULT_SOURCE_PRIORITY), s),
         )
         canonical[code] = sources[best]
         canonical_sources[code] = best
