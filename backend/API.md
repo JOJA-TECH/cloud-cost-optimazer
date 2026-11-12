@@ -532,6 +532,15 @@ Todos los errores devuelven JSON con formato:
 | `INVALID_TOKEN` | 401 | Token inválido |
 | `NOT_IMPLEMENTED` | 501 | Funcionalidad pendiente |
 | `INTERNAL_ERROR` | 500 | Error interno |
+| `ACCOUNT_NOT_FOUND` | 404 | Cuenta cloud no encontrada |
+| `ACCOUNT_EXISTS` | 409 | Ya existe una cuenta para ese proveedor y suscripción |
+| `RESOURCE_NOT_FOUND` | 404 | Recurso cloud no encontrado |
+| `DATA_SOURCE_NOT_FOUND` | 404 | Fuente de datos (binding) no encontrada |
+| `DATA_SOURCE_EXISTS` | 409 | Ya existe una fuente de datos para ese proyecto y recurso |
+| `INVALID_REQUEST` | 400 | Cuerpo de la solicitud inválido |
+| `CREDENTIALS_UNAVAILABLE` | 400 | La credencial de referencia no se resuelve (falta variable de entorno) |
+| `CONNECTION_FAILED` | 422 | La conexión con el proveedor falló (detalle sin el secreto) |
+| `PROVIDER_UNAVAILABLE` | 503 | El adaptador del proveedor no está disponible en este modo |
 
 ---
 
@@ -632,3 +641,356 @@ cloud-cost-optimazer/
 ├── docs/                           # documentación de arquitectura, requisitos, ADRs, tests
 └── databases/                      # DDL de cco_app y cco_data
 ```
+
+---
+
+## 12. Endpoints del módulo Cloud (Gestión de Nube y Fuentes de Datos)
+
+Todos los endpoints de esta sección requieren header `Authorization: Bearer <access_token>` y pasan por `AuthMiddleware` + `RequirePermission(recurso, acción)`. Están definidos en `backend/internal/cloud/handlers.go` y resueltos contra `internal/cloud/interfaces.go`.
+
+### POST /api/v1/cloud-accounts
+
+Registra una cuenta cloud. Estado inicial: `pending`. Requiere permiso `cloud_accounts:write`.
+
+**Request body:**
+```json
+{
+  "display_name": "Suscripción Contoso Producción",
+  "provider_code": "azure",
+  "subscription_id": "/subscriptions/11111111-2222-3333-4444-555555555555",
+  "tenant_id": "tenant-id-guid",
+  "credential_reference": "env:CCO_AZURE_CLIENT_SECRET"
+}
+```
+
+| Campo | Tipo | Obligatorio | Descripción |
+|-------|------|-------------|-------------|
+| `display_name` | string | Sí | Nombre visible de la cuenta (1-160 caracteres) |
+| `provider_code` | string | Sí | `azure` | `aws` | `gcp` (Release 1.0 solo `azure`) |
+| `subscription_id` | string | Sí | Identificador de suscripción del proveedor |
+| `tenant_id` | string | No | ID de inquilino (requerido para `azure`) |
+| `credential_reference` | string | Sí | Referencia al secreto: `env:VAR` o nombre bare de variable `VAR`; el valor se lee de `os.Getenv`, nunca se persiste |
+
+**Response (201 Created):**
+```json
+{
+  "cloud_account_id": "uuid-generado",
+  "organization_id": "uuid-organización",
+  "provider_code": "azure",
+  "display_name": "Suscripción Contoso Producción",
+  "subscription_id": "/subscriptions/...",
+  "tenant_id": "tenant-id-guid",
+  "status": "pending",
+  "created_at": 1730123456789
+}
+```
+
+**Errores posibles:**
+- `400 Bad Request` — `INVALID_REQUEST` (campos faltantes o inválidos)
+- `409 Conflict` — `ACCOUNT_EXISTS` (ya existe cuenta para ese `provider_code` + `subscription_id`)
+- `401/403` — authz insuficiente
+
+**Ejemplo PowerShell:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$body = @{
+    display_name        = "Suscripción Contoso Producción"
+    provider_code       = "azure"
+    subscription_id     = "/subscriptions/11111111-2222-3333-4444-555555555555"
+    tenant_id           = "tenant-id-guid"
+    credential_reference= "env:CCO_AZURE_CLIENT_SECRET"
+} | ConvertTo-Json
+
+curl -X POST http://localhost:8080/api/v1/cloud-accounts -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d $body
+```
+
+---
+
+### GET /api/v1/cloud-accounts
+
+Lista las cuentas cloud de la organización del actor. Requiere permiso `cloud_accounts:read`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET http://localhost:8080/api/v1/cloud-accounts -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+[
+  {
+    "cloud_account_id": "uuid-generado",
+    "display_name": "Suscripción Contoso Producción",
+    "provider_code": "azure",
+    "subscription_id": "/subscriptions/...",
+    "status": "active",
+    "created_at": 1730123456789
+  }
+]
+```
+
+**Errores posibles:**
+- `401 Unauthorized` — token ausente, inválido o expirado
+- `403 Forbidden` — sin permiso `cloud_accounts:read`
+
+---
+
+### GET /api/v1/cloud-accounts/{id}
+
+Obtiene una cuenta cloud por su ID. Requiere permiso `cloud_accounts:read`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-de-la-cuenta"
+curl -X GET "http://localhost:8080/api/v1/cloud-accounts/$id" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+{
+  "cloud_account_id": "uuid-de-la-cuenta",
+  "organization_id": "uuid-organización",
+  "provider_code": "azure",
+  "display_name": "Suscripción Contoso Producción",
+  "subscription_id": "/subscriptions/...",
+  "tenant_id": "tenant-id-guid",
+  "status": "active",
+  "client_id": "client-id-de-azure",
+  "last_connection_error": null,
+  "created_at": 1730123456789,
+  "updated_at": 1730123456789
+}
+```
+
+**Errores posibles:**
+- `404 Not Found` — `ACCOUNT_NOT_FOUND`
+- `401/403` — authz insuficiente
+
+---
+
+### POST /api/v1/cloud-accounts/{id}/validate
+
+Valida la conexión de la cuenta resuelvelo el secreto desde la variable de entorno indicada en `credential_reference`. Al éxito pasa a `active`; al fallo, a `error` y registra `last_connection_error` (sin el secreto). Requiere permiso `cloud_accounts:write`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-de-la-cuenta"
+curl -X POST "http://localhost:8080/api/v1/cloud-accounts/$id/validate" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+{
+  "cloud_account_id": "uuid-de-la-cuenta",
+  "status": "active",
+  "valid": true
+}
+```
+
+**Response (422 Unprocessable Entity):**
+```json
+{
+  "code": "CONNECTION_FAILED",
+  "message": "no se pudo validar la conexión con Azure: autorización denied"
+}
+```
+
+**Errores posibles:**
+- `404 Not Found` — `ACCOUNT_NOT_FOUND`
+- `400 Bad Request` — `CREDENTIALS_UNAVAILABLE` (falta la variable de entorno)
+- `422 Unprocessable Entity` — `CONNECTION_FAILED`
+- `503 Service Unavailable` — `PROVIDER_UNAVAILABLE` (modo `azure` no activado)
+- `401/403` — authz insuficiente
+
+**Ejemplo PowerShell:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-de-la-cuenta"
+curl -X POST "http://localhost:8080/api/v1/cloud-accounts/$id/validate" -H "Authorization: Bearer $token"
+```
+
+---
+
+### POST /api/v1/cloud-accounts/{id}/sync
+
+Sincroniza (on-demand) las bases de datos SQL de Azure de la suscripción. Upsert normalizado por `azure_resource_id` en `cloud.resources`. Requiere permiso `cloud_accounts:write`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-de-la-cuenta"
+curl -X POST "http://localhost:8080/api/v1/cloud-accounts/$id/sync" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+{
+  "cloud_account_id": "uuid-de-la-cuenta",
+  "synced": 2,
+  "resources": [
+    {
+      "resource_uid": "uuid-recurso-1",
+      "azure_resource_id": "/subscriptions/.../providers/Microsoft.Sql/servers/srv-db/databases/ventas",
+      "server_name": "srv-db",
+      "database_name": "ventas",
+      "resource_group": "rg-produccion",
+      "region_code": "eastus",
+      "kind": "Microsoft.Sql/servers/databases",
+      "lifecycle_status": "active",
+      "last_seen_at": 1730123456789
+    },
+    {
+      "resource_uid": "uuid-recurso-2",
+      "azure_resource_id": "/subscriptions/.../providers/Microsoft.Sql/servers/srv-db/databases/inventario",
+      "server_name": "srv-db",
+      "database_name": "inventario",
+      "resource_group": "rg-produccion",
+      "region_code": "eastus",
+      "kind": "Microsoft.Sql/servers/databases",
+      "lifecycle_status": "active",
+      "last_seen_at": 1730123456789
+    }
+  ]
+}
+```
+
+**Errores posibles:**
+- `404 Not Found` — `ACCOUNT_NOT_FOUND` o cuenta no `active`
+- `422 Unprocessable Entity` — `CONNECTION_FAILED`
+- `503 Service Unavailable` — `PROVIDER_UNAVAILABLE`
+- `401/403` — authz insuficiente
+
+---
+
+### GET /api/v1/cloud-accounts/{id}/resources
+
+Lista los recursos normalizados de una cuenta. Requiere permiso `resources:read`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-de-la-cuenta"
+curl -X GET "http://localhost:8080/api/v1/cloud-accounts/$id/resources" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):** (ver cuerpo de ejemplo en `POST .../sync`, campo `resources`)
+
+**Errores posibles:**
+- `404 Not Found` — `ACCOUNT_NOT_FOUND`
+- `401/403` — authz insuficiente
+
+---
+
+### POST /api/v1/resource-bindings
+
+Registra una fuente de datos (binding) asociando un proyecto con un recurso cloud (`data_resource_uid` = `resource_uid` de `cloud.resources`). Marca `is_monitored=true`. Requiere permiso `data_sources:write`.
+
+**Request body:**
+```json
+{
+  "project_id": "uuid-proyecto",
+  "cloud_account_id": "uuid-cuenta",
+  "data_resource_uid": "uuid-recurso",
+  "display_name": "BD Ventas - Produccion"
+}
+```
+
+| Campo | Tipo | Obligatorio | Descripción |
+|-------|------|-------------|-------------|
+| `project_id` | uuid | Sí | Proyecto al que se asocia la fuente de datos |
+| `cloud_account_id` | uuid | Sí | Cuenta cloud dueña del recurso |
+| `data_resource_uid` | uuid | Sí | `resource_uid` del recurso en `cloud.resources` |
+| `display_name` | string | No | Nombre visible de la fuente de datos |
+
+**Response (201 Created):**
+```json
+{
+  "resource_binding_id": "uuid-binding",
+  "project_id": "uuid-proyecto",
+  "cloud_account_id": "uuid-cuenta",
+  "data_resource_uid": "uuid-recurso",
+  "display_name": "BD Ventas - Produccion",
+  "is_monitored": true,
+  "created_at": 1730123456789
+}
+```
+
+**Errores posibles:**
+- `400 Bad Request` — `INVALID_REQUEST`
+- `404 Not Found` — `ACCOUNT_NOT_FOUND` o `RESOURCE_NOT_FOUND`
+- `409 Conflict` — `DATA_SOURCE_EXISTS` (ya existe binding para ese proyecto/recurso o cuenta/recurso)
+- `401/403` — authz insuficiente
+
+**Ejemplo PowerShell:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$body = @{
+    project_id         = "uuid-proyecto"
+    cloud_account_id   = "uuid-cuenta"
+    data_resource_uid  = "uuid-recurso"
+    display_name       = "BD Ventas - Produccion"
+} | ConvertTo-Json
+
+curl -X POST http://localhost:8080/api/v1/resource-bindings -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d $body
+```
+
+---
+
+### GET /api/v1/resource-bindings
+
+Lista las fuentes de datos (bindings). Requiere permiso `data_sources:read`.
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET http://localhost:8080/api/v1/resource-bindings -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):** (lista de objetos como el de `POST /api/v1/resource-bindings`)
+
+**Errores posibles:**
+- `401/403` — authz insuficiente
+
+---
+
+### PATCH /api/v1/resource-bindings/{id}
+
+Desactiva una fuente de datos (`is_monitored=false`). Requiere permiso `data_sources:write`.
+
+**Request body:**
+```json
+{
+  "is_monitored": false
+}
+```
+
+| Campo | Tipo | Obligatorio | Descripción |
+|-------|------|-------------|-------------|
+| `is_monitored` | bool | Sí | `false` para desactivar el monitoreo de la fuente de datos |
+
+**Response (200 OK):**
+```json
+{
+  "resource_binding_id": "uuid-binding",
+  "is_monitored": false,
+  "updated_at": 1730123456789
+}
+```
+
+**Errores posibles:**
+- `404 Not Found` — `DATA_SOURCE_NOT_FOUND`
+- `400 Bad Request` — `INVALID_REQUEST`
+- `401/403` — authz insuficiente
+
+**Ejemplo PowerShell:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$id = "uuid-binding"
+$body = @{ is_monitored = $false } | ConvertTo-Json
+
+curl -X PATCH "http://localhost:8080/api/v1/resource-bindings/$id" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d $body
+```
+
