@@ -994,3 +994,114 @@ $body = @{ is_monitored = $false } | ConvertTo-Json
 curl -X PATCH "http://localhost:8080/api/v1/resource-bindings/$id" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d $body
 ```
 
+---
+
+## 13. Endpoints del módulo Adquisición y Monitoreo (Adquisición y Monitoreo de Datos)
+
+Todos los endpoints requieren `Authorization: Bearer <access_token>` y pasan por `AuthMiddleware` + `RequirePermission(recurso, acción)`. Están definidos en `backend/internal/acquisition/handlers.go`. Los ciclos escriben en `cco_data` (`raw.*`); si `CCO_DATA_DSN` no está configurado, los endpoints responden `503 STORAGE_UNAVAILABLE` y el scheduler no arranca.
+
+El scheduler interno corre cada `CCO_ACQ_INTERVAL_SECONDS` (default 60s) y adquiere para todos los bindings con `is_monitored=true`: métricas de Azure Monitor (PT1M), `sys.dm_db_resource_stats` + sesiones (DMVs) y Query Store top-20. Las DMVs/Query Store requieren `CCO_ACQ_SQL_USER` / `CCO_ACQ_SQL_PASSWORD` (login con `VIEW DATABASE STATE`); sin ellas solo corre Azure Monitor. Ver `docs/05-design/DESIGN-AMDA-001.md`.
+
+### POST /api/v1/acquisitions/run
+
+Ejecuta un ciclo de adquisición ahora, síncrono, para los recursos monitoreados de la organización del actor (o uno solo). Requiere permiso `acquisitions:run`. Si ya hay un ciclo en curso responde `422 CYCLE_IN_PROGRESS`.
+
+**Request body (opcional):**
+```json
+{
+  "resource_uid": "uuid-recurso"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "triggered": 2,
+  "runs": [
+    {
+      "run_id": 41,
+      "resource_uid": "uuid-recurso",
+      "source": "azure_monitor_metrics",
+      "status": "ok",
+      "rows_ingested": 50
+    },
+    {
+      "run_id": 42,
+      "resource_uid": "uuid-recurso",
+      "source": "sql_diagnostics",
+      "status": "error",
+      "rows_ingested": 0,
+      "detail": "sql diagnostics: login failed"
+    }
+  ]
+}
+```
+
+**Errores posibles:**
+- `400 Bad Request` — `INVALID_REQUEST` (body malformado o `resource_uid` inválido)
+- `404 Not Found` — `RESOURCE_NOT_FOUND` (el recurso no está monitoreado en esta organización)
+- `422 Unprocessable Entity` — `CYCLE_IN_PROGRESS`
+- `503 Service Unavailable` — `STORAGE_UNAVAILABLE` (falta `CCO_DATA_DSN`)
+- `401/403` — authz insuficiente
+
+**Ejemplo PowerShell:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X POST http://localhost:8080/api/v1/acquisitions/run -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}'
+```
+
+---
+
+### GET /api/v1/acquisitions
+
+Lista corridas (`raw.collector_run`) de los recursos monitoreados de la organización. Requiere permiso `acquisitions:read`.
+
+**Query params:** `resource_uid`, `source` (`azure_monitor_metrics`|`sql_diagnostics`|`query_store`), `status` (`ok`|`partial`|`error`), `limit` (default 50, máx 500).
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET "http://localhost:8080/api/v1/acquisitions?source=azure_monitor_metrics&status=error&limit=10" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+[
+  {
+    "collector_run_id": 42,
+    "resource_uid": "uuid-recurso",
+    "source": "azure_monitor_metrics",
+    "scope": "sub-1234",
+    "started_at_utc": 1730123456789,
+    "finished_at_utc": 1730123458456,
+    "status": "ok",
+    "rows_ingested": 50
+  }
+]
+```
+
+**Errores posibles:**
+- `400 Bad Request` — `INVALID_REQUEST` (filtros inválidos)
+- `503 Service Unavailable` — `STORAGE_UNAVAILABLE`
+- `401/403` — authz insuficiente
+
+---
+
+### GET /api/v1/acquisitions/{id}
+
+Detalle de una corrida. Requiere permiso `acquisitions:read`. Si la corrida pertenece a otra organización responde `404` (no revela su existencia).
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET "http://localhost:8080/api/v1/acquisitions/42" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):** (objeto como el de la lista, con `error_message` cuando aplique)
+
+**Errores posibles:**
+- `400 Bad Request` — `INVALID_REQUEST` (`id` no numérico)
+- `404 Not Found` — `ACQUISITION_RUN_NOT_FOUND`
+- `503 Service Unavailable` — `STORAGE_UNAVAILABLE`
+- `401/403` — authz insuficiente
+
