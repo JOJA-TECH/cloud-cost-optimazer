@@ -200,6 +200,26 @@ func (s *Service) SetDataSourceMonitored(ctx context.Context, orgID, id uuid.UUI
 	return s.bindings.SetBindingMonitored(ctx, id, monitored)
 }
 
+// ResolveSecretRef resolves a credential_reference ("env:VAR" or bare "VAR")
+// to a secret taken exclusively from the environment. It never logs or
+// persists the secret. Shared by the cloud and acquisition modules.
+func ResolveSecretRef(ref string) (string, error) {
+	var varName string
+	if strings.HasPrefix(ref, "env:") {
+		varName = ref[4:]
+	} else {
+		varName = ref
+	}
+	if varName == "" {
+		return "", ErrCredentialsUnavailable
+	}
+	secret, ok := os.LookupEnv(varName)
+	if !ok || secret == "" {
+		return "", ErrCredentialsUnavailable
+	}
+	return secret, nil
+}
+
 // resolveCredentials resolves ConnectionCredentials from an account DTO.
 // The secret comes only from the environment via credential_reference.
 // shortcut: secrets only from env this iteration; upgrade: Key Vault / Managed Identity (RNF-02).
@@ -212,19 +232,9 @@ func resolveCredentials(a AccountDTO) (ConnectionCredentials, error) {
 	if creds.TenantID == "" {
 		return ConnectionCredentials{}, ErrCredentialsUnavailable
 	}
-	ref := a.CredentialReference
-	var varName string
-	if strings.HasPrefix(ref, "env:") {
-		varName = ref[4:]
-	} else {
-		varName = ref
-	}
-	if varName == "" {
-		return ConnectionCredentials{}, ErrCredentialsUnavailable
-	}
-	secret, ok := os.LookupEnv(varName)
-	if !ok || secret == "" {
-		return ConnectionCredentials{}, ErrCredentialsUnavailable
+	secret, err := ResolveSecretRef(a.CredentialReference)
+	if err != nil {
+		return ConnectionCredentials{}, err
 	}
 	creds.ClientSecret = secret
 	return creds, nil

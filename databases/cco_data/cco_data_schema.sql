@@ -110,7 +110,9 @@ INSERT INTO catalog.metric_catalog (metric_code, display_name, unit, source, is_
     ('log_write_percent',  'Log write percentage',     'Percent', 'database_watcher',  true,  'Porcentaje de escritura de log.'),
     ('memory_usage_percent','Memory usage percentage', 'Percent', 'database_watcher',  true,  'Porcentaje de uso de memoria del buffer pool.'),
     ('instance_cpu_percent','Instance CPU percentage', 'Percent', 'database_watcher',  false, 'CPU a nivel de instancia SQL (contexto de vecinos).'),
-    ('query_duration_ms',  'Query duration',           'Milliseconds', 'query_store',      false, 'Duración de una ejecución individual; solo es válida para percentiles si la fuente entrega observaciones individuales.')
+    ('query_duration_ms',  'Query duration',           'Milliseconds', 'query_store',      false, 'Duración de una ejecución individual; solo es válida para percentiles si la fuente entrega observaciones individuales.'),
+    ('sessions_count',     'Sessions count',           'Count',   'azure_monitor',     true,  'Número de sesiones de usuario activas por intervalo (Azure Monitor / sys.dm_exec_sessions).'),
+    ('dtu_consumption_percent', 'DTU consumption',     'Percent', 'azure_monitor',     false, 'Porcentaje de DTU consumido; solo aplica a SKUs basadas en DTU.')
 ON CONFLICT (metric_code) DO NOTHING;
 
 -- 1.4 Clases de workload del dataset experimental (plan Cuadro 3)
