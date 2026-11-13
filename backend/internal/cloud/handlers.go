@@ -86,12 +86,12 @@ func handleRegisterAccount(svc *Service) http.HandlerFunc {
 		}
 		ic, _ := iam.IdentityContextFromContext(r.Context())
 		var req struct {
-			ProviderCode       string `json:"provider_code"`
-			DisplayName        string `json:"display_name"`
-			SubscriptionID     string `json:"subscription_id"`
-			TenantID           string `json:"tenant_id"`
-			ClientID           *string `json:"client_id,omitempty"`
-			CredentialReference string `json:"credential_reference"`
+			ProviderCode        string  `json:"provider_code"`
+			DisplayName         string  `json:"display_name"`
+			SubscriptionID      string  `json:"subscription_id"`
+			TenantID            string  `json:"tenant_id"`
+			ClientID            *string `json:"client_id,omitempty"`
+			CredentialReference string  `json:"credential_reference"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
@@ -192,7 +192,7 @@ func handleSyncResources(svc *Service) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"synced":   len(resources),
+			"synced":    len(resources),
 			"resources": toResourceAPI(resources),
 		})
 	}

@@ -55,18 +55,18 @@ type ResourceProvider interface {
 
 // AccountDTO mirrors cloud.accounts.
 type AccountDTO struct {
-	CloudAccountID     uuid.UUID `json:"cloud_account_id"`
-	OrganizationID     uuid.UUID `json:"organization_id"`
-	ProviderCode       string    `json:"provider_code"`
-	DisplayName        string    `json:"display_name"`
-	SubscriptionID     string    `json:"subscription_id"`
-	TenantID           string    `json:"tenant_id"`
-	ClientID           string    `json:"client_id"`
-	CredentialReference string   `json:"credential_reference"`
-	Status             string    `json:"status"`
-	LastConnectionError *string  `json:"last_connection_error,omitempty"`
-	CreatedAt          int64     `json:"created_at"` // unix ms
-	UpdatedAt          int64     `json:"updated_at"` // unix ms
+	CloudAccountID      uuid.UUID `json:"cloud_account_id"`
+	OrganizationID      uuid.UUID `json:"organization_id"`
+	ProviderCode        string    `json:"provider_code"`
+	DisplayName         string    `json:"display_name"`
+	SubscriptionID      string    `json:"subscription_id"`
+	TenantID            string    `json:"tenant_id"`
+	ClientID            string    `json:"client_id"`
+	CredentialReference string    `json:"credential_reference"`
+	Status              string    `json:"status"`
+	LastConnectionError *string   `json:"last_connection_error,omitempty"`
+	CreatedAt           int64     `json:"created_at"` // unix ms
+	UpdatedAt           int64     `json:"updated_at"` // unix ms
 }
 
 // ResourceDTO json tags for API responses.
@@ -98,13 +98,13 @@ type BindingDTO struct {
 }
 
 type CreateAccountInput struct {
-	OrgID             uuid.UUID
-	UserID            uuid.UUID
-	ProviderCode      string
-	DisplayName       string
-	SubscriptionID    string
-	TenantID          string
-	ClientID          *string
+	OrgID               uuid.UUID
+	UserID              uuid.UUID
+	ProviderCode        string
+	DisplayName         string
+	SubscriptionID      string
+	TenantID            string
+	ClientID            *string
 	CredentialReference string
 }
 

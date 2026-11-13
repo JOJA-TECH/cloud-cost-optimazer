@@ -52,7 +52,7 @@ func (r *resourceRepository) UpsertResources(ctx context.Context, accountID uuid
 	}
 
 	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "azure_resource_id"}},
+		Columns: []clause.Column{{Name: "azure_resource_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"subscription_id", "server_name", "database_name", "region_code",
 			"kind", "lifecycle_status", "last_seen_at", "updated_at",

@@ -93,9 +93,9 @@ func (r *accountRepository) GetAccount(ctx context.Context, id uuid.UUID) (cloud
 
 func (r *accountRepository) UpdateAccountStatus(ctx context.Context, id uuid.UUID, status string, connectionError *string) error {
 	updates := map[string]interface{}{
-		"status":              status,
+		"status":                status,
 		"last_connection_error": connectionError,
-		"updated_at":          time.Now().UTC(),
+		"updated_at":            time.Now().UTC(),
 	}
 	err := r.db.WithContext(ctx).
 		Table(database.TableName(r.db, "cloud", "accounts")).
@@ -114,18 +114,18 @@ func toAccountDTO(m database.CloudAccountModel) cloud.AccountDTO {
 	clientID = m.ClientID
 	lastErr = m.LastConnectionError
 	return cloud.AccountDTO{
-		CloudAccountID:     m.CloudAccountID,
-		OrganizationID:     m.OrganizationID,
-		ProviderCode:       m.ProviderCode,
-		DisplayName:        m.DisplayName,
-		SubscriptionID:     m.SubscriptionID,
-		TenantID:           strVal(tenantID),
-		ClientID:           strVal(clientID),
+		CloudAccountID:      m.CloudAccountID,
+		OrganizationID:      m.OrganizationID,
+		ProviderCode:        m.ProviderCode,
+		DisplayName:         m.DisplayName,
+		SubscriptionID:      m.SubscriptionID,
+		TenantID:            strVal(tenantID),
+		ClientID:            strVal(clientID),
 		CredentialReference: strVal(credRef),
-		Status:             m.Status,
+		Status:              m.Status,
 		LastConnectionError: lastErr,
-		CreatedAt:          m.CreatedAt.UnixMilli(),
-		UpdatedAt:          m.UpdatedAt.UnixMilli(),
+		CreatedAt:           m.CreatedAt.UnixMilli(),
+		UpdatedAt:           m.UpdatedAt.UnixMilli(),
 	}
 }
 

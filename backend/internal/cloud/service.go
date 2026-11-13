@@ -11,21 +11,21 @@ import (
 
 // Service coordinates cloud account, resource, and data source operations.
 type Service struct {
-	accounts AccountRepository
+	accounts  AccountRepository
 	resources ResourceRepository
-	bindings DataSourceRepository
+	bindings  DataSourceRepository
 	validator ConnectionValidator
-	provider ResourceProvider
+	provider  ResourceProvider
 }
 
 // NewService constructs a Service.
 func NewService(accounts AccountRepository, resources ResourceRepository, bindings DataSourceRepository, validator ConnectionValidator, provider ResourceProvider) *Service {
 	return &Service{
-		accounts: accounts,
+		accounts:  accounts,
 		resources: resources,
-		bindings: bindings,
+		bindings:  bindings,
 		validator: validator,
-		provider: provider,
+		provider:  provider,
 	}
 }
 

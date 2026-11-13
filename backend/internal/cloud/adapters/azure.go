@@ -39,9 +39,9 @@ type AzureAdapter struct {
 // NewAzureAdapter returns a real Azure adapter pointing at the public ARM endpoint.
 func NewAzureAdapter() *AzureAdapter {
 	return &AzureAdapter{
-		baseURL:   defaultARMBase,
+		baseURL:    defaultARMBase,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
-		tokenFunc: realToken,
+		tokenFunc:  realToken,
 	}
 }
 
@@ -49,9 +49,9 @@ func NewAzureAdapter() *AzureAdapter {
 // ARM base URL at an httptest server.
 func newAzureAdapterWithBase(baseURL string) *AzureAdapter {
 	return &AzureAdapter{
-		baseURL:   baseURL,
+		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
-		tokenFunc: realToken,
+		tokenFunc:  realToken,
 	}
 }
 
@@ -114,7 +114,7 @@ func (a *AzureAdapter) armGet(ctx context.Context, token, url string) ([]byte, e
 
 // armPage is the ARM paged envelope (value[] + nextLink).
 type armPage[T any] struct {
-	Value    []T `json:"value"`
+	Value    []T    `json:"value"`
 	NextLink string `json:"nextLink"`
 }
 

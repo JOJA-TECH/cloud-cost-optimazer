@@ -124,9 +124,9 @@ func TestListSQLDatabasesSuccess(t *testing.T) {
 			writeJSON(t, w, http.StatusOK, map[string]interface{}{
 				"value": []interface{}{
 					map[string]interface{}{
-						"id":   "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName,
-						"name": serverName,
-						"kind": "v12.0",
+						"id":       "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName,
+						"name":     serverName,
+						"kind":     "v12.0",
 						"location": "eastus",
 					},
 				},
@@ -140,21 +140,21 @@ func TestListSQLDatabasesSuccess(t *testing.T) {
 			writeJSON(t, w, http.StatusOK, map[string]interface{}{
 				"value": []interface{}{
 					map[string]interface{}{
-						"id":     "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/db-sales",
-						"name":   "db-sales",
-						"kind":   "v12.0,user,vcore",
+						"id":       "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/db-sales",
+						"name":     "db-sales",
+						"kind":     "v12.0,user,vcore",
 						"location": "eastus",
 					},
 					map[string]interface{}{
-						"id":     "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/db-billing",
-						"name":   "db-billing",
-						"kind":   "v12.0,user,vcore,provisioned",
+						"id":       "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/db-billing",
+						"name":     "db-billing",
+						"kind":     "v12.0,user,vcore,provisioned",
 						"location": "eastus",
 					},
 					map[string]interface{}{
-						"id":     "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/master",
-						"name":   "master",
-						"kind":   "v12.0,system",
+						"id":       "/subscriptions/" + testSub + "/resourceGroups/" + resourceGroup + "/providers/Microsoft.Sql/servers/" + serverName + "/databases/master",
+						"name":     "master",
+						"kind":     "v12.0,system",
 						"location": "eastus",
 					},
 				},
@@ -324,4 +324,3 @@ func TestListSQLDatabasesNetworkError(t *testing.T) {
 		t.Fatalf("expected ErrProviderUnavailable for network error, got %v", err)
 	}
 }
-

@@ -15,6 +15,9 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
 	acqadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/adapters"
 	acqrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
+	analyticsadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/adapters"
+	analyticsrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
@@ -240,6 +243,8 @@ func main() {
 	var acqWriter data.DataWriter
 	var acqRuns data.RunReader
 	var dataSvc *data.Service
+	var analyticsRepo *analyticsrepos.AnalyticsRepository
+	var analyticsSvc *analytics.Service
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
 		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
 		if err != nil {
@@ -249,6 +254,17 @@ func main() {
 		acqWriter = dataRepo
 		acqRuns = dataRepo
 		dataSvc = data.NewService(dataRepo)
+
+		// Analytics module (Module 5)
+		analyticsRepo = analyticsrepos.NewAnalyticsRepository(dataDB)
+		var mlClient analytics.MLPort
+		if mode == "azure" {
+			// Real ML client would go here; for now fake
+			mlClient = analyticsadapters.NewFakeMLClient()
+		} else {
+			mlClient = analyticsadapters.NewFakeMLClient()
+		}
+		analyticsSvc = analytics.NewService(analyticsRepo, dataRepo, dataRepo, dataRepo, mlClient, 4)
 	}
 	acqTargets := acqrepos.NewTargetRepository(db)
 
@@ -257,6 +273,7 @@ func main() {
 	var qstoreProvider acquisition.QueryStoreProvider
 	var configProvider acquisition.ConfigProvider
 	var costProvider acquisition.CostProvider
+	var sampleProvider acquisition.SampleProvider
 	if mode == "azure" {
 		metricsProvider = acqadapters.NewAzureMonitorProvider()
 		sqlDiag := acqadapters.NewSQLServerDiagnostics()
@@ -264,18 +281,23 @@ func main() {
 		qstoreProvider = sqlDiag
 		configProvider = acqadapters.NewAzureConfigProvider()
 		costProvider = acqadapters.NewAzureCostProvider()
+		// Azure Monitor PT1M does not expose individual samples; SampleProvider
+		// would be a no-op. Query Store samples come via FakeSample in dev.
+		sampleProvider = nil
 	} else {
 		metricsProvider = acqadapters.NewFakeMonitor()
 		diagProvider = acqadapters.NewFakeDiagnostics()
 		qstoreProvider = acqadapters.NewFakeQueryStore()
 		configProvider = acqadapters.NewFakeConfig()
 		costProvider = acqadapters.NewFakeCost()
+		sampleProvider = acqadapters.NewFakeSample()
 	}
-	acqSvc := acquisition.NewService(acqTargets, acqWriter, acqRuns, metricsProvider, diagProvider, qstoreProvider, configProvider, costProvider, acquisition.Config{
-		MonitorDelay:    envSeconds("CCO_ACQ_MONITOR_DELAY_SECONDS", 90*time.Second),
-		MonitorLookback: envSeconds("CCO_ACQ_MONITOR_LOOKBACK_SECONDS", 300*time.Second),
-		SQLUser:         os.Getenv("CCO_ACQ_SQL_USER"),
-		SQLPassword:     os.Getenv("CCO_ACQ_SQL_PASSWORD"),
+	acqSvc := acquisition.NewService(acqTargets, acqWriter, acqRuns, metricsProvider, diagProvider, qstoreProvider, configProvider, costProvider, sampleProvider, acquisition.Config{
+		MonitorDelay:     envSeconds("CCO_ACQ_MONITOR_DELAY_SECONDS", 90*time.Second),
+		MonitorLookback:  envSeconds("CCO_ACQ_MONITOR_LOOKBACK_SECONDS", 300*time.Second),
+		CostLookbackDays: envDays("CCO_ACQ_COST_LOOKBACK_DAYS", 3*24*time.Hour),
+		SQLUser:          os.Getenv("CCO_ACQ_SQL_USER"),
+		SQLPassword:      os.Getenv("CCO_ACQ_SQL_PASSWORD"),
 	})
 	if acqWriter != nil {
 		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(context.Background())
@@ -385,6 +407,10 @@ func main() {
 	// CCO_DATA_DSN not configured → endpoints answer 503.
 	data.RegisterRoutes(mux, dataSvc, authMiddleware, permEngine)
 
+	// Analytics routes (Module 5): analytical evidence endpoints. nil service =
+	// CCO_DATA_DSN not configured → endpoints answer 503.
+	analytics.RegisterRoutes(mux, analyticsSvc, authMiddleware, permEngine)
+
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
 	// (in-memory fallbacks when CCO_VALKEY_ADDR is unset).
@@ -470,6 +496,17 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// envDays parses a positive integer of days from the environment falling
+// back to def on missing or invalid values.
+func envDays(name string, def time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * 24 * time.Hour
+		}
+	}
+	return def
 }
 
 // envSeconds parses a positive integer of seconds from the environment
