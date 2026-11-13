@@ -12,6 +12,7 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
+	datarepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/data/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -28,7 +29,7 @@ func openAcqDataDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open cco_data sqlite: %v", err)
 	}
-	if err := acqrepos.MigrateDataTables(dataDB); err != nil {
+	if err := datarepos.MigrateDataTables(dataDB); err != nil {
 		t.Fatalf("migrate cco_data tables: %v", err)
 	}
 	// SQLite serializes writers; a single connection avoids SQLITE_LOCKED when
@@ -96,9 +97,10 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 	resourceUID := seedMonitoredBinding(t, db, orgID, userID, projectID)
 
 	targets := acqrepos.NewTargetRepository(db)
-	repo := acqrepos.NewDataRepository(dataDB)
-	svc := acquisition.NewService(targets, repo,
+	repo := datarepos.NewDataRepository(dataDB)
+	svc := acquisition.NewService(targets, repo, repo,
 		acqadapters.NewFakeMonitor(), acqadapters.NewFakeDiagnostics(), acqadapters.NewFakeQueryStore(),
+		acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(),
 		acquisition.Config{
 			MonitorDelay:    90 * time.Second,
 			MonitorLookback: 5 * time.Minute,
@@ -108,13 +110,14 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 		},
 	)
 
-	t.Run("cycle runs monitor + dmv + query store for the monitored target", func(t *testing.T) {
+	t.Run("cycle runs monitor + config + dmv + query store for the monitored target", func(t *testing.T) {
 		outcomes, err := svc.RunCycle(ctx, &orgID, nil)
 		if err != nil {
 			t.Fatalf("RunCycle: %v", err)
 		}
-		if len(outcomes) != 3 {
-			t.Fatalf("outcomes = %d, want 3", len(outcomes))
+		// Now 4 sources: azure_monitor_metrics, arm_config, sql_diagnostics, query_store
+		if len(outcomes) != 4 {
+			t.Fatalf("outcomes = %d, want 4", len(outcomes))
 		}
 		sources := map[string]bool{}
 		for _, out := range outcomes {
@@ -129,7 +132,7 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 				t.Errorf("source %s rows_ingested = %d, want > 0", out.Source, out.RowsIngested)
 			}
 		}
-		for _, want := range []string{acquisition.SourceAzureMonitor, acquisition.SourceSQLDiag, acquisition.SourceQueryStore} {
+		for _, want := range []string{acquisition.SourceAzureMonitor, "arm_config", acquisition.SourceSQLDiag, acquisition.SourceQueryStore} {
 			if !sources[want] {
 				t.Errorf("missing source %s in outcomes %v", want, outcomes)
 			}
@@ -189,8 +192,9 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 	})
 
 	t.Run("no storage configured → ErrStorageUnavailable", func(t *testing.T) {
-		noStore := acquisition.NewService(targets, nil,
+		noStore := acquisition.NewService(targets, nil, nil,
 			acqadapters.NewFakeMonitor(), acqadapters.NewFakeDiagnostics(), acqadapters.NewFakeQueryStore(),
+			acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(),
 			acquisition.Config{SQLUser: "w", SQLPassword: "p"},
 		)
 		if _, err := noStore.RunCycle(ctx, &orgID, nil); !errors.Is(err, acquisition.ErrStorageUnavailable) {

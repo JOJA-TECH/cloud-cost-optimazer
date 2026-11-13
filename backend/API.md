@@ -1105,3 +1105,162 @@ curl -X GET "http://localhost:8080/api/v1/acquisitions/42" -H "Authorization: Be
 - `503 Service Unavailable` — `STORAGE_UNAVAILABLE`
 - `401/403` — authz insuficiente
 
+---
+
+## 14. Endpoints del módulo Gestión de Datos
+
+Todos los endpoints son **solo lectura** sobre `cco_data`, requieren `Authorization: Bearer <access_token>` + permiso `data:read`. Están definidos en `backend/internal/data/handlers.go`. Si `CCO_DATA_DSN` no está configurado, responden `503 DATA_STORAGE_UNAVAILABLE`.
+
+### GET /api/v1/data/metrics
+
+Serie histórica de una métrica para un recurso. Requiere permiso `data:read`.
+
+**Query params (requeridos):** `resource_uid` (uuid), `metric_code` (código de `catalog.metric_catalog`, ej. `cpu_percent`), `from` (RFC3339 UTC), `to` (RFC3339 UTC). **Opcional:** `limit` (default 1000, máx 10000).
+
+**Request (PowerShell):**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+$from = (Get-Date "2026-11-01T00:00:00Z").ToString("o")
+$to   = (Get-Date "2026-11-02T00:00:00Z").ToString("o")
+curl -X GET "http://localhost:8080/api/v1/data/metrics?resource_uid=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE&metric_code=cpu_percent&from=$from&to=$to&limit=500" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+{
+  "resource_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "metric_code": "cpu_percent",
+  "points": [
+    {
+      "timestamp_utc": "2026-11-01T00:05:00Z",
+      "interval_seconds": 60,
+      "avg": 12.5,
+      "min": 8.1,
+      "max": 18.3,
+      "total": 750,
+      "count": 60
+    }
+  ]
+}
+```
+
+**Errores posibles:**
+- `400 Bad Request` — `DATA_INVALID_QUERY` (parámetros faltantes o inválidos)
+- `404 Not Found` — `DATA_NOT_FOUND` (recurso no existe en cco_data)
+- `503 Service Unavailable` — `DATA_STORAGE_UNAVAILABLE` (falta `CCO_DATA_DSN`)
+- `401/403` — authz insuficiente
+
+---
+
+### GET /api/v1/data/costs
+
+Registros de costo diario. Dos modos: por recurso (`resource_uid`) **o** por scope (`scope_type` + `scope_name`). Requiere permiso `data:read`.
+
+**Query params (uno de dos conjuntos):**
+- Por recurso: `resource_uid` (requerido), `from`, `to`, `limit` (def 50, máx 500).
+- Por scope: `scope_type` (`subscription`|`resource_group`|`resource`), `scope_name` (requeridos), `from`, `to`, `limit`.
+
+**Request (por recurso):**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET "http://localhost:8080/api/v1/data/costs?resource_uid=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE&from=2026-11-01T00:00:00Z&to=2026-11-08T00:00:00Z" -H "Authorization: Bearer $token"
+```
+
+**Request (por scope):**
+```powershell
+curl -X GET "http://localhost:8080/api/v1/data/costs?scope_type=subscription&scope_name=sub-1234&from=2026-11-01T00:00:00Z&to=2026-11-08T00:00:00Z" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):** array de filas, más recientes primero:
+```json
+[
+  {
+    "resource_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "provider_code": "azure",
+    "scope_type": "subscription",
+    "scope_name": "sub-1234",
+    "service_name": "SQL Database",
+    "region_code": "eastus2",
+    "usage_date": "2026-11-05",
+    "currency": "USD",
+    "source_charge_id": "cost:sub-1234:2026-11-05:abc123",
+    "meter_id": "2d6ad12e-49dd-4279-9c6b-e0cd904957ab",
+    "pre_tax_cost": 8.6,
+    "usage_quantity": 24,
+    "usage_unit": "1 Hour",
+    "pricing_model": "consumption",
+    "charge_category": "usage",
+    "source": "azure_cost_management"
+  }
+]
+```
+Los costos sin recurso mapeado (Storage, VNet) tienen `resource_uid: null`.
+
+**Errores posibles:**
+- `400 Bad Request` — `DATA_INVALID_QUERY` (faltan `resource_uid` o `scope_type+scope_name`, o `scope_type` inválido, o fechas)
+- `503 Service Unavailable` — `DATA_STORAGE_UNAVAILABLE`
+- `401/403` — authz insuficiente
+
+---
+
+### GET /api/v1/data/config-snapshots
+
+Historial de configuración (ARM) de un recurso, más reciente primero. Requiere permiso `data:read`.
+
+**Query params (requeridos):** `resource_uid`. **Opcionales:** `from`, `to` (RFC3339 UTC), `limit` (def 50, máx 500).
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET "http://localhost:8080/api/v1/data/config-snapshots?resource_uid=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE&limit=10" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):** array descendente por `observed_at_utc`:
+```json
+[
+  {
+    "observed_at_utc": "2026-11-02T12:00:00Z",
+    "sku_name": "GP_Gen5_4",
+    "tier": "GeneralPurpose",
+    "family": "Gen5",
+    "capacity_vcores": 4,
+    "compute_model": "provisioned",
+    "max_size_bytes": 107374182400,
+    "auto_pause_delay_minutes": null,
+    "status": "Online",
+    "free_limit": false
+  }
+]
+```
+
+**Errores posibles:** `DATA_INVALID_QUERY` (parámetros), `DATA_NOT_FOUND`, `DATA_STORAGE_UNAVAILABLE`, `401/403`.
+
+---
+
+### GET /api/v1/data/coverage
+
+Disponibilidad y cobertura de una métrica en una ventana (HU-05). Bucketiza las lecturas por hora/día, cuenta huecos y emite estado `sufficient`/`insufficient` contra `min_coverage`. Requiere permiso `data:read`.
+
+**Query params (requeridos):** `resource_uid`, `metric_code`, `from`, `to`. **Opcionales:** `bucket` (`1h`|`1d`, def `1h`), `min_coverage` (float 0–1, def `0.8`).
+
+**Request:**
+```powershell
+$token = "PEGAR_ACCESS_TOKEN_AQUI"
+curl -X GET "http://localhost:8080/api/v1/data/coverage?resource_uid=AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE&metric_code=cpu_percent&from=2026-11-01T00:00:00Z&to=2026-11-02T00:00:00Z&bucket=1h&min_coverage=0.8" -H "Authorization: Bearer $token"
+```
+
+**Response (200 OK):**
+```json
+{
+  "bucket": "1h",
+  "windows_total": 24,
+  "windows_with_data": 24,
+  "gaps": 0,
+  "total_readings": 1440,
+  "coverage_ratio": 1.0,
+  "state": "sufficient"
+}
+```
+
+**Errores posibles:** `DATA_INVALID_QUERY` (parámetros), `DATA_NOT_FOUND`, `DATA_STORAGE_UNAVAILABLE`, `401/403`.
+

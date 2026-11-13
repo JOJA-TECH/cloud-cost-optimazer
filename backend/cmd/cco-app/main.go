@@ -18,6 +18,8 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/data"
+	datarepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/data/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/adapters"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/middleware"
@@ -233,38 +235,73 @@ func main() {
 
 	// ── Acquisition module (Module 3) ────────────────────────────────────
 	// Targets and credentials come from cco_app; telemetry lands in cco_data
-	// through a second connection (ADR-002: no cross-database FKs).
-	var acqRepo acquisition.AcquisitionRepository
+	// through the Gestión de Datos contracts (internal/data — ADR-002: no
+	// cross-database FKs).
+	var acqWriter data.DataWriter
+	var acqRuns data.RunReader
+	var dataSvc *data.Service
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
 		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
 		if err != nil {
 			log.Fatalf("open cco_data database: %v", err)
 		}
-		acqRepo = acqrepos.NewDataRepository(dataDB)
+		dataRepo := datarepos.NewDataRepository(dataDB)
+		acqWriter = dataRepo
+		acqRuns = dataRepo
+		dataSvc = data.NewService(dataRepo)
 	}
 	acqTargets := acqrepos.NewTargetRepository(db)
 
 	var metricsProvider acquisition.MetricsProvider
 	var diagProvider acquisition.DiagnosticsProvider
 	var qstoreProvider acquisition.QueryStoreProvider
+	var configProvider acquisition.ConfigProvider
+	var costProvider acquisition.CostProvider
 	if mode == "azure" {
 		metricsProvider = acqadapters.NewAzureMonitorProvider()
 		sqlDiag := acqadapters.NewSQLServerDiagnostics()
 		diagProvider = sqlDiag
 		qstoreProvider = sqlDiag
+		configProvider = acqadapters.NewAzureConfigProvider()
+		costProvider = acqadapters.NewAzureCostProvider()
 	} else {
 		metricsProvider = acqadapters.NewFakeMonitor()
 		diagProvider = acqadapters.NewFakeDiagnostics()
 		qstoreProvider = acqadapters.NewFakeQueryStore()
+		configProvider = acqadapters.NewFakeConfig()
+		costProvider = acqadapters.NewFakeCost()
 	}
-	acqSvc := acquisition.NewService(acqTargets, acqRepo, metricsProvider, diagProvider, qstoreProvider, acquisition.Config{
+	acqSvc := acquisition.NewService(acqTargets, acqWriter, acqRuns, metricsProvider, diagProvider, qstoreProvider, configProvider, costProvider, acquisition.Config{
 		MonitorDelay:    envSeconds("CCO_ACQ_MONITOR_DELAY_SECONDS", 90*time.Second),
 		MonitorLookback: envSeconds("CCO_ACQ_MONITOR_LOOKBACK_SECONDS", 300*time.Second),
 		SQLUser:         os.Getenv("CCO_ACQ_SQL_USER"),
 		SQLPassword:     os.Getenv("CCO_ACQ_SQL_PASSWORD"),
 	})
-	if acqRepo != nil {
+	if acqWriter != nil {
 		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(context.Background())
+
+		// Cost scheduler (T5): separate ticker, runs per-subscription.
+		go func() {
+			ticker := time.NewTicker(envSeconds("CCO_ACQ_COST_INTERVAL_SECONDS", 6*time.Hour))
+			defer ticker.Stop()
+			slog.Info("cost scheduler started", "interval", envSeconds("CCO_ACQ_COST_INTERVAL_SECONDS", 6*time.Hour))
+			for {
+				select {
+				case <-ctx.Done():
+					slog.Info("cost scheduler stopped")
+					return
+				case <-ticker.C:
+					_, err := acqSvc.RunCostCycle(ctx, nil)
+					if err != nil {
+						if err == acquisition.ErrStorageUnavailable {
+							slog.Warn("cost cycle skipped: cco_data storage not configured")
+							continue
+						}
+						slog.Warn("cost cycle failed", "error", err.Error())
+					}
+				}
+			}
+		}()
 	}
 
 	// ── Adapters ─────────────────────────────────────────────────────────
@@ -343,6 +380,10 @@ func main() {
 
 	// Acquisition routes (Module 3)
 	acquisition.RegisterRoutes(mux, acqSvc, authMiddleware, permEngine)
+
+	// Data routes (Module 4): read-only queries over cco_data. nil service =
+	// CCO_DATA_DSN not configured → endpoints answer 503.
+	data.RegisterRoutes(mux, dataSvc, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
