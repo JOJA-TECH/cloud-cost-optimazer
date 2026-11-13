@@ -22,6 +22,19 @@ Este repositorio contiene la documentación operativa, técnica, experimental y 
 - `11-releases/`: versiones y notas de lanzamiento.
 - `registry/`: índices y registros maestros.
 
+## Backend implementado
+
+El backend Go (`backend/`) documenta su API HTTP en `API.md` y su guía de ejecución, reglas de portabilidad y pruebas en `backend/README.md`. Módulos ya implementados en `backend/internal/`:
+
+- `iam` — Identidad y Acceso (auth JWT/Argon2id, OIDC, M2M, refresh tokens, rate limiting, lockout, roles y permisos)
+- `cloud` — Gestión de Nube y Fuentes de Datos (cuentas cloud, validación de conexión, sincronización de recursos, fuentes de datos/bindings)
+- `acquisition` — Adquisición y Monitoreo de Datos (scheduler de ciclos, Azure Monitor, diagnósticos SQL, Query Store, costos diarios)
+- `data` — Gestión de Datos (API de solo lectura sobre `cco_data`: métricas, costos, snapshots de configuración, cobertura)
+- `analytics` — Analítica y Optimización (17 endpoints REST: snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts)
+- `platform/database` — persistencia GORM portátil SQLite/PostgreSQL
+
+Pendientes de implementar: Integración con ML, Motor de Recomendaciones, Auditoría y Trazabilidad, Simulación y Laboratorio, Reportes.
+
 ## Identificadores
 
 `REQ`, `ADR`, `DEC`, `MTG`, `ISS`, `CHG`, `RSK`, `RES`, `LAB`, `EXP`, `BEN`, `DATA`, `MOD`, `TEST`, `REL`, `RESU`.
