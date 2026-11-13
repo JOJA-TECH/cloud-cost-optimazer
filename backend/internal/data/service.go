@@ -120,7 +120,10 @@ func (s *Service) Coverage(ctx context.Context, resourceUID uuid.UUID, metricCod
 	// distinct buckets = buckets with data, len(ts) = total readings.
 	slots := make(map[time.Time]struct{}, len(ts))
 	for _, t := range ts {
-		slots[bucketStart(t, step)] = struct{}{}
+		// bucketStart truncates sub-second precision so readings in the same
+		// logical bucket collapse to a single map key.
+		bucket := bucketStart(t, step)
+		slots[bucket] = struct{}{}
 	}
 	withData := len(slots)
 	ratio := float64(withData) / float64(total)

@@ -54,7 +54,7 @@ func TestCoverageValidation(t *testing.T) {
 func TestCoverageHourlyBucketing(t *testing.T) {
 	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	ts := []time.Time{
-		day.Add(15 * time.Minute), // slot 00
+		day.Add(15 * time.Minute),             // slot 00
 		day.Add(1*time.Hour + 45*time.Minute), // slot 01
 		day.Add(1*time.Hour + 50*time.Minute), // slot 01 (same bucket)
 	}

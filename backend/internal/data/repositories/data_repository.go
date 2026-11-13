@@ -39,6 +39,7 @@ func MigrateDataTables(db *gorm.DB) error {
 	models := []any{
 		&collectorRunRow{},
 		&metricReadingRow{},
+		&metricSampleRow{},
 		&dbResourceStatRow{},
 		&queryStoreQueryRow{},
 		&queryStoreRuntimeStatRow{},
@@ -87,6 +88,19 @@ type metricReadingRow struct {
 }
 
 func (metricReadingRow) TableName() string { return "metric_reading" }
+
+type metricSampleRow struct {
+	SampleID       int64     `gorm:"column:sample_id;primaryKey;autoIncrement"`
+	ResourceID     int64     `gorm:"column:resource_id;not null"`
+	MetricCode     string    `gorm:"column:metric_code;not null"`
+	ObservedAtUTC  time.Time `gorm:"column:observed_at_utc;not null"`
+	Value          float64   `gorm:"column:value;not null"`
+	Source         string    `gorm:"column:source;not null"`
+	SourceSampleID *string   `gorm:"column:source_sample_id"`
+	CollectedAt    time.Time `gorm:"column:collected_at;not null"`
+}
+
+func (metricSampleRow) TableName() string { return "metric_sample" }
 
 type dbResourceStatRow struct {
 	ResourceID            int64     `gorm:"column:resource_id;not null;primaryKey"`
@@ -346,6 +360,33 @@ func (r *DataRepository) WriteMetricReadings(ctx context.Context, resourceID int
 	result := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Table(database.TableName(r.db, "raw", "metric_reading")).
+		Create(&rows)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
+}
+
+func (r *DataRepository) WriteMetricSamples(ctx context.Context, resourceID int64, samples []data.RawSample) (int, error) {
+	if len(samples) == 0 {
+		return 0, nil
+	}
+	now := time.Now().UTC()
+	rows := make([]metricSampleRow, 0, len(samples))
+	for _, s := range samples {
+		rows = append(rows, metricSampleRow{
+			ResourceID:     resourceID,
+			MetricCode:     s.MetricCode,
+			ObservedAtUTC:  s.ObservedAtUTC,
+			Value:          s.Value,
+			Source:         s.Source,
+			SourceSampleID: s.SourceSampleID,
+			CollectedAt:    now,
+		})
+	}
+	result := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Table(database.TableName(r.db, "raw", "metric_sample")).
 		Create(&rows)
 	if result.Error != nil {
 		return 0, result.Error

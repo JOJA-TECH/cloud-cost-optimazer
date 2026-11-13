@@ -425,8 +425,8 @@ func TestCoverageEndToEnd(t *testing.T) {
 	metrics := make([]data.Metric, 0, 3)
 	for _, h := range []int{0, 1, 2} {
 		metrics = append(metrics, data.Metric{
-			MetricCode: "cpu_percent",
-			TimestampUTC: day.Add(time.Duration(h)*time.Hour + 5*time.Minute),
+			MetricCode:      "cpu_percent",
+			TimestampUTC:    day.Add(time.Duration(h)*time.Hour + 5*time.Minute),
 			IntervalSeconds: 60, AvgValue: ptrF(10),
 		})
 	}

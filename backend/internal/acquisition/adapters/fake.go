@@ -21,6 +21,7 @@ var (
 	_ acquisition.QueryStoreProvider  = (*FakeQueryStore)(nil)
 	_ acquisition.ConfigProvider      = (*FakeConfig)(nil)
 	_ acquisition.CostProvider        = (*FakeCost)(nil)
+	_ acquisition.SampleProvider      = (*FakeSample)(nil)
 )
 
 // FakeMonitor implements acquisition.MetricsProvider with one reading per
@@ -211,7 +212,7 @@ func (f *FakeCost) FetchDailyCosts(_ context.Context, _ cloud.ConnectionCredenti
 			ProviderCode: "azure", ScopeType: "subscription", ScopeName: sub,
 			ServiceName: "SQL Database", UsageDate: d, Currency: currency,
 			SourceChargeID: strPtr(fmt.Sprintf("cost:%s:%s:sql", sub, d.Format("2006-01-02"))),
-			PreTaxCost: 8.6, UsageQuantity: f64Ptr(24), UsageUnit: &unit,
+			PreTaxCost:     8.6, UsageQuantity: f64Ptr(24), UsageUnit: &unit,
 			PricingModel: &model, ChargeCategory: &cat, Source: src,
 		})
 		// Storage cost (unmapped resource_uid)
@@ -219,12 +220,52 @@ func (f *FakeCost) FetchDailyCosts(_ context.Context, _ cloud.ConnectionCredenti
 			ProviderCode: "azure", ScopeType: "subscription", ScopeName: sub,
 			ServiceName: "Storage", UsageDate: d, Currency: currency,
 			SourceChargeID: strPtr(fmt.Sprintf("cost:%s:%s:storage", sub, d.Format("2006-01-02"))),
-			PreTaxCost: 0.14, UsageQuantity: f64Ptr(10), UsageUnit: &unit,
+			PreTaxCost:     0.14, UsageQuantity: f64Ptr(10), UsageUnit: &unit,
 			PricingModel: &model, ChargeCategory: &cat, Source: src,
 		})
 	}
 	return out, nil
 }
 
-func strPtr(s string) *string { return &s }
+func strPtr(s string) *string   { return &s }
 func f64Ptr(v float64) *float64 { return &v }
+
+// FakeSample implements acquisition.SampleProvider with deterministic individual
+// observations from Query Store runtime stats (duration_us per execution).
+type FakeSample struct{}
+
+// NewFakeSample returns a FakeSample.
+func NewFakeSample() *FakeSample {
+	return &FakeSample{}
+}
+
+// FetchSamples returns individual query execution durations as samples
+// for exact percentile computation.
+func (f *FakeSample) FetchSamples(_ context.Context, _ cloud.ConnectionCredentials, _ string, start, end time.Time) ([]acquisition.RawSample, error) {
+	var out []acquisition.RawSample
+	// Two queries with multiple executions each
+	samples := []struct {
+		metricCode string
+		valueUS    float64
+		count      int
+		source     string
+	}{
+		{"query_duration_ms", 1.5, 120, acquisition.SourceQueryStore},
+		{"query_duration_ms", 42.0, 15, acquisition.SourceQueryStore},
+	}
+	for _, s := range samples {
+		for i := 0; i < s.count; i++ {
+			// Distribute timestamps across the window
+			ts := start.Add(time.Duration(i) * (end.Sub(start) / time.Duration(s.count)))
+			out = append(out, acquisition.RawSample{
+				MetricCode:     s.metricCode,
+				Unit:           "Milliseconds",
+				ObservedAtUTC:  ts,
+				Value:          s.valueUS,
+				Source:         s.source,
+				SourceSampleID: strPtr(fmt.Sprintf("%s-%d-%d", s.metricCode, i, ts.Unix())),
+			})
+		}
+	}
+	return out, nil
+}

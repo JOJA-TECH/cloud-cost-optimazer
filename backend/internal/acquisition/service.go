@@ -16,11 +16,13 @@ import (
 // Config holds the service runtime knobs, resolved from environment by the
 // caller (cmd/cco-app).
 type Config struct {
-	MonitorDelay    time.Duration // window end = now - delay (metrics publish 1-3 min late)
-	MonitorLookback time.Duration // window start = end - lookback (idempotency dedups overlaps)
-	SQLUser         string        // workload login for DMVs/Query Store; empty disables both
-	SQLPassword     string
-	FetchParallel   int // concurrent target fetches; default 8
+	MonitorDelay     time.Duration // window end = now - delay (metrics publish 1-3 min late)
+	MonitorLookback  time.Duration // window start = end - lookback (idempotency dedups overlaps)
+	CostLookbackDays time.Duration // cost window lookback (days); Cost Management has 8-24h lag
+	SQLUser          string        // workload login for DMVs/Query Store; empty disables both
+	SQLPassword      string
+	FetchParallel    int           // concurrent target fetches; default 8
+	FetchTimeout     time.Duration // per-provider call timeout; default 30s
 }
 
 // RunOutcome reports one source acquisition for one target within a cycle.
@@ -44,8 +46,9 @@ type Service struct {
 	monitor MetricsProvider
 	diag    DiagnosticsProvider
 	qstore  QueryStoreProvider
-	config  ConfigProvider  // T4: ARM config snapshots
-	cost    CostProvider    // T5: Cost Management daily costs
+	config  ConfigProvider // T4: ARM config snapshots
+	cost    CostProvider   // T5: Cost Management daily costs
+	sample  SampleProvider // T1b: individual observations for exact percentiles
 
 	cfg Config
 
@@ -60,9 +63,12 @@ type Service struct {
 
 // NewService constructs the Service. writer/runs may be nil when cco_data is
 // not configured: every run then fails with ErrStorageUnavailable.
-func NewService(targets TargetRepository, writer data.DataWriter, runs data.RunReader, monitor MetricsProvider, diag DiagnosticsProvider, qstore QueryStoreProvider, config ConfigProvider, cost CostProvider, cfg Config) *Service {
+func NewService(targets TargetRepository, writer data.DataWriter, runs data.RunReader, monitor MetricsProvider, diag DiagnosticsProvider, qstore QueryStoreProvider, config ConfigProvider, cost CostProvider, sample SampleProvider, cfg Config) *Service {
 	if cfg.FetchParallel <= 0 {
 		cfg.FetchParallel = 8
+	}
+	if cfg.FetchTimeout <= 0 {
+		cfg.FetchTimeout = 30 * time.Second
 	}
 	return &Service{
 		targets:     targets,
@@ -73,6 +79,7 @@ func NewService(targets TargetRepository, writer data.DataWriter, runs data.RunR
 		qstore:      qstore,
 		config:      config,
 		cost:        cost,
+		sample:      sample,
 		cfg:         cfg,
 		dmvLastSeen: map[uuid.UUID]time.Time{},
 	}
@@ -177,6 +184,9 @@ func (s *Service) cycleJobs(t Target) []func(ctx context.Context, t Target, star
 	if s.config != nil {
 		jobs = append(jobs, s.runConfigJob)
 	}
+	if s.sample != nil {
+		jobs = append(jobs, s.runSampleJob)
+	}
 	if _, ok := s.sqlConfig(t); ok {
 		if s.diag != nil {
 			jobs = append(jobs, s.runDiagnosticsJob)
@@ -202,6 +212,60 @@ func (s *Service) credentialsFor(ctx context.Context, t Target, cache map[uuid.U
 	return creds, nil
 }
 
+// diagFetchResult bundles the two values the diagnostics fetch returns so the
+// generic runJob helper (fetch -> single write) can carry them together.
+type diagFetchResult struct {
+	stats    []DBResourceStat
+	readings []RawReading
+}
+
+// qsFetchResult bundles the two values the Query Store fetch returns.
+type qsFetchResult struct {
+	queries []QueryStoreQuery
+	stats   []QueryStoreRuntimeStat
+}
+
+// runJob runs the fetch -> write -> FinishRun boilerplate for one acquisition
+// job. The caller resolves credentials and ensures the resource first; runJob
+// owns StartRun, the per-fetch timeout, the write, row counting, and FinishRun.
+// The fetch closure returns the raw rows; the write closure persists them
+// (receiving the run id it may need) and returns the row count. Both closures
+// capture the credentials, target and window they need.
+func (s *Service) runJob(ctx context.Context, source string, resourceID int64, scope string,
+	fetch func(context.Context) (any, error),
+	write func(any, int64) (int, error),
+) RunOutcome {
+	out := RunOutcome{Source: source, Status: "error"}
+	runID, err := s.writer.StartRun(ctx, source, resourceID, scope)
+	if err != nil {
+		out.Detail = "start run: " + err.Error()
+		return out
+	}
+	out.RunID = runID
+
+	fetchCtx, cancel := context.WithTimeout(ctx, s.cfg.FetchTimeout)
+	defer cancel()
+	fetched, fetchErr := fetch(fetchCtx)
+	rows := 0
+	if fetchErr == nil {
+		n, err := write(fetched, runID)
+		if err != nil {
+			fetchErr = err
+		} else {
+			rows = n
+		}
+	}
+	out.RowsIngested = rows
+	if fetchErr != nil {
+		out.Detail = fetchErr.Error()
+		_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
+		return out
+	}
+	out.Status = "ok"
+	_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
+	return out
+}
+
 // runMonitorJob acquires Azure Monitor platform metrics for one target.
 func (s *Service) runMonitorJob(ctx context.Context, t Target, start, end time.Time, credsCache map[uuid.UUID]cloud.ConnectionCredentials) RunOutcome {
 	out := RunOutcome{ResourceUID: t.ResourceUID, Source: SourceAzureMonitor, Status: "error"}
@@ -215,38 +279,24 @@ func (s *Service) runMonitorJob(ctx context.Context, t Target, start, end time.T
 		out.Detail = "ensure resource: " + err.Error()
 		return out
 	}
-	runID, err := s.writer.StartRun(ctx, SourceAzureMonitor, resourceID, t.SubscriptionID)
-	if err != nil {
-		out.Detail = "start run: " + err.Error()
-		return out
-	}
-	out.RunID = runID
-
-	readings, fetchErr := s.monitor.FetchPlatformMetrics(ctx, creds, t.AzureResourceID, start, end)
-	rows := 0
-	if fetchErr == nil {
-		for i := range readings {
-			ValidateReading(&readings[i])
-		}
-		var dropped int
-		readings, dropped = DropInvalid(readings)
-		if dropped > 0 {
-			slog.Warn("acquisition dropped out-of-range readings", "resource_uid", t.ResourceUID, "source", SourceAzureMonitor, "dropped", dropped)
-		}
-		rows, err = s.writer.WriteMetricReadings(ctx, resourceID, metricsFromReadings(readings))
-		if err != nil {
-			fetchErr = err
-		}
-	}
-	out.RowsIngested = rows
-	if fetchErr != nil {
-		out.Detail = fetchErr.Error()
-		out.Status = "error"
-		_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
-		return out
-	}
-	out.Status = "ok"
-	_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
+	out = s.runJob(ctx, SourceAzureMonitor, resourceID, t.SubscriptionID,
+		func(fetchCtx context.Context) (any, error) {
+			return s.monitor.FetchPlatformMetrics(fetchCtx, creds, t.AzureResourceID, start, end)
+		},
+		func(rows any, _ int64) (int, error) {
+			readings := rows.([]RawReading)
+			for i := range readings {
+				ValidateReading(&readings[i])
+			}
+			var dropped int
+			readings, dropped = DropInvalid(readings)
+			if dropped > 0 {
+				slog.Warn("acquisition dropped out-of-range readings", "resource_uid", t.ResourceUID, "source", SourceAzureMonitor, "dropped", dropped)
+			}
+			return s.writer.WriteMetricReadings(ctx, resourceID, metricsFromReadings(readings))
+		},
+	)
+	out.ResourceUID = t.ResourceUID
 	return out
 }
 
@@ -260,46 +310,35 @@ func (s *Service) runDiagnosticsJob(ctx context.Context, t Target, start, end ti
 		out.Detail = "ensure resource: " + err.Error()
 		return out
 	}
-	runID, err := s.writer.StartRun(ctx, SourceSQLDiag, resourceID, t.SubscriptionID)
-	if err != nil {
-		out.Detail = "start run: " + err.Error()
-		return out
-	}
-	out.RunID = runID
-
-	stats, readings, fetchErr := s.diag.FetchResourceStats(ctx, sql, t, s.dmvLastSeen[t.ResourceUID])
-	rows := 0
-	if fetchErr == nil {
-		for i := range readings {
-			ValidateReading(&readings[i])
-		}
-		readings, _ = DropInvalid(readings)
-		n1, err := s.writer.WriteResourceStats(ctx, resourceID, resourceStatsFrom(stats))
-		if err != nil {
-			fetchErr = err
-		} else {
-			n2, err := s.writer.WriteMetricReadings(ctx, resourceID, metricsFromReadings(readings))
-			rows = n1 + n2
+	out = s.runJob(ctx, SourceSQLDiag, resourceID, t.SubscriptionID,
+		func(fetchCtx context.Context) (any, error) {
+			stats, readings, err := s.diag.FetchResourceStats(fetchCtx, sql, t, s.dmvLastSeen[t.ResourceUID])
+			return diagFetchResult{stats: stats, readings: readings}, err
+		},
+		func(fetched any, _ int64) (int, error) {
+			r := fetched.(diagFetchResult)
+			for i := range r.readings {
+				ValidateReading(&r.readings[i])
+			}
+			r.readings, _ = DropInvalid(r.readings)
+			n1, err := s.writer.WriteResourceStats(ctx, resourceID, resourceStatsFrom(r.stats))
 			if err != nil {
-				fetchErr = err
-			} else {
-				// Advance the cursor to the newest stat row read.
-				for _, st := range stats {
-					if st.EndTimeUTC.After(s.dmvLastSeen[t.ResourceUID]) {
-						s.dmvLastSeen[t.ResourceUID] = st.EndTimeUTC
-					}
+				return 0, err
+			}
+			n2, err := s.writer.WriteMetricReadings(ctx, resourceID, metricsFromReadings(r.readings))
+			if err != nil {
+				return n1, err
+			}
+			// Advance the cursor to the newest stat row read.
+			for _, st := range r.stats {
+				if st.EndTimeUTC.After(s.dmvLastSeen[t.ResourceUID]) {
+					s.dmvLastSeen[t.ResourceUID] = st.EndTimeUTC
 				}
 			}
-		}
-	}
-	out.RowsIngested = rows
-	if fetchErr != nil {
-		out.Detail = fetchErr.Error()
-		_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
-		return out
-	}
-	out.Status = "ok"
-	_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
+			return n1 + n2, nil
+		},
+	)
+	out.ResourceUID = t.ResourceUID
 	return out
 }
 
@@ -312,30 +351,18 @@ func (s *Service) runQueryStoreJob(ctx context.Context, t Target, start, end tim
 		out.Detail = "ensure resource: " + err.Error()
 		return out
 	}
-	runID, err := s.writer.StartRun(ctx, SourceQueryStore, resourceID, t.SubscriptionID)
-	if err != nil {
-		out.Detail = "start run: " + err.Error()
-		return out
-	}
-	out.RunID = runID
-
-	queries, stats, fetchErr := s.qstore.FetchRuntimeStats(ctx, sql, t)
-	rows := 0
-	if fetchErr == nil {
-		qs, rs := queryStoreRecordsFrom(queries, stats)
-		rows, err = s.writer.WriteQueryStore(ctx, resourceID, qs, rs)
-		if err != nil {
-			fetchErr = err
-		}
-	}
-	out.RowsIngested = rows
-	if fetchErr != nil {
-		out.Detail = fetchErr.Error()
-		_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
-		return out
-	}
-	out.Status = "ok"
-	_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
+	out = s.runJob(ctx, SourceQueryStore, resourceID, t.SubscriptionID,
+		func(fetchCtx context.Context) (any, error) {
+			queries, stats, err := s.qstore.FetchRuntimeStats(fetchCtx, sql, t)
+			return qsFetchResult{queries: queries, stats: stats}, err
+		},
+		func(rows any, _ int64) (int, error) {
+			r := rows.(qsFetchResult)
+			qs, rs := queryStoreRecordsFrom(r.queries, r.stats)
+			return s.writer.WriteQueryStore(ctx, resourceID, qs, rs)
+		},
+	)
+	out.ResourceUID = t.ResourceUID
 	return out
 }
 
@@ -418,47 +445,33 @@ func (s *Service) runConfigJob(ctx context.Context, t Target, start, end time.Ti
 		out.Detail = "ensure resource: " + err.Error()
 		return out
 	}
-	runID, err := s.writer.StartRun(ctx, "arm_config", resourceID, t.SubscriptionID)
-	if err != nil {
-		out.Detail = "start run: " + err.Error()
-		return out
-	}
-	out.RunID = runID
-
-	reading, fetchErr := s.config.FetchConfigSnapshot(ctx, creds, t.AzureResourceID)
-	rows := 0
-	if fetchErr == nil {
-		snap := data.ConfigurationSnapshot{
-			ResourceUID:       t.ResourceUID,
-			CollectorRunID:    &runID,
-			SKUName:           reading.SKUName,
-			Tier:              reading.Tier,
-			Family:            reading.Family,
-			CapacityVCores:    reading.CapacityVCores,
-			MinCapacityVCores: reading.MinCapacityVCores,
-			ComputeModel:      reading.ComputeModel,
-			MaxSizeBytes:      reading.MaxSizeBytes,
-			AutoPauseDelayMin: reading.AutoPauseDelayMin,
-			Status:            reading.Status,
-			FreeLimit:         reading.FreeLimit,
-			SourcePayload:     reading.SourcePayload,
-			ObservedAtUTC:     reading.ObservedAtUTC,
-		}
-		rows64, err := s.writer.UpsertConfigSnapshot(ctx, snap)
-		rows = int(rows64)
-		if err != nil {
-			fetchErr = err
-		}
-	}
-	out.RowsIngested = rows
-	if fetchErr != nil {
-		out.Detail = fetchErr.Error()
-		out.Status = "error"
-		_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
-		return out
-	}
-	out.Status = "ok"
-	_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
+	out = s.runJob(ctx, "arm_config", resourceID, t.SubscriptionID,
+		func(fetchCtx context.Context) (any, error) {
+			return s.config.FetchConfigSnapshot(fetchCtx, creds, t.AzureResourceID)
+		},
+		func(rows any, runID int64) (int, error) {
+			reading := rows.(ConfigReading)
+			snap := data.ConfigurationSnapshot{
+				ResourceUID:       t.ResourceUID,
+				CollectorRunID:    &runID,
+				SKUName:           reading.SKUName,
+				Tier:              reading.Tier,
+				Family:            reading.Family,
+				CapacityVCores:    reading.CapacityVCores,
+				MinCapacityVCores: reading.MinCapacityVCores,
+				ComputeModel:      reading.ComputeModel,
+				MaxSizeBytes:      reading.MaxSizeBytes,
+				AutoPauseDelayMin: reading.AutoPauseDelayMin,
+				Status:            reading.Status,
+				FreeLimit:         reading.FreeLimit,
+				SourcePayload:     reading.SourcePayload,
+				ObservedAtUTC:     reading.ObservedAtUTC,
+			}
+			rows64, err := s.writer.UpsertConfigSnapshot(ctx, snap)
+			return int(rows64), err
+		},
+	)
+	out.ResourceUID = t.ResourceUID
 	return out
 }
 
@@ -521,33 +534,15 @@ func (s *Service) RunCostCycle(ctx context.Context, orgID *uuid.UUID) ([]RunOutc
 				outMu.Unlock()
 				return
 			}
-			runID, err := s.writer.StartRun(ctx, "cost_management", resourceID, subID)
-			if err != nil {
-				out.Detail = "start run: " + err.Error()
-				outMu.Lock()
-				outcomes = append(outcomes, out)
-				outMu.Unlock()
-				return
-			}
-			out.RunID = runID
-
-			costRecs, fetchErr := s.cost.FetchDailyCosts(ctx, creds, subID, from, to)
-			rows := 0
-			if fetchErr == nil {
-				rows, err = s.writer.UpsertCostDaily(ctx, costRecs)
-				if err != nil {
-					fetchErr = err
-				}
-			}
-			out.RowsIngested = rows
-			if fetchErr != nil {
-				out.Detail = fetchErr.Error()
-				out.Status = "error"
-				_ = s.writer.FinishRun(ctx, runID, "error", rows, trimErr(fetchErr))
-			} else {
-				out.Status = "ok"
-				_ = s.writer.FinishRun(ctx, runID, "ok", rows, "")
-			}
+			out = s.runJob(ctx, "cost_management", resourceID, subID,
+				func(fetchCtx context.Context) (any, error) {
+					return s.cost.FetchDailyCosts(fetchCtx, creds, subID, from, to)
+				},
+				func(rows any, _ int64) (int, error) {
+					return s.writer.UpsertCostDaily(ctx, rows.([]data.CostRecord))
+				},
+			)
+			out.ResourceUID = subTargets[0].ResourceUID
 			outMu.Lock()
 			outcomes = append(outcomes, out)
 			outMu.Unlock()
@@ -557,4 +552,31 @@ func (s *Service) RunCostCycle(ctx context.Context, orgID *uuid.UUID) ([]RunOutc
 
 	slog.Info("cost cycle finished", "subscriptions", len(subMap), "runs", len(outcomes))
 	return outcomes, nil
+}
+
+// runSampleJob acquires individual observations for exact percentiles
+// (raw.metric_sample) from sources that expose them (Query Store runtime,
+// workload observations).
+func (s *Service) runSampleJob(ctx context.Context, t Target, start, end time.Time, credsCache map[uuid.UUID]cloud.ConnectionCredentials) RunOutcome {
+	out := RunOutcome{ResourceUID: t.ResourceUID, Source: "metric_sample", Status: "error"}
+	creds, err := s.credentialsFor(ctx, t, credsCache)
+	if err != nil {
+		out.Detail = "resolve credentials: " + err.Error()
+		return out
+	}
+	resourceID, err := s.writer.EnsureResource(ctx, t.resourceRef())
+	if err != nil {
+		out.Detail = "ensure resource: " + err.Error()
+		return out
+	}
+	out = s.runJob(ctx, "metric_sample", resourceID, t.SubscriptionID,
+		func(fetchCtx context.Context) (any, error) {
+			return s.sample.FetchSamples(fetchCtx, creds, t.AzureResourceID, start, end)
+		},
+		func(fetched any, _ int64) (int, error) {
+			return s.writer.WriteMetricSamples(ctx, resourceID, samplesFromSamples(fetched.([]RawSample)))
+		},
+	)
+	out.ResourceUID = t.ResourceUID
+	return out
 }

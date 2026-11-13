@@ -286,6 +286,21 @@ func strValPtr(s *string) string {
 	return *s
 }
 
+// samplesFromSamples converts acquisition.RawSample to data.RawSample for persistence.
+func samplesFromSamples(samples []RawSample) []data.RawSample {
+	out := make([]data.RawSample, 0, len(samples))
+	for _, s := range samples {
+		out = append(out, data.RawSample{
+			MetricCode:     s.MetricCode,
+			ObservedAtUTC:  s.ObservedAtUTC,
+			Value:          s.Value,
+			Source:         s.Source,
+			SourceSampleID: s.SourceSampleID,
+		})
+	}
+	return out
+}
+
 // ---- T4: ConfigProvider (ARM database GET) ----
 
 // ConfigReading is the normalized snapshot from ARM.
@@ -316,4 +331,24 @@ type CostProvider interface {
 	// FetchDailyCosts returns costs for a subscription over [from, to).
 	// The returned records must include SourceChargeID for idempotent upsert.
 	FetchDailyCosts(ctx context.Context, creds cloud.ConnectionCredentials, subscriptionID string, from, to time.Time) ([]data.CostRecord, error)
+}
+
+// ---- T1b: SampleProvider (individual observations for exact percentiles) ----
+
+// RawSample is one individual observation for raw.metric_sample.
+// Providers return these when the source exposes individual measurements
+// (Query Store runtime stats, workload observations).
+// Azure Monitor PT1M aggregates do NOT provide individual samples; they are omitted.
+type RawSample struct {
+	MetricCode     string
+	Unit           string
+	ObservedAtUTC  time.Time
+	Value          float64
+	Source         string
+	SourceSampleID *string // id in source for idempotency; nil if source has no ID
+}
+
+// SampleProvider reads individual observations from sources that expose them.
+type SampleProvider interface {
+	FetchSamples(ctx context.Context, creds cloud.ConnectionCredentials, azureResourceID string, start, end time.Time) ([]RawSample, error)
 }

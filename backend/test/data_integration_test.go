@@ -68,8 +68,8 @@ func TestDataStackEndToEnd(t *testing.T) {
 	for h := 0; h < 24; h++ {
 		avg := float64(10 + h)
 		metrics = append(metrics, data.Metric{
-			MetricCode: "cpu_percent",
-			TimestampUTC: day.Add(time.Duration(h) * time.Hour).Add(5 * time.Minute),
+			MetricCode:      "cpu_percent",
+			TimestampUTC:    day.Add(time.Duration(h) * time.Hour).Add(5 * time.Minute),
 			IntervalSeconds: 60, AvgValue: &avg,
 		})
 	}

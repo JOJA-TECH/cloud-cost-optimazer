@@ -16,9 +16,9 @@ import (
 
 // ARM adapter for Azure SQL Database configuration (GET databases).
 const (
-	armAPIVersion  = "2025-01-01"
-	armScope       = "https://management.azure.com/.default"
-	armMaxRetries  = 3
+	armAPIVersion = "2025-01-01"
+	armScope      = "https://management.azure.com/.default"
+	armMaxRetries = 3
 )
 
 // AzureConfigProvider implements acquisition.ConfigProvider against ARM REST.
@@ -164,33 +164,33 @@ func containsServerless(s string) bool {
 
 // armDatabaseResponse is the ARM Microsoft.Sql/servers/databases response shape.
 type armDatabaseResponse struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Location   string            `json:"location"`
-	Kind       string            `json:"kind"`
-	SKU        *armSKU           `json:"sku"`
-	Properties *armDBProperties  `json:"properties"`
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Type       string           `json:"type"`
+	Location   string           `json:"location"`
+	Kind       string           `json:"kind"`
+	SKU        *armSKU          `json:"sku"`
+	Properties *armDBProperties `json:"properties"`
 }
 
 type armSKU struct {
-	Name         string   `json:"name"`
-	Tier         string   `json:"tier"`
-	Family       *string  `json:"family"`
-	Capacity     *float64 `json:"capacity"`
-	MinCapacity  *float64 `json:"minCapacity"`
-	Size         *string  `json:"size"`
+	Name        string   `json:"name"`
+	Tier        string   `json:"tier"`
+	Family      *string  `json:"family"`
+	Capacity    *float64 `json:"capacity"`
+	MinCapacity *float64 `json:"minCapacity"`
+	Size        *string  `json:"size"`
 }
 
 type armDBProperties struct {
-	Status                   string  `json:"status"`
-	CurrentServiceObjective  string  `json:"currentServiceObjectiveName"`
+	Status                    string `json:"status"`
+	CurrentServiceObjective   string `json:"currentServiceObjectiveName"`
 	RequestedServiceObjective string `json:"requestedServiceObjectiveName"`
-	MaxSizeBytes             *int64  `json:"maxSizeBytes"`
-	AutoPauseDelay           *int    `json:"autoPauseDelay"`
-	UseFreeLimit             *bool   `json:"useFreeLimit"`
-	ServiceLevelObjective    string  `json:"serviceLevelObjective"`
-	LicenseType              string  `json:"licenseType"`
-	ZoneRedundant            bool    `json:"zoneRedundant"`
-	ObservedAt               string  `json:"observedAt"` // synthetic, may not exist
+	MaxSizeBytes              *int64 `json:"maxSizeBytes"`
+	AutoPauseDelay            *int   `json:"autoPauseDelay"`
+	UseFreeLimit              *bool  `json:"useFreeLimit"`
+	ServiceLevelObjective     string `json:"serviceLevelObjective"`
+	LicenseType               string `json:"licenseType"`
+	ZoneRedundant             bool   `json:"zoneRedundant"`
+	ObservedAt                string `json:"observedAt"` // synthetic, may not exist
 }

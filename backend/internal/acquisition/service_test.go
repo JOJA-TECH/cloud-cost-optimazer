@@ -107,6 +107,10 @@ func (m *memStore) UpsertConfigSnapshot(ctx context.Context, snap data.Configura
 	return 1, nil
 }
 
+func (m *memStore) WriteMetricSamples(ctx context.Context, resourceID int64, samples []data.RawSample) (int, error) {
+	return len(samples), nil
+}
+
 func (m *memStore) ListRuns(ctx context.Context, uids []uuid.UUID, filter data.RunFilter) ([]data.RunRecord, error) {
 	out := []data.RunRecord{}
 	for _, r := range m.runs {
@@ -184,7 +188,7 @@ func testService(store *memStore, monitor MetricsProvider, diag DiagnosticsProvi
 		writer = store
 		runs = store
 	}
-	return NewService(targets, writer, runs, monitor, diag, qstore, nil, nil, Config{
+	return NewService(targets, writer, runs, monitor, diag, qstore, nil, nil, nil, Config{
 		MonitorDelay: 90 * time.Second, MonitorLookback: 5 * time.Minute,
 		SQLUser: sqlUser, SQLPassword: "pw", FetchParallel: 2,
 	})

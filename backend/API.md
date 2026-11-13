@@ -992,6 +992,155 @@ $id = "uuid-binding"
 $body = @{ is_monitored = $false } | ConvertTo-Json
 
 curl -X PATCH "http://localhost:8080/api/v1/resource-bindings/$id" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d $body
+
+---
+
+## 15. Endpoints del módulo Analítica y Optimización
+
+Todos los endpoints requieren `Authorization: Bearer <access_token>` + permiso `analytics:read` (lectura) o `analytics:write` (cómputo). Están definidos en `backend/internal/analytics/handlers.go`. Si `CCO_DATA_DSN` no está configurado, responden `503 ANALYTICS_STORAGE_UNAVAILABLE`. Si el servicio ML no está disponible, responden `503 ANALYTICS_ML_UNAVAILABLE`.
+
+### POST /api/v1/analytics/snapshots
+
+Dispara el cómputo de feature snapshots para un recurso en un rango temporal. Requiere permiso `analytics:write`.
+
+**Request body:**
+```json
+{
+  "resource_uid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-02T00:00:00Z"
+}
+```
+
+**Response (200 OK):**
+```json
+{ "computed": 24, "resource_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }
+```
+
+### GET /api/v1/analytics/snapshots
+
+Lista feature snapshots computados. Requiere permiso `analytics:read`.
+
+**Query params:** `resource_uid` (req), `period_type` (`1h`|`1d`, def `1h`), `from`, `to` (RFC3339), `limit` (def 1000, máx 10000).
+
+### POST /api/v1/analytics/percentiles
+
+Dispara cómputo de percentiles exactos desde `raw.metric_sample`. Requiere `analytics:write`.
+
+**Request body:**
+```json
+{
+  "resource_uid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+  "metric_code": "cpu_percent",
+  "from": "2026-11-01T00:00:00Z",
+  "to": "2026-11-02T00:00:00Z",
+  "period_type": "1h"
+}
+```
+
+### GET /api/v1/analytics/percentiles
+
+Lee percentiles exactos de `feat.percentile_statistic`. Query params: `resource_uid`, `metric_code`, `period_type`, `from`, `to`.
+
+### POST /api/v1/analytics/trends
+
+Dispara cómputo de tendencias (cpu_slope, storage_growth). Requiere `analytics:write`.
+
+**Request body:** `{ "resource_uid": "...", "from": "...", "to": "..." }`
+
+### GET /api/v1/analytics/trends
+
+Lee tendencias computadas. Query params: `resource_uid`, `from`, `to`.
+
+### POST /api/v1/analytics/patterns
+
+Dispara detección de patrones de carga (peak hours, frequency, intensity band). Requiere `analytics:write`.
+
+### GET /api/v1/analytics/patterns
+
+Lee patrón detectado. Query params: `resource_uid`, `from`, `to`.
+
+### POST /api/v1/analytics/capacity
+
+Dispara análisis de capacidad (headroom, peak%, growth rate, vcores recomendados). Requiere `analytics:write`.
+
+**Request body:** `{ "resource_uid": "...", "period_type": "1d", "period_start": "..." }`
+
+### GET /api/v1/analytics/capacity
+
+Lee análisis de capacidad. Query params: `resource_uid`, `period_type`, `period_start`.
+
+### POST /api/v1/analytics/costs
+
+Dispara análisis de costos (cost_per_vcore, projected, savings). Requiere `analytics:write`.
+
+### GET /api/v1/analytics/costs
+
+Lee análisis de costos. Query params: `resource_uid`, `from`, `to`.
+
+### POST /api/v1/analytics/des
+
+Dispara cómputo de componentes DES (capacity_e, cost_e, performance_e). Requiere `analytics:write`.
+
+**Request body:** `{ "resource_uid": "...", "period_type": "1d", "period_start": "..." }`
+
+### GET /api/v1/analytics/des
+
+Lee componentes DES. Query params: `resource_uid`, `period_type`, `period_start`.
+
+### POST /api/v1/analytics/datasets
+
+Crea/actualiza un dataset versionado para ML (`ml.training_dataset`). Requiere `analytics:write`.
+
+**Request body:**
+```json
+{
+  "name": "cpu_hourly_v1",
+  "version": 1,
+  "resource_scope": "all",
+  "period_start_utc": "2026-11-01T00:00:00Z",
+  "period_end_utc": "2026-11-30T00:00:00Z",
+  "period_type": "1h",
+  "feature_codes": ["cpu_avg", "cpu_p95", "data_io_avg", "workload_intensity"],
+  "target_column": "cpu_avg",
+  "split_strategy": {"type": "temporal", "train": 0.7, "valid": 0.15, "test": 0.15}
+}
+```
+
+### GET /api/v1/analytics/datasets
+
+Lee especificación de dataset. Query params: `name`, `version`.
+
+### POST /api/v1/analytics/forecasts
+
+Dispara forecasting vía servicio ML (Module 6). Requiere `analytics:write`.
+
+**Request body:**
+```json
+{
+  "resource_uid": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+  "target_metric": "cpu_avg",
+  "horizon_steps": 24,
+  "step_unit": "1h",
+  "period_start_utc": "2026-11-13T00:00:00Z"
+}
+```
+
+**Response (200 OK):** `{ "forecast_uid": "uuid" }`
+
+### GET /api/v1/analytics/forecasts
+
+Lee forecasts desde `contract.v_forecast`. Query params: `resource_uid`, `target_metric`, `from`, `to`.
+
+### Códigos de error nuevos
+
+| Código | HTTP | Descripción |
+|--------|------|-------------|
+| `ANALYTICS_NOT_FOUND` | 404 | Recurso/entidad no encontrada |
+| `ANALYTICS_INVALID_QUERY` | 400 | Parámetros inválidos |
+| `ANALYTICS_STORAGE_UNAVAILABLE` | 503 | Falta `CCO_DATA_DSN` |
+| `ANALYTICS_ML_UNAVAILABLE` | 503 | Servicio ML no disponible |
+| `ANALYTICS_CONTRACT_MISMATCH` | 409 | Versión de contrato ML incompatible |
 ```
 
 ---

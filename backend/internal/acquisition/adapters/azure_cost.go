@@ -18,10 +18,10 @@ import (
 
 // Cost Management query API (Usage type).
 const (
-	costAPIVersion  = "2026-06-01"
-	costScope       = "https://management.azure.com/.default"
-	costMaxRetries  = 3
-	costPageSize    = 1000
+	costAPIVersion = "2026-06-01"
+	costScope      = "https://management.azure.com/.default"
+	costMaxRetries = 3
+	costPageSize   = 1000
 )
 
 // AzureCostProvider implements acquisition.CostProvider against Cost Management query.
@@ -128,7 +128,7 @@ func (p *AzureCostProvider) postWithRetry(ctx context.Context, token, requestURL
 // Grouping by ResourceId, ServiceName, MeterId, ChargeType to match cost_daily granularity.
 func buildCostQueryBody(from, to time.Time) map[string]interface{} {
 	return map[string]interface{}{
-		"type": "Usage",
+		"type":      "Usage",
 		"timeframe": "Custom",
 		"timePeriod": map[string]string{
 			"from": from.UTC().Format("2006-01-02"),
@@ -161,7 +161,7 @@ type costQueryResponse struct {
 }
 
 type costQueryProperties struct {
-	Columns []costColumn `json:"columns"`
+	Columns []costColumn    `json:"columns"`
 	Rows    [][]interface{} `json:"rows"`
 }
 

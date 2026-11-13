@@ -170,6 +170,15 @@ type RunRecord struct {
 	ErrorMessage   *string
 }
 
+// RawSample mirrors cco_data.raw.metric_sample (individual observations for exact percentiles).
+type RawSample struct {
+	MetricCode     string
+	ObservedAtUTC  time.Time
+	Value          float64
+	Source         string
+	SourceSampleID *string
+}
+
 // DataWriter persists normalized data into cco_data. It is the contract
 // MODULES.md assigns to Gestión de Datos; Adquisición (module 3) consumes it
 // to persist what it collects. All writes are idempotent (ON CONFLICT DO
@@ -184,6 +193,8 @@ type DataWriter interface {
 	FinishRun(ctx context.Context, runID int64, status string, rowsIngested int, errMsg string) error
 	// WriteMetricReadings upserts raw.metric_reading; returns rows inserted.
 	WriteMetricReadings(ctx context.Context, resourceID int64, metrics []Metric) (int, error)
+	// WriteMetricSamples upserts raw.metric_sample; returns rows inserted.
+	WriteMetricSamples(ctx context.Context, resourceID int64, samples []RawSample) (int, error)
 	// WriteResourceStats upserts raw.db_resource_stats; returns rows inserted.
 	WriteResourceStats(ctx context.Context, resourceID int64, stats []ResourceStat) (int, error)
 	// WriteQueryStore upserts raw.query_store_query and
