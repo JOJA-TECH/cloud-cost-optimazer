@@ -1,0 +1,34 @@
+%% Despliegue (C4 Level 4 — visión local) — Cloud Cost Optimizer
+flowchart TB
+    classDef host fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef app fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef db fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef infra fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    subgraph DevHost["Host de desarrollo (localhost)"]
+        direction TB
+        CcoApp[cco-app.exe<br/>Go binary, :8080<br/>ENV: CCO_DB_DSN, CCO_DATA_DSN,<br/>CCO_JWT_SIGNING_KEY, CCO_HTTP_ADDR]:::app
+        PostgresApp[(PostgreSQL local<br/>cco_app · cco_data)]:::db
+        ValkeyLocal[(Valkey local · opcional<br/>CCO_VALKEY_ADDR)]:::infra
+    end
+
+    subgraph CloudEnv["Entorno Azure (producción)"]
+        direction TB
+        AzureRes[Recursos Azure SQL<br/>suscripciones, bases de datos]:::infra
+        AzureCM[Azure Cost Management]:::infra
+        AzureMon[Azure Monitor metrics]:::infra
+        MLExt[Servicio ML externo<br/>(Module 6, futuro)]:::infra
+    end
+
+    CcoApp -->|DSN PostgreSQL| PostgresApp
+    CcoApp -->|Valkey addr (opcional)| ValkeyLocal
+    CcoApp -->|ARM credenciales (env vars)| AzureRes
+    CcoApp -->|métricas / costos / config| AzureMon
+    CcoApp -->|costos diarios| AzureCM
+    CcoApp -->|forecasts via MLPort| MLExt
+
+    linkStyle default stroke-width:2px,fill:none,stroke:#666
+    linkStyle 0 stroke:#1b5e20,stroke-width:3px
+    linkStyle 1 stroke:#4a148c,stroke-width:2px
+    linkStyle 2,3,4 stroke:#4a148c,stroke-width:2px
+    linkStyle 5 stroke:#4a148c,stroke-width:3px

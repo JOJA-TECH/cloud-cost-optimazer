@@ -1,0 +1,41 @@
+%% Flujo de datos — Cloud Cost Optimizer
+flowchart TB
+    classDef actor fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef store fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    Usuario[Usuario]:::actor
+    API[API REST /api/v1/*]:::process
+    IAM[Authz IAM<br/>JWT + permisos]:::process
+    CloudMod[Módulo Cloud]:::process
+    AcqMod[Módulo Adquisición]:::process
+    DataMod[Módulo Datos<br/>solo lectura]:::process
+    AnalyticsMod[Módulo Analítica]:::process
+    CCO_APP[(cco_app<br/>usuarios, cloud, bindings)]:::store
+    CCO_DATA[(cco_data<br/>raw, core, catalog,<br/>feat, opt, ml, contract)]:::store
+    Azure[Azure cloud]:::external
+    ML[Servicio ML]:::external
+
+    Usuario -->|1. login / token| API
+    API -->|2. validar token| IAM
+    IAM -->|3. consulta recursos| CCO_APP
+    CloudMod -->|4. registrar cuenta / sync| CCO_APP
+    CloudMod -->|5. credenciales + descubrimiento| Azure
+    Azure -->|6. recursos + costos| CloudMod
+    AcqMod -->|7. ciclo: fetch métricas/DMVs/Query Store| Azure
+    AcqMod -->|8. persistir telemetría| DataMod
+    DataMod -->|9. escribir raw.* / core.*| CCO_DATA
+    AnalyticsMod -->|10. leer métricas/costos/config| CCO_DATA
+    AnalyticsMod -->|11. computar evidencia (snapshots,<br/>percentiles, DES, forecasts)| CCO_DATA
+    AnalyticsMod -->|12. forecast via MLPort| ML
+    ML -->|13. devuelve forecast_uid| AnalyticsMod
+    AnalyticsMod -->|14. escribir feat.* / opt.* / ml.*| CCO_DATA
+    DataMod -->|15. servir lecturas (métricas, costos,<br/>config-snapshots, cobertura)| API
+    API -->|16. respuesta al usuario| Usuario
+
+    linkStyle default stroke-width:2px,fill:none,stroke:#666
+    linkStyle 0,1,15,16 stroke:#01579b,stroke-width:3px
+    linkStyle 2,3,4,5 stroke:#e65100,stroke-width:2px
+    linkStyle 6,7,8,9 stroke:#1b5e20,stroke-width:3px
+    linkStyle 10,11,12,13,14 stroke:#4a148c,stroke-width:3px

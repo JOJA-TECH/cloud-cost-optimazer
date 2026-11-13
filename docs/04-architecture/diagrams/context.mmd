@@ -1,0 +1,31 @@
+%% Sistema de Contexto (C4 Level 1) — Cloud Cost Optimizer
+flowchart LR
+    classDef actor fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef system fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef database fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+
+    Usuario[("Usuario final")]:::actor
+    Frontend[Frontend web]:::system
+    Backend[Backend cco-app<br/>Go monolito modular]:::system
+    CCO_APP[(cco_app<br/>PostgreSQL<br/>usuarios, roles, cloud, app, audit)]:::database
+    CCO_DATA[(cco_data<br/>PostgreSQL<br/>raw, core, catalog, feat, opt, ml, contract)]:::database
+    Cloud[Fuentes cloud<br/>Azure ARM / Monitor /<br/>Cost Management / SQL DMV]:::external
+    ML[Servicio ML externo<br/>Module 6 (futuro)]:::external
+
+    Usuario -->|consulta recursos y<br/>recomendaciones| Frontend
+    Frontend -->|API HTTP REST| Backend
+    Backend -->|lectura/escritura operativa| CCO_APP
+    Backend -->|telemetría y analítica| CCO_DATA
+    Backend -->|credenciales +<br/>descubrimiento de recursos| Cloud
+    Backend -->|forecasts via MLPort| ML
+    Cloud -->|métricas, costos,<br/>configuración ARM| Backend
+
+    linkStyle default stroke-width:2px,fill:none,stroke:#666
+    linkStyle 0 stroke:#01579b,stroke-width:3px
+    linkStyle 1 stroke:#e65100,stroke-width:3px
+    linkStyle 2 stroke:#1b5e20,stroke-width:3px
+    linkStyle 3 stroke:#1b5e20,stroke-width:3px
+    linkStyle 4 stroke:#4a148c,stroke-width:3px
+    linkStyle 5 stroke:#4a148c,stroke-width:3px
+    linkStyle 6 stroke:#1b5e20,stroke-width:2px

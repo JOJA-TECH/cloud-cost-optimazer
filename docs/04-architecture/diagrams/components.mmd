@@ -1,0 +1,99 @@
+%% Componentes internos del backend (C4 Level 3) — Cloud Cost Optimizer
+flowchart TB
+    classDef entry fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef module fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef infra fill:#eceff1,stroke:#37474f,stroke-width:2px
+    classDef contract fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    subgraph Main["cmd/cco-app/main.go — DI + router"]
+        Router[Router + middlewares<br/>(auth, CORS, security, rate limit)]:::entry
+    end
+
+    subgraph IAM["internal/iam — Identidad y Acceso"]
+        IAMHandlers[Handlers /auth/*, /healthz]
+        IAMAuth[auth.go · JWT · Argon2id ·<br/>PermissionEngine · lockout]
+        IAMMiddleware[middleware · RequirePermission<br/>· RequireRole · IdentityContext]
+        IAMRepos[repositories · GORM (cco_app)]
+        IAMAdapters[adapters · OIDC · password ·<br/>Service Principal · Managed Identity]
+    end
+
+    subgraph Cloud["internal/cloud — Gestión de Nube y Datos"]
+        CloudHandlers[Handlers cloud-accounts ·<br/>resource-bindings]
+        CloudSvc[Service · registro · validación · sync]
+        CloudRepos[repositories · GORM (cco_app)]
+        CloudAdapters[adapters · Fake · Azure ARM]
+    end
+
+    subgraph Acquisition["internal/acquisition — Adquisición y Monitoreo"]
+        AcqHandlers[Handlers /acquisitions/*]
+        AcqSvc[Service · ciclo de adquisición ·<br/>runJob (fetch→write→finish)]
+        AcqScheduler[Scheduler · ticker periódico ·<br/>ciclo de costos separado]
+        AcqRepos[target repository (cco_app)]
+        AcqAdapters[adapters · Azure Monitor · SQL DMV ·<br/>Query Store · ARM config · Cost · fake]
+    end
+
+    subgraph Data["internal/data — Gestión de Datos (solo lectura)"]
+        DataHandlers[Handlers /data/*]
+        DataSvc[Service · series · costos ·<br/>config-snapshots · cobertura (HU-05)]
+        DataRepos[repository · GORM (cco_data)]
+    end
+
+    subgraph Analytics["internal/analytics — Analítica y Optimización"]
+        AnHandlers[Handlers /analytics/*]
+        AnSvc[Service · motor analítico · MLPort]
+        AnRepos[repositories · evidencia (cco_data)]
+        AnAdapters[adapters · FakeMLClient]
+    end
+
+    subgraph Platform["internal/platform — Infraestructura"]
+        DB[database · GORM portable<br/>SQLite / PostgreSQL]
+        Valkey[valkey · cliente compartido<br/>rate limit · lockout]
+    end
+
+    subgraph Contracts["Contratos Go (interfaces + DTOs)"]
+        IAMContr[iam interfaces]
+        CloudContr[cloud interfaces]
+        DataContr[data interfaces<br/>DataWriter · DataReader]
+        AnalyticsContr[analytics interfaces<br/>AnalyticsEngine · MLPort]
+    end
+
+    Router -->|routes| IAMHandlers
+    Router -->|routes| CloudHandlers
+    Router -->|routes| AcqHandlers
+    Router -->|routes| DataHandlers
+    Router -->|routes| AnHandlers
+
+    IAMHandlers --> IAMAuth --> IAMMiddleware
+    IAMHandlers --> IAMRepos
+    IAMAuth --> IAMAdapters
+
+    CloudHandlers --> CloudSvc --> CloudRepos
+    CloudSvc --> CloudAdapters
+
+    AcqHandlers --> AcqSvc --> AcqRepos
+    AcqSvc --> AcqAdapters
+    AcqScheduler --> AcqSvc
+
+    DataHandlers --> DataSvc --> DataRepos
+
+    AnHandlers --> AnSvc --> AnRepos
+    AnSvc --> AnAdapters
+
+    IAMSvc[IAM servicio]:::module
+    IAMRepos --> DB
+    CloudRepos --> DB
+    DataRepos --> DB
+    AnRepos --> DB
+    IAMMiddleware --> Valkey
+
+    IAMHandlers -.->|contrato| IAMContr
+    CloudSvc -.->|contrato| CloudContr
+    AcqSvc -.->|contrato| DataContr
+    DataSvc -.->|contrato| DataContr
+    AnSvc -.->|contrato| AnalyticsContr
+
+    linkStyle default stroke-width:2px,fill:none,stroke:#666
+    linkStyle 0,1,2,3,4 stroke:#e65100,stroke-width:3px
+    linkStyle 12,13,14,15 stroke:#1b5e20,stroke-width:2px
+    linkStyle 16,17 stroke:#37474f,stroke-width:2px
+    linkStyle 18,19,20,21 stroke:#4a148c,stroke-dasharray: 5 5
