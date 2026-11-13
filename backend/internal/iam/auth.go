@@ -534,6 +534,7 @@ var rolePermissions = map[string][]string{
 		"resources:read",
 		"data:read",
 		"analytics:read",
+		"analytics:write",
 		"recommendations:read",
 		"reports:read",
 		"organizations:read",
@@ -544,6 +545,7 @@ var rolePermissions = map[string][]string{
 		"resources:read",
 		"data:read",
 		"analytics:read",
+		"analytics:write",
 		"recommendations:read",
 		"reports:read",
 		"projects:read",
@@ -570,8 +572,8 @@ var rolePermissions = map[string][]string{
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
 	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "data:read", "analytics:*", "recommendations:*", "reports:*"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "recommendations:read", "reports:read"},
-	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "data:read", "analytics:read", "recommendations:read", "reports:read"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "reports:read"},
+	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "reports:read"},
 	"viewer": {"resources:read", "acquisitions:read", "data:read", "dashboards:read"},
 }
 
@@ -586,11 +588,14 @@ func NewPermissionEngine(db *gorm.DB) *PermissionEngine {
 	return &PermissionEngine{rolePermissions: loadRolePermissions(db)}
 }
 
-// loadRolePermissions builds role_code -> permission_codes from the DB and
-// falls back to the static rolePermissions map on any failure.
+// loadRolePermissions builds role_code -> permission_codes from the DB.
+// It falls back to the static rolePermissions map only when db is nil
+// (test mode). On a DB query error it logs the error and returns an empty
+// map (fail-closed) instead of silently granting static permissions. An
+// empty result also fails closed with a warning.
 func loadRolePermissions(db *gorm.DB) map[string][]string {
 	if db == nil {
-		slog.Warn("permission engine: using static role map", "reason", "no database")
+		slog.Warn("permission engine: using static role map", "reason", "database is nil (test mode)")
 		return rolePermissions
 	}
 	var rows []struct {
@@ -603,13 +608,13 @@ func loadRolePermissions(db *gorm.DB) map[string][]string {
 		Joins("JOIN " + database.TableName(db, "iam", "role_permissions") + " rp ON rp.role_id = r.role_id").
 		Joins("JOIN " + database.TableName(db, "iam", "permissions") + " p ON p.permission_id = rp.permission_id").
 		Scan(&rows).Error
-	if err != nil || len(rows) == 0 {
-		reason := "query error"
-		if err == nil {
-			reason = "empty result"
-		}
-		slog.Warn("permission engine: using static role map", "reason", reason, "error", err)
-		return rolePermissions
+	if err != nil {
+		slog.Error("permission engine: failed to load role permissions from DB; failing closed", "error", err)
+		return make(map[string][]string)
+	}
+	if len(rows) == 0 {
+		slog.Warn("permission engine: no role permissions found in DB; failing closed")
+		return make(map[string][]string)
 	}
 	m := make(map[string][]string, len(rows))
 	for _, r := range rows {

@@ -49,3 +49,22 @@ func TestPermissionEngineLoadsRolesFromDB(t *testing.T) {
 		t.Errorf("expected platform_admin *:* via static fallback (ok=%v, err=%v)", ok, err)
 	}
 }
+
+// TestPermissionEngineFailsClosedOnEmptyDB verifies that an empty permissions
+// table does not fall back to the static map: platform_admin gets nothing.
+func TestPermissionEngineFailsClosedOnEmptyDB(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(database.Config{Driver: database.DriverSQLite, DSN: "file::memory:?cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := iam.NewPermissionEngine(db)
+	adminIC := iam.IdentityContext{SystemRoles: []string{"platform_admin"}}
+	if ok, err := engine.Can(ctx, adminIC, "anything", "delete"); err != nil || ok {
+		t.Errorf("expected empty DB to fail closed (ok=%v, err=%v)", ok, err)
+	}
+}
