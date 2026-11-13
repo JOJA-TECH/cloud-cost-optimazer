@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/data"
 	"github.com/google/uuid"
 )
 
@@ -153,28 +154,166 @@ type AcquisitionRunDTO struct {
 	ErrorMessage   string     `json:"error_message,omitempty"`
 }
 
-// AcquisitionRepository persists acquisition data in cco_data (raw schema)
-// and resolves the cco_app contract UUID against the internal resource_id.
-type AcquisitionRepository interface {
-	// EnsureResource upserts cco_data.core.resource by azure_resource_id
-	// preserving the contract resource_uid and returns the internal id.
-	EnsureResource(ctx context.Context, t Target) (int64, error)
-	// StartRun opens a raw.collector_run row (status partial).
-	StartRun(ctx context.Context, source string, resourceID int64, scope string) (int64, error)
-	// FinishRun closes the run with ok/partial/error.
-	FinishRun(ctx context.Context, runID int64, status string, rowsIngested int, errMsg string) error
-	// InsertMetricReadings upserts raw.metric_reading idempotently
-	// (ON CONFLICT DO NOTHING on the PK); returns rows inserted.
-	InsertMetricReadings(ctx context.Context, resourceID int64, readings []RawReading) (int, error)
-	// InsertResourceStats upserts raw.db_resource_stats idempotently.
-	InsertResourceStats(ctx context.Context, resourceID int64, stats []DBResourceStat) (int, error)
-	// InsertQueryStore upserts raw.query_store_query and
-	// raw.query_store_runtime_stats idempotently.
-	InsertQueryStore(ctx context.Context, resourceID int64, queries []QueryStoreQuery, stats []QueryStoreRuntimeStat) (int, error)
-	// ListRuns returns collector runs, newest first, optionally filtered.
-	// When filter.ResourceUID is nil it returns runs for the given uids only
-	// (empty uids list = empty result; never an unscoped query).
-	ListRuns(ctx context.Context, uids []uuid.UUID, filter RunFilter) ([]AcquisitionRunDTO, error)
-	// GetRun returns one run; ErrRunNotFound when missing.
-	GetRun(ctx context.Context, id int64) (AcquisitionRunDTO, error)
+// ---- Gestión de Datos contract mappings ----
+//
+// Per MODULES.md, Adquisición persists through Gestión de Datos "mediante
+// contratos": internal/data owns every cco_data access. These helpers convert
+// acquisition types to the data contracts and back; no storage type leaks
+// beyond the service layer.
+
+// resourceRef converts the monitored target into the storage contract type
+// used by data.DataWriter.EnsureResource.
+func (t Target) resourceRef() data.ResourceRef {
+	return data.ResourceRef{
+		ResourceUID:     t.ResourceUID,
+		SubscriptionID:  t.SubscriptionID,
+		ResourceGroup:   t.ResourceGroup,
+		ServerName:      t.ServerName,
+		DatabaseName:    t.DatabaseName,
+		AzureResourceID: t.AzureResourceID,
+		RegionCode:      t.RegionCode,
+		Kind:            t.Kind,
+	}
+}
+
+// metricsFromReadings maps validated readings into the data.Metric write
+// contract (Count loses sub-1 precision, as raw.metric_reading stores int).
+func metricsFromReadings(readings []RawReading) []data.Metric {
+	out := make([]data.Metric, 0, len(readings))
+	for _, rd := range readings {
+		var count *int
+		if rd.Count != nil {
+			c := int(*rd.Count)
+			count = &c
+		}
+		out = append(out, data.Metric{
+			MetricCode:      rd.MetricCode,
+			TimestampUTC:    rd.Timestamp,
+			IntervalSeconds: rd.IntervalSeconds,
+			AvgValue:        rd.Average,
+			MinValue:        rd.Minimum,
+			MaxValue:        rd.Maximum,
+			TotalValue:      rd.Total,
+			CountValue:      count,
+		})
+	}
+	return out
+}
+
+// resourceStatsFrom maps DMV rows into the data.ResourceStat write contract.
+func resourceStatsFrom(stats []DBResourceStat) []data.ResourceStat {
+	out := make([]data.ResourceStat, 0, len(stats))
+	for _, st := range stats {
+		out = append(out, data.ResourceStat{
+			EndTimeUTC:            st.EndTimeUTC,
+			AvgCPUPercent:         st.AvgCPUPercent,
+			AvgDataIOPercent:      st.AvgDataIOPercent,
+			AvgLogWritePercent:    st.AvgLogWritePercent,
+			AvgMemoryUsagePercent: st.AvgMemoryUsagePercent,
+			AvgInstanceCPUPercent: st.AvgInstanceCPUPercent,
+			DTULimit:              st.DTULimit,
+			CPULimit:              st.CPULimit,
+		})
+	}
+	return out
+}
+
+// queryStoreRecordsFrom maps Query Store rows into the data write contracts.
+func queryStoreRecordsFrom(queries []QueryStoreQuery, stats []QueryStoreRuntimeStat) ([]data.QueryStoreQueryRecord, []data.QueryStoreRuntimeRecord) {
+	qs := make([]data.QueryStoreQueryRecord, 0, len(queries))
+	for _, q := range queries {
+		qs = append(qs, data.QueryStoreQueryRecord{
+			QueryID:         q.QueryID,
+			QueryTextID:     q.QueryTextID,
+			QueryHash:       q.QueryHash,
+			QuerySQLText:    q.QuerySQLText,
+			IsInternalQuery: q.IsInternalQuery,
+			SnapshotAtUTC:   q.SnapshotAtUTC,
+		})
+	}
+	rs := make([]data.QueryStoreRuntimeRecord, 0, len(stats))
+	for _, s := range stats {
+		rs = append(rs, data.QueryStoreRuntimeRecord{
+			QueryID:            s.QueryID,
+			IntervalStartUTC:   s.IntervalStartUTC,
+			IntervalEndUTC:     s.IntervalEndUTC,
+			CountExecutions:    s.CountExecutions,
+			AvgDurationUS:      s.AvgDurationUS,
+			AvgCPUTimeUS:       s.AvgCPUTimeUS,
+			AvgLogicalIOReads:  s.AvgLogicalIOReads,
+			AvgLogicalIOWrites: s.AvgLogicalIOWrites,
+			SnapshotAtUTC:      s.SnapshotAtUTC,
+		})
+	}
+	return qs, rs
+}
+
+// runDTOFrom maps a storage run record into the API DTO (unix ms timestamps).
+func runDTOFrom(r data.RunRecord) AcquisitionRunDTO {
+	dto := AcquisitionRunDTO{
+		CollectorRunID: r.CollectorRunID,
+		ResourceUID:    r.ResourceUID,
+		Source:         r.Source,
+		Scope:          strValPtr(r.Scope),
+		StartedAtUTC:   r.StartedAtUTC.UnixMilli(),
+		Status:         r.Status,
+		ErrorMessage:   strValPtr(r.ErrorMessage),
+	}
+	if r.FinishedAtUTC != nil {
+		ms := r.FinishedAtUTC.UnixMilli()
+		dto.FinishedAtUTC = &ms
+	}
+	if r.RowsIngested != nil {
+		rows := *r.RowsIngested
+		dto.RowsIngested = &rows
+	}
+	return dto
+}
+
+// runDTOsFrom maps a page of run records into API DTOs.
+func runDTOsFrom(records []data.RunRecord) []AcquisitionRunDTO {
+	out := make([]AcquisitionRunDTO, 0, len(records))
+	for _, r := range records {
+		out = append(out, runDTOFrom(r))
+	}
+	return out
+}
+
+func strValPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// ---- T4: ConfigProvider (ARM database GET) ----
+
+// ConfigReading is the normalized snapshot from ARM.
+type ConfigReading struct {
+	SKUName           *string
+	Tier              *string
+	Family            *string
+	CapacityVCores    *float64
+	MinCapacityVCores *float64
+	ComputeModel      *string
+	MaxSizeBytes      *int64
+	AutoPauseDelayMin *int
+	Status            *string
+	FreeLimit         *bool
+	SourcePayload     *string
+	ObservedAtUTC     time.Time
+}
+
+// ConfigProvider reads the current ARM configuration of an Azure SQL Database.
+type ConfigProvider interface {
+	FetchConfigSnapshot(ctx context.Context, creds cloud.ConnectionCredentials, azureResourceID string) (ConfigReading, error)
+}
+
+// ---- T5: CostProvider (Cost Management query) ----
+
+// CostProvider reads daily actual costs from Azure Cost Management.
+type CostProvider interface {
+	// FetchDailyCosts returns costs for a subscription over [from, to).
+	// The returned records must include SourceChargeID for idempotent upsert.
+	FetchDailyCosts(ctx context.Context, creds cloud.ConnectionCredentials, subscriptionID string, from, to time.Time) ([]data.CostRecord, error)
 }

@@ -2,10 +2,12 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/data"
 )
 
 // This file is the dev/tests implementation of the acquisition providers
@@ -17,6 +19,8 @@ var (
 	_ acquisition.MetricsProvider     = (*FakeMonitor)(nil)
 	_ acquisition.DiagnosticsProvider = (*FakeDiagnostics)(nil)
 	_ acquisition.QueryStoreProvider  = (*FakeQueryStore)(nil)
+	_ acquisition.ConfigProvider      = (*FakeConfig)(nil)
+	_ acquisition.CostProvider        = (*FakeCost)(nil)
 )
 
 // FakeMonitor implements acquisition.MetricsProvider with one reading per
@@ -145,3 +149,82 @@ func (f *FakeQueryStore) FetchRuntimeStats(_ context.Context, _ acquisition.SQLC
 	}
 	return queries, stats, nil
 }
+
+// FakeConfig implements acquisition.ConfigProvider with a deterministic ARM-like
+// configuration snapshot for one resource.
+type FakeConfig struct{}
+
+// NewFakeConfig returns a FakeConfig.
+func NewFakeConfig() *FakeConfig {
+	return &FakeConfig{}
+}
+
+// FetchConfigSnapshot returns a fixed config reading (serverless 2 vCore).
+func (f *FakeConfig) FetchConfigSnapshot(_ context.Context, _ cloud.ConnectionCredentials, _ string) (acquisition.ConfigReading, error) {
+	sku := "GP_S_Gen5_2"
+	tier := "GeneralPurpose"
+	family := "Gen5"
+	cap := 2.0
+	model := "serverless"
+	maxBytes := int64(32 * 1024 * 1024 * 1024)
+	delay := 60
+	status := "Online"
+	free := true
+	payload := `{"sku":{"name":"GP_S_Gen5_2"},"properties":{"maxSizeBytes":34359738368,"autoPauseDelay":60,"useFreeLimit":true}}`
+	return acquisition.ConfigReading{
+		SKUName:           &sku,
+		Tier:              &tier,
+		Family:            &family,
+		CapacityVCores:    &cap,
+		ComputeModel:      &model,
+		MaxSizeBytes:      &maxBytes,
+		AutoPauseDelayMin: &delay,
+		Status:            &status,
+		FreeLimit:         &free,
+		SourcePayload:     &payload,
+		ObservedAtUTC:     time.Now().UTC(),
+	}, nil
+}
+
+// FakeCost implements acquisition.CostProvider with two deterministic daily
+// cost rows for one subscription (SQL Database + Storage).
+type FakeCost struct{}
+
+// NewFakeCost returns a FakeCost.
+func NewFakeCost() *FakeCost {
+	return &FakeCost{}
+}
+
+// FetchDailyCosts returns two days of costs for the subscription.
+func (f *FakeCost) FetchDailyCosts(_ context.Context, _ cloud.ConnectionCredentials, subscriptionID string, from, to time.Time) ([]data.CostRecord, error) {
+	var out []data.CostRecord
+	sub := subscriptionID
+	currency := "USD"
+	src := "azure_cost_management"
+	cat := "usage"
+	model := "consumption"
+	unit := "1 Hour"
+
+	for d := from.Truncate(24 * time.Hour); d.Before(to); d = d.Add(24 * time.Hour) {
+		// SQL Database cost
+		out = append(out, data.CostRecord{
+			ProviderCode: "azure", ScopeType: "subscription", ScopeName: sub,
+			ServiceName: "SQL Database", UsageDate: d, Currency: currency,
+			SourceChargeID: strPtr(fmt.Sprintf("cost:%s:%s:sql", sub, d.Format("2006-01-02"))),
+			PreTaxCost: 8.6, UsageQuantity: f64Ptr(24), UsageUnit: &unit,
+			PricingModel: &model, ChargeCategory: &cat, Source: src,
+		})
+		// Storage cost (unmapped resource_uid)
+		out = append(out, data.CostRecord{
+			ProviderCode: "azure", ScopeType: "subscription", ScopeName: sub,
+			ServiceName: "Storage", UsageDate: d, Currency: currency,
+			SourceChargeID: strPtr(fmt.Sprintf("cost:%s:%s:storage", sub, d.Format("2006-01-02"))),
+			PreTaxCost: 0.14, UsageQuantity: f64Ptr(10), UsageUnit: &unit,
+			PricingModel: &model, ChargeCategory: &cat, Source: src,
+		})
+	}
+	return out, nil
+}
+
+func strPtr(s string) *string { return &s }
+func f64Ptr(v float64) *float64 { return &v }

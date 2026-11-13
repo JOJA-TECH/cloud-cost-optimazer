@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	azpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 )
@@ -28,10 +26,6 @@ const (
 	monitorMetricsPath = "/providers/Microsoft.Insights/metrics"
 	maxRetries429      = 3
 )
-
-// tokenFunc acquires a bearer token for given credentials. Tests override it to
-// avoid calling Microsoft Entra ID; production uses the real azidentity flow.
-type tokenFunc func(ctx context.Context, creds cloud.ConnectionCredentials) (string, error)
 
 // AzureMonitorProvider implements acquisition.MetricsProvider against Azure
 // Monitor REST using azidentity client-secret credentials and REST GETs only.
@@ -58,22 +52,6 @@ func newAzureMonitorProviderWithBase(baseURL string) *AzureMonitorProvider {
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		tokenFunc:  realToken,
 	}
-}
-
-// realToken acquires an ARM bearer token via azidentity client-secret flow.
-// It never logs or returns the client secret.
-func realToken(ctx context.Context, creds cloud.ConnectionCredentials) (string, error) {
-	cred, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
-	if err != nil {
-		return "", fmt.Errorf("build credential: %w", err)
-	}
-	tok, err := cred.GetToken(ctx, azpolicy.TokenRequestOptions{
-		Scopes: []string{monitorScope},
-	})
-	if err != nil {
-		return "", fmt.Errorf("get token: %w", err)
-	}
-	return tok.Token, nil
 }
 
 // FetchPlatformMetrics queries PT1M platform metrics for the resource over

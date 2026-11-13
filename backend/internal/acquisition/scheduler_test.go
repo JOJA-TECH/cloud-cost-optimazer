@@ -7,8 +7,8 @@ import (
 )
 
 func TestSchedulerRunsAndStops(t *testing.T) {
-	repo := newMemRepo()
-	svc := testService(repo, &stubMonitor{readings: []RawReading{validReading(CodeCPUPercent, 12)}}, nil, nil, "")
+	store := newMemStore()
+	svc := testService(store, &stubMonitor{readings: []RawReading{validReading(CodeCPUPercent, 12)}}, nil, nil, "")
 	sch := NewScheduler(svc, 10*time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -19,7 +19,7 @@ func TestSchedulerRunsAndStops(t *testing.T) {
 	}()
 
 	deadline := time.After(2 * time.Second)
-	for len(repo.runs) == 0 {
+	for len(store.runs) == 0 {
 		select {
 		case <-deadline:
 			t.Fatalf("scheduler did not run a cycle within 2s")
@@ -35,7 +35,7 @@ func TestSchedulerRunsAndStops(t *testing.T) {
 }
 
 func TestSchedulerDefaultInterval(t *testing.T) {
-	sch := NewScheduler(testService(newMemRepo(), &stubMonitor{}, nil, nil, ""), 0)
+	sch := NewScheduler(testService(newMemStore(), &stubMonitor{}, nil, nil, ""), 0)
 	if sch.interval != 60*time.Second {
 		t.Errorf("interval = %v, want 60s default", sch.interval)
 	}
