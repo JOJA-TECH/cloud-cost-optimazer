@@ -107,19 +107,19 @@ type ProjectModel struct {
 func (ProjectModel) TableName() string { return "projects" }
 
 type CloudAccountModel struct {
-	CloudAccountID       uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;primaryKey"`
-	OrganizationID       uuid.UUID  `gorm:"column:organization_id;type:uuid;not null"`
-	ProviderCode         string     `gorm:"column:provider_code;not null"`
-	DisplayName          string     `gorm:"column:display_name;not null"`
-	SubscriptionID       string     `gorm:"column:subscription_id;not null"`
-	TenantID             *string    `gorm:"column:tenant_id"`
-	CredentialReference  *string    `gorm:"column:credential_reference"`
-	Status               string     `gorm:"column:status;not null;default:pending"`
-	ClientID             *string    `gorm:"column:client_id"`
-	LastConnectionError  *string    `gorm:"column:last_connection_error"`
-	CreatedBy            *uuid.UUID `gorm:"column:created_by;type:uuid"`
-	CreatedAt            time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt            time.Time  `gorm:"column:updated_at;not null"`
+	CloudAccountID      uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;primaryKey"`
+	OrganizationID      uuid.UUID  `gorm:"column:organization_id;type:uuid;not null"`
+	ProviderCode        string     `gorm:"column:provider_code;not null"`
+	DisplayName         string     `gorm:"column:display_name;not null"`
+	SubscriptionID      string     `gorm:"column:subscription_id;not null"`
+	TenantID            *string    `gorm:"column:tenant_id"`
+	CredentialReference *string    `gorm:"column:credential_reference"`
+	Status              string     `gorm:"column:status;not null;default:pending"`
+	ClientID            *string    `gorm:"column:client_id"`
+	LastConnectionError *string    `gorm:"column:last_connection_error"`
+	CreatedBy           *uuid.UUID `gorm:"column:created_by;type:uuid"`
+	CreatedAt           time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt           time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (CloudAccountModel) TableName() string { return "accounts" }

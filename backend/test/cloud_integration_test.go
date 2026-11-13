@@ -281,9 +281,9 @@ func TestCloudCrossOrgIsolation(t *testing.T) {
 		}
 	}
 	for _, p := range []struct {
-		id     uuid.UUID
-		orgID  uuid.UUID
-		name   string
+		id    uuid.UUID
+		orgID uuid.UUID
+		name  string
 	}{
 		{project1, org1, "Project One"},
 		{project2, org2, "Project Two"},
