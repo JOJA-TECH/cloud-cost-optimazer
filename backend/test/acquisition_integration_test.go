@@ -100,24 +100,25 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 	repo := datarepos.NewDataRepository(dataDB)
 	svc := acquisition.NewService(targets, repo, repo,
 		acqadapters.NewFakeMonitor(), acqadapters.NewFakeDiagnostics(), acqadapters.NewFakeQueryStore(),
-		acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(),
+		acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(), acqadapters.NewFakeSample(),
 		acquisition.Config{
-			MonitorDelay:    90 * time.Second,
-			MonitorLookback: 5 * time.Minute,
-			SQLUser:         "workload",
-			SQLPassword:     "pw",
-			FetchParallel:   2,
+			MonitorDelay:     90 * time.Second,
+			MonitorLookback:  5 * time.Minute,
+			CostLookbackDays: 3 * 24 * time.Hour,
+			SQLUser:          "workload",
+			SQLPassword:      "pw",
+			FetchParallel:    2,
 		},
 	)
 
-	t.Run("cycle runs monitor + config + dmv + query store for the monitored target", func(t *testing.T) {
+	t.Run("cycle runs monitor + config + dmv + query store + samples for the monitored target", func(t *testing.T) {
 		outcomes, err := svc.RunCycle(ctx, &orgID, nil)
 		if err != nil {
 			t.Fatalf("RunCycle: %v", err)
 		}
-		// Now 4 sources: azure_monitor_metrics, arm_config, sql_diagnostics, query_store
-		if len(outcomes) != 4 {
-			t.Fatalf("outcomes = %d, want 4", len(outcomes))
+		// Now 5 sources: azure_monitor_metrics, arm_config, sql_diagnostics, query_store, metric_sample
+		if len(outcomes) != 5 {
+			t.Fatalf("outcomes = %d, want 5", len(outcomes))
 		}
 		sources := map[string]bool{}
 		for _, out := range outcomes {
@@ -132,7 +133,7 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 				t.Errorf("source %s rows_ingested = %d, want > 0", out.Source, out.RowsIngested)
 			}
 		}
-		for _, want := range []string{acquisition.SourceAzureMonitor, "arm_config", acquisition.SourceSQLDiag, acquisition.SourceQueryStore} {
+		for _, want := range []string{acquisition.SourceAzureMonitor, "arm_config", acquisition.SourceSQLDiag, acquisition.SourceQueryStore, "metric_sample"} {
 			if !sources[want] {
 				t.Errorf("missing source %s in outcomes %v", want, outcomes)
 			}
@@ -194,7 +195,7 @@ func TestAcquisitionStackEndToEnd(t *testing.T) {
 	t.Run("no storage configured → ErrStorageUnavailable", func(t *testing.T) {
 		noStore := acquisition.NewService(targets, nil, nil,
 			acqadapters.NewFakeMonitor(), acqadapters.NewFakeDiagnostics(), acqadapters.NewFakeQueryStore(),
-			acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(),
+			acqadapters.NewFakeConfig(), acqadapters.NewFakeCost(), acqadapters.NewFakeSample(),
 			acquisition.Config{SQLUser: "w", SQLPassword: "p"},
 		)
 		if _, err := noStore.RunCycle(ctx, &orgID, nil); !errors.Is(err, acquisition.ErrStorageUnavailable) {
