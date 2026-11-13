@@ -24,7 +24,7 @@ El proyecto propone una plataforma para analizar recursos de bases de datos clou
 
 Los actores principales son el usuario final que consulta recursos y recomendaciones, el backend que procesa las solicitudes, las fuentes cloud que proporcionan métricas y costos, y el módulo de inteligencia artificial que analiza los datos recolectados.
 
-Insertar `diagrams/context.svg` cuando el diagrama esté disponible.
+Ver `diagrams/context.mmd` (diagrama de contexto Mermaid).
 
 ## 5. Containers
 
@@ -38,7 +38,7 @@ La arquitectura inicial contempla:
 6. Conectores con fuentes de datos cloud.
 7. Módulo de presentación de sugerencias.
 
-Insertar `diagrams/containers.svg` cuando el diagrama esté disponible.
+Ver `diagrams/containers.mmd` (diagrama de contenedores Mermaid).
 
 ## 6. Components
 
@@ -48,7 +48,16 @@ Los componentes se organizarán inicialmente en gestión de usuarios, gestión d
 
 El despliegue inicial será local. Cada integrante podrá ejecutar las bases PostgreSQL en su computador o servidor de desarrollo, utilizando una configuración documentada. La estrategia para un entorno compartido o administrado se definirá en una fase posterior.
 
-Insertar `diagrams/deployment.svg` cuando el diagrama esté disponible.
+Ver `diagrams/deployment.mmd` (diagrama de despliegue Mermaid).
+
+## Diagramas disponibles
+
+- `diagrams/context.mmd` — System Context (C4 Level 1).
+- `diagrams/containers.mmd` — Containers (C4 Level 2).
+- `diagrams/components.mmd` — Componentes internos del backend (C4 Level 3).
+- `diagrams/deployment.mmd` — Despliegue local (C4 Level 4).
+- `diagrams/data-flow.mmd` — Flujo de datos end-to-end.
+
 
 ## 8. Flujo de datos
 
@@ -72,11 +81,43 @@ Se deben registrar estado de conexión, errores de consulta, tiempos de respuest
 
 La separación de bases permite evolucionar de forma independiente la persistencia operativa y la persistencia analítica. Antes de escalar, se deben definir sincronización, retención, consistencia, respaldos y mecanismos de intercambio de datos.
 
-## 12. Decisiones arquitectónicas
+## 12. Decisiones arquitectónicas (ADR)
 
-- ADR-002 — Separación inicial de bases de datos PostgreSQL.
+| ADR | Título | Estado |
+|-----|--------|--------|
+| ADR-001 | Stack tecnológico y arquitectura monolito modular en Go | Aceptada |
+| ADR-002 | Separación inicial de bases de datos PostgreSQL | Aceptada |
+| ADR-003 | Persistencia GORM portable para `cco_app` | Propuesto |
+| ADR-004 | Arquitectura de Autenticación y Autorización (IAM) | Aceptada |
+| ADR-005 | Estructura de pruebas del backend Go | Aceptada |
+| ADR-006 | Estándar de logging del backend | Aceptada |
+| ADR-007 | Diseño de seguridad del módulo Identidad y Acceso (IAM) | Aceptada |
+| ADR-008 | Adopción de Valkey para estado compartido | Aceptada |
+| ADR-009 | Módulo Cloud: Gestión de Nube y Fuentes de Datos (Module 2) | Aceptado e implementado |
+| ADR-010 | Módulo Adquisición y Monitoreo de Datos (Module 3) | Aceptado e implementado |
+| ADR-011 | Módulo Gestión de Datos (Module 4) | Aceptado e implementado |
+| ADR-012 | Módulo Analítica y Optimización (Module 5) | Aceptado e implementado |
 
-## 13. Limitaciones conocidas
+Todas las ADR viven en `docs/04-architecture/decisions/`.
+
+## 13. Módulos implementados en el backend
+
+| Módulo | Paquete | ADR | Estado | Endpoints clave |
+|--------|---------|-----|--------|-----------------|
+| Identidad y Acceso | `backend/internal/iam` | ADR-004, ADR-007 | Implementado | `/auth/*`, `/healthz`, `/api/v1/users`, `/api/v1/can` |
+| Gestión de Nube y Fuentes de Datos | `backend/internal/cloud` | ADR-009 | Implementado | `/api/v1/cloud-accounts/*`, `/api/v1/resource-bindings/*` |
+| Adquisición y Monitoreo de Datos | `backend/internal/acquisition` | ADR-010 | Implementado | `/api/v1/acquisitions/*` |
+| Gestión de Datos | `backend/internal/data` | ADR-011 | Implementado | `/api/v1/data/{metrics,costs,config-snapshots,coverage}` |
+| Analítica y Optimización | `backend/internal/analytics` | ADR-012 | Implementado | `/api/v1/analytics/{snapshots,percentiles,trends,patterns,capacity,costs,des,datasets,forecasts}` |
+| Integración con ML | `backend/internal/analytics/adapters` | ADR-012 | Pendiente (contrato `MLPort`) | `/api/v1/analytics/forecasts` (requiere ML service) |
+| Motor de Recomendaciones | — | — | Pendiente | — |
+| Auditoría y Trazabilidad | — | — | Pendiente | Trazabilidad vía logs (`request_id`/`correlation_id`) |
+| Simulación y Laboratorio | — | — | Pendiente | — |
+| Reportes | — | — | Pendiente | — |
+
+Referencia completa de la API: `backend/API.md`. Guía de ejecución y portabilidad: `backend/README.md`.
+
+## 14. Limitaciones conocidas
 
 - La infraestructura es local en la fase inicial.
 - No se ha definido todavía el mecanismo de sincronización entre las bases.
@@ -84,6 +125,6 @@ La separación de bases permite evolucionar de forma independiente la persistenc
 - Los gráficos comparativos del frontend aún no están definidos.
 - No se permite modificación automática de recursos.
 
-## 14. Evolución prevista
+## 15. Evolución prevista
 
 La arquitectura podrá migrar posteriormente a bases administradas, un entorno compartido y servicios cloud. Esa evolución deberá revisarse mediante un nuevo ADR cuando se conozcan los requisitos de disponibilidad, seguridad, costo y operación.
