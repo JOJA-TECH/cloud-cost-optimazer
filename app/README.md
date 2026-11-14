@@ -36,7 +36,7 @@ migrations/
   azure_sql/             loadtest schema, state machine, workload login
   supabase/              experiment/ops/raw/feat schemas, views, indexes
 tests/                   unit tests (no database required)
-docs/                    architecture, dataset, operations, costs
+docs/                    architecture, dataset, metrics, sizing, operations, costs
 ```
 
 ## Quick start (local, no databases)

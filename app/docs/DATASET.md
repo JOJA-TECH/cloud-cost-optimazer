@@ -68,6 +68,9 @@ aggregator selects a canonical source by priority (Azure Monitor > SQL DMVs >
 Query Store > workload self) and records it in
 `feat.metric_hourly.canonical_sources`.
 
+Capacity ceilings, wait classes and the sizing rules are documented in
+`SIZING.md`.
+
 Percentile methods are explicit: CPU percentiles are
 `empirical_interval_quantile` (60 s readings, not internal moments); the
 workload operation latency p95 is `exact_sample`. Query Store aggregates are

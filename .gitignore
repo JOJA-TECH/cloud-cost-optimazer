@@ -28,6 +28,7 @@ env/
 htmlcov/
 
 # --- App runtime secrets & local state ---
+.env
 app/.env
 app/*.env
 !app/.env.example
@@ -44,3 +45,6 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+
+# --- Local data archives (never commit) ---
+backups/

@@ -22,7 +22,7 @@ dataset survives even when the VM is stopped or the Azure side is destroyed.
 ├── app/                    # Python application executed on the VM
 │   ├── src/                # config, db clients, workload, metrics, sync, telegram
 │   ├── migrations/         # azure_sql (T-SQL) and supabase (SQL) migrations
-│   ├── docs/               # ARCHITECTURE, COSTS, DATASET, OPERATIONS
+│   ├── docs/               # ARCHITECTURE, COSTS, DATASET, METRICS, SIZING, OPERATIONS
 │   └── tests/
 ├── systemd/                # systemd unit templates installed on the VM
 └── scripts/                # bootstrap, deploy, validate, cost-check, destroy

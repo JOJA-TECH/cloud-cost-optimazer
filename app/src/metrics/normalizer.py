@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 # Catalog version: bump whenever a code, unit or bound changes so stored rows
 # and features are always attributable to an exact contract revision.
-METRIC_CATALOG_VERSION = "2026.10.2"
+METRIC_CATALOG_VERSION = "2026.11.1"
 
 # Canonical metric code -> (unit, min, max, participates_in_features)
 METRIC_CATALOG: Dict[str, tuple] = {
@@ -39,6 +39,67 @@ METRIC_CATALOG: Dict[str, tuple] = {
     "error_rate": ("ratio", 0.0, 1.0, True),
     "throughput_ops_per_second": ("ops_per_second", 0.0, None, True),
     "dtu_consumption_percent": ("percent", 0.0, 100.0, False),
+    # --- Capacity limits (sys.dm_user_db_resource_governance) ---------------
+    # The billable cap and the real enforcement limits. Without these a
+    # utilization percentage cannot be turned into vCores or compared across SKUs.
+    "cpu_limit_vcores": ("count", 0.0, 64.0, False),
+    "cpu_used_vcores": ("count", 0.0, 64.0, False),
+    "max_dop": ("count", 0.0, 64.0, False),
+    "max_sessions": ("count", 0.0, 32767.0, False),
+    "max_memory_percent": ("percent", 0.0, 100.0, False),
+    "max_memory_grant_percent": ("percent", 0.0, 100.0, False),
+    # primary_max_log_rate is the per-database log write ceiling (4.5 MB/s on
+    # GP_S_Gen5_1); instance_max_log_rate is the shared instance ceiling.
+    "log_rate_cap_bytes_per_sec": ("bytes_per_second", 0.0, None, False),
+    "instance_max_log_rate_bytes_per_sec": ("bytes_per_second", 0.0, None, False),
+    "instance_cpu_percent": ("percent", 0.0, 100.0, False),
+    # --- Waits, normalised by wall clock (ms waited per second elapsed) ------
+    "wait_cpu_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_log_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_lock_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_io_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_memory_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_other_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "wait_critical_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    # --- Gauges (sys.dm_os_performance_counters) ----------------------------
+    # Per-second counters from that DMV are unreliable in Azure SQL and are
+    # deliberately not collected (see sql_extras.COUNTER_CODES).
+    "page_life_expectancy_sec": ("seconds", 0.0, None, False),
+    "memory_grants_pending": ("count", 0.0, None, False),
+    "total_server_memory_bytes": ("bytes", 0.0, None, False),
+    "database_cache_memory_bytes": ("bytes", 0.0, None, False),
+    # --- File IO (delta of sys.dm_io_virtual_file_stats) --------------------
+    "rows_read_bytes_per_sec": ("bytes_per_second", 0.0, None, False),
+    "rows_write_bytes_per_sec": ("bytes_per_second", 0.0, None, False),
+    "rows_stall_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    "log_stall_ms_per_sec": ("ms_per_second", 0.0, None, False),
+    # --- Congestion ---------------------------------------------------------
+    "running_requests": ("count", 0.0, None, False),
+    "blocked_requests": ("count", 0.0, None, False),
+    "longest_running_ms": ("milliseconds", 0.0, None, False),
+    # --- Storage and workload inventory (slow, once per 30 min) -------------
+    "log_size_bytes": ("bytes", 0.0, None, False),
+    "log_vlf_count": ("count", 0.0, None, False),
+    "index_seeks_total": ("count", 0.0, None, False),
+    "index_scans_total": ("count", 0.0, None, False),
+    "index_lookups_total": ("count", 0.0, None, False),
+    "index_updates_total": ("count", 0.0, None, False),
+    "tuning_recommendations_count": ("count", 0.0, None, False),
+    "tempdb_used_bytes": ("bytes", 0.0, None, False),
+    "runnable_tasks": ("count", 0.0, None, False),
+    "work_queue_count": ("count", 0.0, None, False),
+    # --- Billing truth (Azure Monitor) --------------------------------------
+    "app_cpu_billed": ("count", 0.0, None, False),
+    "app_cpu_percent": ("percent", 0.0, 100.0, False),
+    "connection_successful_count": ("count", 0.0, None, False),
+    "connection_failed_count": ("count", 0.0, None, False),
+    "blocked_by_firewall_count": ("count", 0.0, None, False),
+    "tempdb_log_used_percent": ("percent", 0.0, 100.0, False),
+    "tempdb_data_size_bytes": ("bytes", 0.0, None, False),
+    "process_core_percent": ("percent", 0.0, 100.0, False),
+    "process_memory_percent": ("percent", 0.0, 100.0, False),
+    "free_vcore_seconds_remaining": ("count", 0.0, None, False),
+    "free_vcore_seconds_consumed": ("count", 0.0, None, False),
 }
 
 # Raw name (Azure Monitor / DMV) -> canonical code.
@@ -55,11 +116,30 @@ NORMALIZATION_MAP: Dict[str, str] = {
     "sessions_count": "sessions_count",
     "deadlock": "deadlock_count",
     "deadlocks": "deadlock_count",
+    # Azure Monitor capacity, throughput and billing metrics
+    "cpu_limit": "cpu_limit_vcores",
+    "cpu_used": "cpu_used_vcores",
+    "app_cpu_billed": "app_cpu_billed",
+    "app_cpu_percent": "app_cpu_percent",
+    "connection_successful": "connection_successful_count",
+    "connection_failed": "connection_failed_count",
+    "blocked_by_firewall": "blocked_by_firewall_count",
+    "tempdb_log_used_percent": "tempdb_log_used_percent",
+    "tempdb_data_size": "tempdb_data_size_bytes",
+    "sqlserver_process_core_percent": "process_core_percent",
+    "sqlserver_process_memory_percent": "process_memory_percent",
+    "free_amount_remaining": "free_vcore_seconds_remaining",
+    "free_amount_consumed": "free_vcore_seconds_consumed",
     # sys.dm_db_resource_stats columns
     "avg_cpu_percent": "cpu_percent",
     "avg_data_io_percent": "data_io_percent",
     "avg_log_write_percent": "log_write_percent",
     "avg_memory_usage_percent": "memory_percent",
+    # Same DMV, same meaning as the Azure Monitor worker/session utilization:
+    # reusing the code keeps both readings under one canonical source lock.
+    "max_worker_percent": "workers_percent",
+    "max_session_percent": "sessions_percent",
+    "avg_instance_cpu_percent": "instance_cpu_percent",
     # Query Store aggregates
     "avg_duration_ms": "query_duration_avg_ms",
     # Workload generator self-observation

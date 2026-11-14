@@ -222,7 +222,7 @@ def test_percentiles_quality_coverage():
     assert 0.0 < cov["cpu_percent"] <= 1.0
     wq, _ = window_quality({"cpu_percent": 0.0})
     assert wq == "not_available"
-    assert METRIC_CATALOG_VERSION == "2026.10.2"
+    assert METRIC_CATALOG_VERSION == "2026.11.1"
 
 
 # ---------------------------------------------------------------------------

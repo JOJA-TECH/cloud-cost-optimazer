@@ -27,7 +27,27 @@ PLATFORM_METRICS = [
     "sessions_percent",
     "deadlock",
     "sessions_count",
+    # Capacity and billing truth. cpu_limit + cpu_used are the control-plane
+    # view of the same cap the DMV reports; app_cpu_billed is what the free
+    # tier actually meters (it does not match the DMV workload percentage).
+    "cpu_limit",
+    "cpu_used",
+    "app_cpu_billed",
+    "app_cpu_percent",
+    # Availability and TempDB pressure.
+    "connection_successful",
+    "connection_failed",
+    "blocked_by_firewall",
+    "tempdb_log_used_percent",
+    "tempdb_data_size",
+    "sqlserver_process_core_percent",
+    "sqlserver_process_memory_percent",
 ]
+
+# The free-tier budget counters only accept a 15 min grain; querying them at the
+# normal grain returns 400 and would drop the whole cycle.
+BUDGET_METRICS = ["free_amount_remaining", "free_amount_consumed"]
+BUDGET_GRANULARITY_SECONDS = 900
 
 
 def available() -> bool:
@@ -71,11 +91,14 @@ def fetch(
         for metric_name in PLATFORM_METRICS:
             try:
                 responses.append(
-                    client.query_resource(
-                        resource_id,
-                        metric_names=[metric_name],
-                        timespan=(window_start, window_end),
-                        granularity=dt.timedelta(seconds=granularity_seconds),
+                    (
+                        client.query_resource(
+                            resource_id,
+                            metric_names=[metric_name],
+                            timespan=(window_start, window_end),
+                            granularity=dt.timedelta(seconds=granularity_seconds),
+                        ),
+                        granularity_seconds,
                     )
                 )
             except HttpResponseError as exc:
@@ -85,48 +108,69 @@ def fetch(
                     )
                     continue
                 raise
-        for metric in (m for response in responses for m in response.metrics):
-            code = canonical_metric(metric.name)
-            if not code:
-                if rejected is not None:
-                    rejected.append(
-                        {
-                            "source": "azure_monitor",
-                            "raw_metric_name": metric.name,
-                            "raw_unit": getattr(metric, "unit", None),
-                            "observed_at_utc": window_end,
-                            "payload_json": {"raw_metric": metric.name},
-                            "reason": "unknown_metric",
-                            "resource_uid": resource_uid,
-                        }
+        for metric_name in BUDGET_METRICS:
+            try:
+                responses.append(
+                    (
+                        client.query_resource(
+                            resource_id,
+                            metric_names=[metric_name],
+                            timespan=(window_start, window_end),
+                            granularity=dt.timedelta(seconds=BUDGET_GRANULARITY_SECONDS),
+                        ),
+                        BUDGET_GRANULARITY_SECONDS,
                     )
-                logger.warning("dropping unknown Azure Monitor metric %r", metric.name)
-                continue
-            for series in metric.timeseries:
-                for point in series.data:
-                    value = _point_value(point)
-                    if value is None:
-                        continue
-                    observed = point.timestamp
-                    if observed.tzinfo is None:
-                        observed = observed.replace(tzinfo=dt.timezone.utc)
-                    payload = {"raw_metric": metric.name}
-                    if sku_name is not None:
-                        payload["sku_name"] = sku_name
-                    readings.append(
-                        MetricReading(
-                            metric_code=code,
-                            value=float(value),
-                            unit=unit_for(code),
-                            observed_at_utc=observed,
-                            interval_seconds=granularity_seconds,
-                            source="azure_monitor",
-                            resource_uid=resource_uid,
-                            source_record_id=None,
-                            source_payload=payload,
-                            source_granularity_seconds=granularity_seconds,
+                )
+            except HttpResponseError as exc:
+                if exc.status_code == 400:
+                    logger.debug(
+                        "budget metric %s not available for %s", metric_name, resource_uid
+                    )
+                    continue
+                raise
+        for response, grain in responses:
+            for metric in response.metrics:
+                code = canonical_metric(metric.name)
+                if not code:
+                    if rejected is not None:
+                        rejected.append(
+                            {
+                                "source": "azure_monitor",
+                                "raw_metric_name": metric.name,
+                                "raw_unit": getattr(metric, "unit", None),
+                                "observed_at_utc": window_end,
+                                "payload_json": {"raw_metric": metric.name},
+                                "reason": "unknown_metric",
+                                "resource_uid": resource_uid,
+                            }
                         )
-                    )
+                    logger.warning("dropping unknown Azure Monitor metric %r", metric.name)
+                    continue
+                for series in metric.timeseries:
+                    for point in series.data:
+                        value = _point_value(point)
+                        if value is None:
+                            continue
+                        observed = point.timestamp
+                        if observed.tzinfo is None:
+                            observed = observed.replace(tzinfo=dt.timezone.utc)
+                        payload = {"raw_metric": metric.name}
+                        if sku_name is not None:
+                            payload["sku_name"] = sku_name
+                        readings.append(
+                            MetricReading(
+                                metric_code=code,
+                                value=float(value),
+                                unit=unit_for(code),
+                                observed_at_utc=observed,
+                                interval_seconds=grain,
+                                source="azure_monitor",
+                                resource_uid=resource_uid,
+                                source_record_id=None,
+                                source_payload=payload,
+                                source_granularity_seconds=grain,
+                            )
+                        )
     except Exception as exc:  # noqa: BLE001 - monitoring must never break capture
         logger.warning("Azure Monitor query failed for %s: %s", resource_uid, exc)
         return []

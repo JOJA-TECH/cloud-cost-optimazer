@@ -28,7 +28,7 @@ from typing import List, Tuple
 
 from ..config import Config, from_env, load_env_file
 from ..sync import writer
-from . import aggregator, azure_monitor, query_store, sql_diagnostics, workload_observations
+from . import aggregator, azure_monitor, query_store, sql_diagnostics, sql_extras, workload_observations
 from .normalizer import MetricReading
 from .quality import evaluate_reading
 
@@ -111,6 +111,13 @@ def collect_once(cfg: Config, collector_run_uid: str) -> writer.WriteResult:
         )
         if cfg.collect_sql_diagnostics:
             readings.extend(sql_diagnostics.fetch(cfg, resource_uid, sku_name=sku_name))
+            readings.extend(
+                sql_extras.fetch(
+                    cfg, resource_uid,
+                    interval=cfg.capture_raw_interval_seconds,
+                    sku_name=sku_name,
+                )
+            )
             readings.extend(query_store.fetch(cfg, resource_uid, sku_name=sku_name))
 
     observations, workload_stats = workload_observations.drain(cfg, start, end)

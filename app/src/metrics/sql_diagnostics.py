@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 RESOURCE_STATS_QUERY = (
     "SELECT avg_cpu_percent, avg_data_io_percent, avg_log_write_percent, "
-    " avg_memory_usage_percent, end_time "
+    " avg_memory_usage_percent, max_worker_percent, max_session_percent, "
+    " avg_instance_cpu_percent, end_time "
     "FROM sys.dm_db_resource_stats "
     "WHERE end_time > ? "
     "ORDER BY end_time ASC"
@@ -62,6 +63,10 @@ RESOURCE_COLUMNS = [
     "avg_data_io_percent",
     "avg_log_write_percent",
     "avg_memory_usage_percent",
+    # Ceilings: without them a percentage cannot be sized against its cap.
+    "max_worker_percent",
+    "max_session_percent",
+    "avg_instance_cpu_percent",
 ]
 
 
