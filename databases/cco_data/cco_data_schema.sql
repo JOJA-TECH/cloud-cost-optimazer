@@ -938,6 +938,19 @@ CREATE TABLE opt.recommendation (
     recommendation_uid        uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, -- ID estable entre cco_data y cco_app
     scenario_id               bigint NOT NULL REFERENCES opt.scenario(scenario_id),
     chosen_candidate_id       bigint REFERENCES opt.candidate_configuration(candidate_id),
+    action_type               text NOT NULL DEFAULT 'no_action'
+        CONSTRAINT ck_recommendation_action_type
+        CHECK (action_type IN (
+            'resize_up',
+            'resize_down',
+            'change_compute_model',
+            'enable_autoscaling',
+            'disable_autoscaling',
+            'no_action'
+        )),
+    action_description        text NOT NULL DEFAULT '',
+    action_parameters         jsonb NOT NULL DEFAULT '{}'::jsonb
+        CHECK (jsonb_typeof(action_parameters) = 'object'),
     version                   integer NOT NULL,
     supersedes_id             bigint REFERENCES opt.recommendation(recommendation_id),
     current_sku_name          text NOT NULL,
@@ -946,9 +959,24 @@ CREATE TABLE opt.recommendation (
     proposed_sku_name         text NOT NULL,
     proposed_compute_model    text,
     proposed_capacity_vcores  numeric(4,1),
+    estimated_current_monthly_cost  numeric(18,2),
+    estimated_proposed_monthly_cost numeric(18,2),
     estimated_savings_pct     numeric(6,3) NOT NULL,
     estimated_monthly_savings numeric(18,2),
+    saving_currency           char(3),
+    saving_period_start_utc   timestamptz,
+    saving_period_end_utc     timestamptz,
+    saving_method             text,
+    current_cost_basis        text
+        CHECK (current_cost_basis IN ('actual_cost_daily','price_catalog','scenario_simulation')),
+    proposed_cost_basis       text
+        CHECK (proposed_cost_basis IN ('actual_cost_daily','price_catalog','scenario_simulation')),
     confidence                numeric(5,4) CHECK (confidence BETWEEN 0 AND 1),
+    confidence_components     jsonb CONSTRAINT ck_recommendation_confidence_components CHECK (
+        (confidence IS NULL AND confidence_components IS NULL) OR
+        (confidence IS NOT NULL AND confidence_components IS NOT NULL AND
+         jsonb_typeof(confidence_components) = 'object')
+    ),
     status                    text NOT NULL DEFAULT 'proposed'
         CHECK (status IN ('proposed','under_review','accepted','rejected','applied','dismissed')),
     rationale                 text NOT NULL,       -- racional legible (Cuadro 5)
@@ -1039,12 +1067,25 @@ SELECT DISTINCT ON (s.resource_id)
     rec.recommendation_id,
     rec.scenario_id,
     rec.version,
+    rec.action_type,
+    rec.action_description,
+    rec.action_parameters,
     rec.current_sku_name,
     rec.proposed_sku_name,
     rec.proposed_compute_model,
     rec.proposed_capacity_vcores,
+    rec.estimated_current_monthly_cost,
+    rec.estimated_proposed_monthly_cost,
     rec.estimated_savings_pct,
+    rec.estimated_monthly_savings,
+    rec.saving_currency,
+    rec.saving_period_start_utc,
+    rec.saving_period_end_utc,
+    rec.saving_method,
+    rec.current_cost_basis,
+    rec.proposed_cost_basis,
     rec.confidence,
+    rec.confidence_components,
     rec.status,
     rec.created_at
 FROM opt.recommendation rec
@@ -1171,11 +1212,15 @@ JOIN core.resource r ON r.resource_id = ps.resource_id;
 
 CREATE VIEW contract.v_recommendation AS
 SELECT rec.recommendation_uid, s.scenario_uid, r.resource_uid,
-       rec.version, rec.current_sku_name, rec.current_compute_model,
+       rec.version, rec.action_type, rec.action_description, rec.action_parameters,
+       rec.current_sku_name, rec.current_compute_model,
        rec.current_capacity_vcores, rec.proposed_sku_name,
        rec.proposed_compute_model, rec.proposed_capacity_vcores,
+       rec.estimated_current_monthly_cost, rec.estimated_proposed_monthly_cost,
        rec.estimated_savings_pct, rec.estimated_monthly_savings,
-       rec.confidence, rec.status, rec.rationale, rec.generated_by,
+       rec.saving_currency, rec.saving_period_start_utc, rec.saving_period_end_utc,
+       rec.saving_method, rec.current_cost_basis, rec.proposed_cost_basis,
+       rec.confidence, rec.confidence_components, rec.status, rec.rationale, rec.generated_by,
        rec.created_at, rec.decided_at, rec.decided_by, rec.applied_at
 FROM opt.recommendation rec
 JOIN opt.scenario s ON s.scenario_id = rec.scenario_id

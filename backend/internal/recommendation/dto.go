@@ -26,8 +26,12 @@ type OpportunityInput struct {
 type SavingInput struct {
 	CurrentMonthlyCost  float64
 	ProposedMonthlyCost float64
+	CurrentCostBasis    CostBasis
+	ProposedCostBasis   CostBasis
 	Currency            string
-	PriceBasis          string
+	PeriodStart         time.Time
+	PeriodEnd           time.Time
+	Method              string
 }
 
 type RiskInput struct {
@@ -38,34 +42,32 @@ type RiskInput struct {
 
 type RecommendationFilter struct {
 	ResourceUID *uuid.UUID
-	Status      string
+	Status      RecommendationStatus
 	Limit       int
 	Offset      int
 }
 
 type Recommendation struct {
-	UID                    uuid.UUID
-	ScenarioUID            uuid.UUID
-	ResourceUID            uuid.UUID
-	ChosenCandidateID      *int64
-	Version                int
-	SupersedesUID          *uuid.UUID
-	CurrentSKUName         string
-	CurrentComputeModel    *string
-	CurrentCapacityVCores  *float64
-	ProposedSKUName        string
-	ProposedComputeModel   *string
-	ProposedCapacityVCores *float64
-	EstimatedSavingsPct    float64
-	EstimatedMonthlySaving *float64
-	Confidence             *float64
-	Status                 string
-	Rationale              string
-	GeneratedBy            string
-	CreatedAt              time.Time
-	DecidedAt              *time.Time
-	DecidedBy              *string
-	AppliedAt              *time.Time
+	UID                   uuid.UUID
+	ScenarioUID           uuid.UUID
+	Version               int
+	ResourceUID           uuid.UUID
+	ChosenCandidateID     *int64
+	SupersedesUID         *uuid.UUID
+	Action                RecommendationAction
+	CurrentConfiguration  Configuration
+	ProposedConfiguration Configuration
+	EstimatedSaving       EstimatedSaving
+	Risk                  RecommendationRisk
+	Confidence            RecommendationConfidence
+	Rationale             RecommendationRationale
+	Evidence              []RecommendationEvidence
+	Status                RecommendationStatus
+	GeneratedBy           string
+	CreatedAt             time.Time
+	DecidedAt             *time.Time
+	DecidedBy             *string
+	AppliedAt             *time.Time
 }
 
 type OpportunityEvaluation struct {
@@ -77,21 +79,113 @@ type OpportunityEvaluation struct {
 	Rationale RecommendationRationale
 }
 
+// EstimatedSaving keeps observed current cost separate from the proposed
+// price or simulation basis. MonthlyPercentage is a ratio, not a 0-100 value.
+// MonthlyAmount = CurrentMonthlyCost - ProposedMonthlyCost, and
+// MonthlyPercentage = MonthlyAmount / CurrentMonthlyCost.
 type EstimatedSaving struct {
 	CurrentMonthlyCost  float64
 	ProposedMonthlyCost float64
 	MonthlyAmount       float64
-	AnnualAmount        float64
-	Percent             float64
+	MonthlyPercentage   float64 // fraction of CurrentMonthlyCost, e.g. 0.15 means 15%.
+	CurrentCostBasis    CostBasis
+	ProposedCostBasis   CostBasis
 	Currency            string
-	PriceBasis          string
+	PeriodStart         time.Time
+	PeriodEnd           time.Time
+	Method              string
 }
 
+type CostBasis string
+
+const (
+	CostBasisActualCost CostBasis = "actual_cost_daily"
+	CostBasisListPrice  CostBasis = "price_catalog"
+	CostBasisSimulation CostBasis = "scenario_simulation"
+)
+
 type RecommendationRisk struct {
-	Score      float64
-	Level      string
-	Factors    []string
-	AssessedAt time.Time
+	Score        float64
+	Level        RiskLevel
+	PeakUsage    float64
+	Variability  float64
+	Trend        float64
+	Headroom     float64
+	Factors      map[string]any
+	ModelVersion string
+}
+
+// RecommendationConfidence records both the reproducible score and the
+// components used to derive it. For weighted_components_v1, Score is:
+// 0.30*DataQualityScore + 0.25*EvidenceCompletenessScore +
+// 0.20*ForecastQualityScore + 0.15*SimulationFeasibilityScore +
+// 0.10*PolicyMatchScore.
+type RecommendationConfidence struct {
+	Score                      float64 `json:"score"`
+	DataQualityScore           float64 `json:"data_quality_score"`
+	EvidenceCompletenessScore  float64 `json:"evidence_completeness_score"`
+	ForecastQualityScore       float64 `json:"forecast_quality_score"`
+	SimulationFeasibilityScore float64 `json:"simulation_feasibility_score"`
+	PolicyMatchScore           float64 `json:"policy_match_score"`
+	Method                     string  `json:"method"`
+}
+
+const RecommendationConfidenceMethodWeightedV1 = "weighted_components_v1"
+
+// RecommendationAction describes a proposed action; it is never executed by
+// the recommendation engine.
+type RecommendationAction struct {
+	Type        ActionType
+	Description string
+	Parameters  map[string]any
+}
+
+type ActionType string
+
+const (
+	ActionResizeUp           ActionType = "resize_up"
+	ActionResizeDown         ActionType = "resize_down"
+	ActionChangeComputeModel ActionType = "change_compute_model"
+	ActionEnableAutoscaling  ActionType = "enable_autoscaling"
+	ActionDisableAutoscaling ActionType = "disable_autoscaling"
+	ActionNoAction           ActionType = "no_action"
+)
+
+type RecommendationStatus string
+
+const (
+	RecommendationStatusProposed    RecommendationStatus = "proposed"
+	RecommendationStatusUnderReview RecommendationStatus = "under_review"
+	RecommendationStatusAccepted    RecommendationStatus = "accepted"
+	RecommendationStatusRejected    RecommendationStatus = "rejected"
+	RecommendationStatusApplied     RecommendationStatus = "applied"
+	RecommendationStatusDismissed   RecommendationStatus = "dismissed"
+)
+
+type RiskLevel string
+
+const (
+	RiskLevelLow      RiskLevel = "low"
+	RiskLevelMedium   RiskLevel = "medium"
+	RiskLevelHigh     RiskLevel = "high"
+	RiskLevelCritical RiskLevel = "critical"
+)
+
+type Configuration struct {
+	SKUName        string
+	ComputeModel   string
+	CapacityVCores *float64
+	Parameters     map[string]any
+}
+
+type RecommendationEvidence struct {
+	Type           string
+	MetricCode     *string
+	Value          *float64
+	Unit           *string
+	WindowStartUTC *time.Time
+	WindowEndUTC   *time.Time
+	Context        map[string]any
 }
 
 type RecommendationRationale struct {
