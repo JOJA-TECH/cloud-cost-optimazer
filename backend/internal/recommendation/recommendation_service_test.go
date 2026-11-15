@@ -73,6 +73,307 @@ func TestPublishRecommendationEvaluatesPolicyBeforePersisting(t *testing.T) {
 	}
 }
 
+func testGenerationInput(resourceUID, policyUID uuid.UUID, from, to time.Time) GenerateRecommendationInput {
+	return GenerateRecommendationInput{
+		ResourceUID: resourceUID, PolicyUID: policyUID,
+		From: from, To: to, HorizonDays: 30, Currency: "USD",
+	}
+}
+
+func TestGenerateRecommendationRejectsInvalidWindows(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	now := time.Now().UTC()
+	tests := []struct {
+		name string
+		from time.Time
+		to   time.Time
+	}{
+		{"zero start", time.Time{}, now},
+		{"zero end", now.Add(-time.Hour), time.Time{}},
+		{"equal bounds", now, now},
+		{"reversed bounds", now, now.Add(-time.Hour)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := service.GenerateRecommendation(context.Background(),
+				testGenerationInput(resourceUID, policy.UID, test.from, test.to))
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("GenerateRecommendation() error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestGenerateRecommendationFailsForMissingResource(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	service.configurations = engineTestConfiguration{err: ErrResourceNotFound}
+	now := time.Now().UTC()
+	_, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-24*time.Hour), now))
+	if !errors.Is(err, ErrResourceNotFound) {
+		t.Fatalf("GenerateRecommendation() error = %v, want ErrResourceNotFound", err)
+	}
+}
+
+func TestGenerateRecommendationReturnsNoActionWithoutCosts(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	service.costs = engineTestCosts(nil)
+	analyticsReader := service.analytics.(engineTestAnalytics)
+	analyticsReader.cost.ActualMonthlyCost = 0
+	service.analytics = analyticsReader
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction || result.GenerationState != "insufficient_information" {
+		t.Fatalf("without costs got action=%q state=%q, want no_action/insufficient_information",
+			result.Action.Type, result.GenerationState)
+	}
+}
+
+func TestGenerateRecommendationReturnsNoActionWithoutAnalyticsEvidence(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	analyticsReader := service.analytics.(engineTestAnalytics)
+	analyticsReader.snapshots = nil
+	analyticsReader.percentiles = nil
+	analyticsReader.trends = nil
+	analyticsReader.capacity = CapacityAnalysis{}
+	analyticsReader.cost = CostAnalysis{}
+	analyticsReader.des = DESComponents{}
+	service.analytics = analyticsReader
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction || result.GenerationState != "insufficient_information" {
+		t.Fatalf("without analytics evidence got action=%q state=%q",
+			result.Action.Type, result.GenerationState)
+	}
+}
+
+func TestGenerateRecommendationReturnsNoActionForNegativeSavings(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	service.prices = engineTestPrices{"GP_Gen5_8": 100, "GP_Gen5_6": 100}
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction || result.EstimatedSaving.MonthlyAmount != 0 {
+		t.Fatalf("negative savings should produce no_action with zeroed decision savings: %+v", result)
+	}
+}
+
+func TestGenerateRecommendationRejectsInfeasibleCandidate(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	service.forecasts = engineTestForecasts{{
+		ForecastUID: uuid.New(), ResourceUID: resourceUID, TargetMetric: "cpu_avg",
+		PeriodStartUTC: time.Now().UTC(), YPred: 100, YUpper: floatPtr(100),
+	}}
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction {
+		t.Fatalf("infeasible candidate produced action %q, want no_action", result.Action.Type)
+	}
+	foundFeasible := false
+	for _, simulation := range service.repository.(*engineTestRepository).persist.Simulations {
+		if simulation.Feasible != nil && *simulation.Feasible {
+			foundFeasible = true
+		}
+	}
+	if foundFeasible {
+		t.Fatal("at least one candidate simulation was feasible despite over-capacity forecasts")
+	}
+}
+
+func TestGenerateRecommendationReturnsNoActionBelowConfidenceThreshold(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	policy.Constraints["min_confidence"] = 1.01
+	service.policyRepository = engineTestPolicyRepository{policy: policy}
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction {
+		t.Fatalf("below-policy confidence produced action %q, want no_action", result.Action.Type)
+	}
+}
+
+func TestEvaluatePolicyRejectsMissingLatencyAndSLAPredictions(t *testing.T) {
+	tests := []struct {
+		name        string
+		constraints map[string]any
+		want        string
+	}{
+		{"latency", map[string]any{"max_latency_increase_pct": 10.0}, "latency_evidence_unavailable"},
+		{"sla", map[string]any{"max_sla_violations": 0.0}, "sla_evidence_unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := EvaluatePolicy(
+				OptimizationPolicy{UID: uuid.New(), Version: 1, Enabled: true, Constraints: test.constraints},
+				PolicyEvaluationInput{
+					Action: RecommendationAction{Type: ActionResizeDown},
+					Simulation: ScenarioSimulation{
+						Feasible: boolPtr(true),
+					},
+					Confidence: RecommendationConfidence{Score: 0.9},
+				},
+			)
+			if result.Allowed || !containsString(result.ViolatedConstraints, test.want) {
+				t.Fatalf("EvaluatePolicy() = %+v, want rejection for %s", result, test.want)
+			}
+		})
+	}
+}
+
+func TestCalculateRiskCanReachCriticalLevel(t *testing.T) {
+	p50, p99 := 0.0, 100.0
+	evidence := generationEvidence{EvidenceBundle: EvidenceBundle{
+		PercentileStatistics: []PercentileStatistic{
+			{MetricCode: "cpu_percent", Percentile: 50, Value: &p50},
+			{MetricCode: "cpu_percent", Percentile: 99, Value: &p99},
+		},
+		Trends:           []Trend{{MetricCode: "cpu_percent", Slope: 100}},
+		CapacityAnalysis: &CapacityAnalysis{PeakUtilization: 100, HeadroomPct: 0},
+	}}
+	risk := calculateRisk(evidence, ScenarioSimulation{}, CandidateConfiguration{
+		CapacityVCores: floatPtr(1),
+	}, Configuration{CapacityVCores: floatPtr(8)})
+	if risk.Level != RiskLevelCritical || risk.Score < 0.8 {
+		t.Fatalf("risk = %+v, want critical score >= 0.8", risk)
+	}
+}
+
+func TestGenerateRecommendationSupportsScaleUp(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	family := "Gen5"
+	sku := "GP_Gen5_6"
+	model := "provisioned"
+	capacity := 6.0
+	service.configurations = engineTestConfiguration{snapshot: &ConfigurationSnapshot{
+		ResourceUID: resourceUID, SKUName: &sku, Tier: stringPtr("GeneralPurpose"),
+		Family: &family, ComputeModel: &model, CapacityVCores: &capacity,
+		ObservedAtUTC: time.Now().UTC(),
+	}}
+	analyticsReader := service.analytics.(engineTestAnalytics)
+	cpu95, cpu99 := 85.0, 95.0
+	for i := range analyticsReader.percentiles {
+		if analyticsReader.percentiles[i].MetricCode != "cpu_percent" {
+			continue
+		}
+		switch analyticsReader.percentiles[i].Percentile {
+		case 95:
+			analyticsReader.percentiles[i].Value = &cpu95
+		case 99:
+			analyticsReader.percentiles[i].Value = &cpu99
+		}
+	}
+	service.analytics = analyticsReader
+	service.skus = engineTestSKUs{
+		{ID: 4, Name: "GP_Gen5_4", Tier: "GeneralPurpose", Family: &family, ComputeModel: "provisioned", CapacityVCores: 4, InScope: true},
+		{ID: 6, Name: "GP_Gen5_6", Tier: "GeneralPurpose", Family: &family, ComputeModel: "provisioned", CapacityVCores: 6, InScope: true},
+		{ID: 8, Name: "GP_Gen5_8", Tier: "GeneralPurpose", Family: &family, ComputeModel: "provisioned", CapacityVCores: 8, InScope: true},
+	}
+	service.prices = engineTestPrices{"GP_Gen5_6": 0.4, "GP_Gen5_8": 0.5}
+	now := time.Now().UTC()
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionResizeUp || result.ProposedConfiguration.SKUName != "GP_Gen5_8" {
+		t.Fatalf("got action=%q SKU=%q, want resize_up GP_Gen5_8", result.Action.Type, result.ProposedConfiguration.SKUName)
+	}
+}
+
+func TestGenerateRecommendationSupportsComputeModelChange(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	policy.Constraints["allow_compute_model_change"] = true
+	service.policyRepository = engineTestPolicyRepository{policy: policy}
+	analyticsReader := service.analytics.(engineTestAnalytics)
+	analyticsReader.pattern.IntensityBand = "low"
+	analyticsReader.pattern.PeakFrequency = 1
+	analyticsReader.snapshots[0].CPUAvg = 10
+	cpu50, cpu95, cpu99 := 10.0, 15.0, 20.0
+	for i := range analyticsReader.percentiles {
+		switch analyticsReader.percentiles[i].Percentile {
+		case 50:
+			analyticsReader.percentiles[i].Value = &cpu50
+		case 95:
+			analyticsReader.percentiles[i].Value = &cpu95
+		case 99:
+			analyticsReader.percentiles[i].Value = &cpu99
+		}
+	}
+	service.analytics = analyticsReader
+	family := "Gen5"
+	service.skus = engineTestSKUs{
+		{ID: 8, Name: "GP_Gen5_8", Tier: "GeneralPurpose", Family: &family, ComputeModel: "provisioned", CapacityVCores: 8, InScope: true},
+		{ID: 9, Name: "GP_S_Gen5_8", Tier: "GeneralPurpose", Family: &family, ComputeModel: "serverless", CapacityVCores: 8, InScope: true},
+	}
+	service.prices = engineTestPrices{"GP_Gen5_8": 0.5, "GP_S_Gen5_8": 0.4}
+	now := time.Now().UTC()
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionChangeComputeModel || result.ProposedConfiguration.ComputeModel != "serverless" {
+		t.Fatalf("got action=%q model=%q, want change_compute_model/serverless",
+			result.Action.Type, result.ProposedConfiguration.ComputeModel)
+	}
+}
+
+func TestGenerateRecommendationIncludesRequiredEvidence(t *testing.T) {
+	service, _, policy, resourceUID := newTestEngine(t, nil)
+	now := time.Now().UTC()
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"cpu_p95", "cpu_p99", "headroom", "projected_monthly_cost", "estimated_savings"} {
+		if !containsEvidence(result.Evidence, required) {
+			t.Errorf("evidence missing required type %q: %+v", required, result.Evidence)
+		}
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEvidence(values []RecommendationEvidence, target string) bool {
+	for _, value := range values {
+		if value.Type == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPublishRecommendationPersistsOnlyAfterPolicyApproval(t *testing.T) {
 	policy := OptimizationPolicy{
 		UID:     uuid.New(),
@@ -250,10 +551,11 @@ func (c engineTestCosts) Costs(context.Context, uuid.UUID, time.Time, time.Time,
 
 type engineTestConfiguration struct {
 	snapshot *ConfigurationSnapshot
+	err      error
 }
 
 func (c engineTestConfiguration) LatestConfigSnapshot(context.Context, uuid.UUID) (*ConfigurationSnapshot, error) {
-	return c.snapshot, nil
+	return c.snapshot, c.err
 }
 
 type engineTestPricingContext struct{}

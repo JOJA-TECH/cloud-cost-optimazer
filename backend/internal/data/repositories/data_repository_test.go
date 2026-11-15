@@ -414,6 +414,75 @@ func TestConfigSnapshotHistory(t *testing.T) {
 	}
 }
 
+func TestListPricesFiltersByRegionCurrencySKUAndEffectiveDate(t *testing.T) {
+	db := openDataDB(t)
+	repo := NewDataRepository(db)
+	ctx := context.Background()
+	effectiveAt := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	expiredAt := effectiveAt.Add(-24 * time.Hour)
+	futureAt := effectiveAt.Add(24 * time.Hour)
+	end := effectiveAt.Add(-time.Second)
+	sku := "GP_Gen5_4"
+
+	rows := []priceCatalogRow{
+		{
+			ProviderCode: "azure", RegionCode: "eastus2", MeterID: "meter-1",
+			MeterName: "Compute", ProductName: "SQL Database", SKUName: &sku,
+			ServiceName: "Azure SQL", PriceType: "Consumption", UnitOfMeasure: "1 Hour",
+			UnitPrice: 0.42, Currency: "USD", EffectiveStart: expiredAt,
+		},
+		{
+			ProviderCode: "azure", RegionCode: "westus", MeterID: "meter-1",
+			MeterName: "Compute", ProductName: "SQL Database", SKUName: &sku,
+			ServiceName: "Azure SQL", PriceType: "Consumption", UnitOfMeasure: "1 Hour",
+			UnitPrice: 0.52, Currency: "USD", EffectiveStart: expiredAt,
+		},
+		{
+			ProviderCode: "azure", RegionCode: "eastus2", MeterID: "meter-1",
+			MeterName: "Compute", ProductName: "SQL Database", SKUName: &sku,
+			ServiceName: "Azure SQL", PriceType: "Consumption", UnitOfMeasure: "1 Hour",
+			UnitPrice: 0.62, Currency: "EUR", EffectiveStart: expiredAt,
+		},
+		{
+			ProviderCode: "azure", RegionCode: "eastus2", MeterID: "meter-1",
+			MeterName: "Compute", ProductName: "SQL Database", SKUName: &sku,
+			ServiceName: "Azure SQL", PriceType: "Consumption", UnitOfMeasure: "1 Hour",
+			UnitPrice: 0.32, Currency: "USD", EffectiveStart: expiredAt, EffectiveEnd: &end,
+		},
+		{
+			ProviderCode: "azure", RegionCode: "eastus2", MeterID: "meter-2",
+			MeterName: "Compute", ProductName: "SQL Database", SKUName: &sku,
+			ServiceName: "Azure SQL", PriceType: "Consumption", UnitOfMeasure: "1 Hour",
+			UnitPrice: 0.99, Currency: "USD", EffectiveStart: futureAt,
+		},
+	}
+	if err := db.Table(database.TableName(db, "core", "price_catalog")).Create(&rows).Error; err != nil {
+		t.Fatalf("seed price catalog: %v", err)
+	}
+
+	got, err := repo.ListPrices(ctx, data.PriceQuery{
+		ProviderCode: "azure", RegionCode: "eastus2", MeterID: "meter-1",
+		SKUName: sku, Currency: "USD", EffectiveAt: effectiveAt,
+	})
+	if err != nil {
+		t.Fatalf("ListPrices: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListPrices returned %d rows, want only the effective matching row", len(got))
+	}
+	if got[0].UnitPrice != 0.42 || got[0].RegionCode != "eastus2" || got[0].Currency != "USD" {
+		t.Fatalf("ListPrices returned unexpected price: %+v", got[0])
+	}
+}
+
+func TestListPricesRequiresPricingScope(t *testing.T) {
+	repo := NewDataRepository(openDataDB(t))
+	_, err := repo.ListPrices(context.Background(), data.PriceQuery{Currency: "USD"})
+	if !errors.Is(err, data.ErrInvalidQuery) {
+		t.Fatalf("ListPrices error = %v, want ErrInvalidQuery", err)
+	}
+}
+
 func TestCoverageEndToEnd(t *testing.T) {
 	repo := NewDataRepository(openDataDB(t))
 	ctx := context.Background()
