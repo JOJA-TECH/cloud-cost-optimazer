@@ -55,7 +55,15 @@ type PriceReader interface {
 // PolicyEvaluator determines whether a candidate satisfies business and
 // operational constraints.
 type PolicyEvaluator interface {
-	Validate(ctx context.Context, policy OptimizationPolicy, candidate CandidateConfiguration, evidence EvidenceBundle) (PolicyEvaluation, error)
+	Validate(ctx context.Context, policy OptimizationPolicy, input PolicyEvaluationInput) (PolicyEvaluation, error)
+}
+
+// OptimizationPolicyRepository stores reusable, versioned policy records.
+type OptimizationPolicyRepository interface {
+	CreatePolicy(ctx context.Context, policy OptimizationPolicy) (OptimizationPolicy, error)
+	GetPolicy(ctx context.Context, policyUID uuid.UUID) (OptimizationPolicy, error)
+	GetLatestEnabledPolicy(ctx context.Context, name string) (OptimizationPolicy, error)
+	ListPolicies(ctx context.Context, name string, enabledOnly bool) ([]OptimizationPolicy, error)
 }
 
 // RecommendationRepository persists recommendation-domain entities. Storage

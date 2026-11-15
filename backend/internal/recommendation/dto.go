@@ -8,6 +8,7 @@ import (
 
 type GenerateRecommendationInput struct {
 	ResourceUID      uuid.UUID
+	PolicyUID        uuid.UUID
 	From             time.Time
 	To               time.Time
 	HorizonDays      int
@@ -50,6 +51,8 @@ type RecommendationFilter struct {
 type Recommendation struct {
 	UID                   uuid.UUID
 	ScenarioUID           uuid.UUID
+	PolicyUID             uuid.UUID
+	PolicyVersion         int
 	Version               int
 	ResourceUID           uuid.UUID
 	ChosenCandidateID     *int64
@@ -197,6 +200,7 @@ type Scenario struct {
 	ID               int64
 	UID              uuid.UUID
 	ResourceUID      uuid.UUID
+	PolicyUID        uuid.UUID
 	CreatedBy        string
 	HorizonDays      int
 	ObjectiveWeights map[string]float64
@@ -272,15 +276,40 @@ type EvidenceBundle struct {
 }
 
 type PolicyEvaluation struct {
+	PolicyUID           uuid.UUID
+	PolicyVersion       int
 	Allowed             bool
 	ViolatedConstraints []string
 	Warnings            []string
 }
 
 type OptimizationPolicy struct {
-	Name        string
-	Version     string
-	Constraints map[string]any
+	UID              uuid.UUID
+	Name             string
+	Version          int
+	ObjectiveWeights map[string]float64
+	Constraints      map[string]any
+	Enabled          bool
+	CreatedBy        string
+	CreatedAt        time.Time
+}
+
+type PolicyEvaluationInput struct {
+	Candidate            CandidateConfiguration
+	CurrentConfiguration Configuration
+	Simulation           ScenarioSimulation
+	Evidence             EvidenceBundle
+	Confidence           RecommendationConfidence
+	Action               RecommendationAction
+}
+
+type PublishRecommendationInput struct {
+	Policy               OptimizationPolicy
+	Candidate            CandidateConfiguration
+	CurrentConfiguration Configuration
+	Simulation           ScenarioSimulation
+	Evidence             EvidenceBundle
+	Recommendation       Recommendation
 }
 
 type FeatureSnapshot struct {

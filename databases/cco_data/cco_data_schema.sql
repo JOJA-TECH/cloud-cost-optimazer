@@ -852,11 +852,34 @@ COMMENT ON VIEW ml.v_model_leaderboard IS 'Comparacion rapida de modelos por tar
 -- 6. OPT — optimización, recomendación y riesgo
 -- =============================================================================
 
+-- 6.0 Política de optimización versionada y reutilizable
+CREATE TABLE opt.optimization_policy (
+    policy_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    policy_uid         uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    name               text NOT NULL,
+    version            integer NOT NULL CHECK (version > 0),
+    objective_weights  jsonb NOT NULL
+        CHECK (jsonb_typeof(objective_weights) = 'object'),
+    constraints        jsonb NOT NULL
+        CHECK (jsonb_typeof(constraints) = 'object'),
+    enabled            boolean NOT NULL DEFAULT true,
+    created_by         text NOT NULL,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (name, version)
+);
+
+COMMENT ON TABLE opt.optimization_policy IS 'Política de optimización reutilizable y versionada. Cada recomendación conserva la versión exacta evaluada.';
+
+CREATE INDEX idx_optimization_policy_enabled
+    ON opt.optimization_policy (name, version DESC)
+    WHERE enabled;
+
 -- 6.1 Escenario de optimización (petición del motor / usuario)
 CREATE TABLE opt.scenario (
     scenario_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     scenario_uid      uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, -- ID estable de integración
     resource_id       integer NOT NULL REFERENCES core.resource(resource_id),
+    policy_id         bigint REFERENCES opt.optimization_policy(policy_id),
     created_by        text NOT NULL DEFAULT 'system',
     horizon_days      integer NOT NULL DEFAULT 30,
     objective_weights jsonb NOT NULL DEFAULT '{"cost": 1.0}',   -- min C(c), ec. 1
@@ -937,6 +960,7 @@ CREATE TABLE opt.recommendation (
     recommendation_id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     recommendation_uid        uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, -- ID estable entre cco_data y cco_app
     scenario_id               bigint NOT NULL REFERENCES opt.scenario(scenario_id),
+    policy_id                 bigint NOT NULL REFERENCES opt.optimization_policy(policy_id),
     chosen_candidate_id       bigint REFERENCES opt.candidate_configuration(candidate_id),
     action_type               text NOT NULL DEFAULT 'no_action'
         CONSTRAINT ck_recommendation_action_type
@@ -1066,6 +1090,10 @@ SELECT DISTINCT ON (s.resource_id)
     s.resource_id,
     rec.recommendation_id,
     rec.scenario_id,
+    rec.policy_id,
+    policy.policy_uid,
+    policy.name AS policy_name,
+    policy.version AS policy_version,
     rec.version,
     rec.action_type,
     rec.action_description,
@@ -1090,6 +1118,7 @@ SELECT DISTINCT ON (s.resource_id)
     rec.created_at
 FROM opt.recommendation rec
 JOIN opt.scenario s ON s.scenario_id = rec.scenario_id
+JOIN opt.optimization_policy policy ON policy.policy_id = rec.policy_id
 WHERE rec.status NOT IN ('dismissed','rejected')
 ORDER BY s.resource_id, rec.created_at DESC;
 
@@ -1198,10 +1227,12 @@ FROM ml.forecast f
 JOIN core.resource r ON r.resource_id = f.resource_id;
 
 CREATE VIEW contract.v_scenario AS
-SELECT s.scenario_uid, r.resource_uid, s.horizon_days, s.objective_weights,
+SELECT s.scenario_uid, r.resource_uid, policy.policy_uid, policy.name AS policy_name,
+       policy.version AS policy_version, s.horizon_days, s.objective_weights,
        s.constraints, s.status, s.created_by, s.created_at, s.completed_at
 FROM opt.scenario s
-JOIN core.resource r ON r.resource_id = s.resource_id;
+JOIN core.resource r ON r.resource_id = s.resource_id
+LEFT JOIN opt.optimization_policy policy ON policy.policy_id = s.policy_id;
 
 CREATE VIEW contract.v_percentile_statistic AS
 SELECT r.resource_uid, ps.period_type, ps.period_start_utc,
@@ -1212,6 +1243,7 @@ JOIN core.resource r ON r.resource_id = ps.resource_id;
 
 CREATE VIEW contract.v_recommendation AS
 SELECT rec.recommendation_uid, s.scenario_uid, r.resource_uid,
+       policy.policy_uid, policy.name AS policy_name, policy.version AS policy_version,
        rec.version, rec.action_type, rec.action_description, rec.action_parameters,
        rec.current_sku_name, rec.current_compute_model,
        rec.current_capacity_vcores, rec.proposed_sku_name,
@@ -1224,7 +1256,8 @@ SELECT rec.recommendation_uid, s.scenario_uid, r.resource_uid,
        rec.created_at, rec.decided_at, rec.decided_by, rec.applied_at
 FROM opt.recommendation rec
 JOIN opt.scenario s ON s.scenario_id = rec.scenario_id
-JOIN core.resource r ON r.resource_id = s.resource_id;
+JOIN core.resource r ON r.resource_id = s.resource_id
+JOIN opt.optimization_policy policy ON policy.policy_id = rec.policy_id;
 
 COMMENT ON VIEW contract.v_resource IS 'cco_app.cloud.resource_bindings.data_resource_uid = resource_uid. No resource_id is exposed.';
 COMMENT ON VIEW contract.v_forecast IS 'Read-only public forecast surface. Consumers use forecast_uid and resource_uid.';
