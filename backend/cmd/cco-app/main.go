@@ -276,19 +276,25 @@ func main() {
 		// Recommendation Engine (Module 7): consumes Module 4/5 contracts and
 		// persists decisions in cco_data. It never executes infrastructure changes.
 		recommendationRepo := recommendationrepos.NewRecommendationRepository(dataDB)
-		recommendationData := recommendationadapters.NewDataReaders(dataRepo, dataRepo, dataRepo, dataRepo, dataRepo)
-		recommendationAnalytics := recommendationadapters.NewAnalyticsReader(analyticsRepo)
+		dataReaders := recommendationadapters.NewDataReaders(dataRepo, dataRepo, dataRepo, dataRepo, dataRepo)
+		analyticsReader := recommendationadapters.NewAnalyticsReader(analyticsRepo)
+		var mlReader recommendation.MLPredictionReader = analyticsReader
+		var costReader recommendation.CostReader = dataReaders
+		var configurationReader recommendation.ConfigurationReader = dataReaders
+		var priceReader recommendation.PriceReader = dataReaders
+		var skuReader recommendation.SKUReader = dataReaders
+		var resourceContextReader recommendation.ResourceContextReader = dataReaders
 		recommendationSvc, err = recommendation.NewEngine(recommendation.Dependencies{
 			PolicyEvaluator:  recommendationadapters.NewPolicyEvaluator(),
 			PolicyRepository: recommendationRepo,
 			Repository:       recommendationRepo,
-			Analytics:        recommendationAnalytics,
-			Forecasts:        recommendationAnalytics,
-			Costs:            recommendationData,
-			Configurations:   recommendationData,
-			ResourceContext:  recommendationData,
-			Prices:           recommendationData,
-			SKUs:             recommendationData,
+			Analytics:        analyticsReader,
+			Forecasts:        mlReader,
+			Costs:            costReader,
+			Configurations:   configurationReader,
+			ResourceContext:  resourceContextReader,
+			Prices:           priceReader,
+			SKUs:             skuReader,
 			Audit:            recommendationadapters.NewSlogAuditSink(slog.Default()),
 		})
 		if err != nil {
