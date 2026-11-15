@@ -90,6 +90,55 @@ func TestPermissionEngineCan(t *testing.T) {
 			action:      "write",
 			want:        false,
 		},
+		{
+			name:        "system viewer can read recommendations",
+			systemRoles: []string{"viewer"},
+			resource:    "recommendations",
+			action:      "read",
+			want:        true,
+		},
+		{
+			name:        "system viewer cannot generate recommendations",
+			systemRoles: []string{"viewer"},
+			resource:    "recommendations",
+			action:      "write",
+			want:        false,
+		},
+		{
+			name:        "analyst can generate recommendations",
+			systemRoles: []string{"analyst"},
+			resource:    "recommendations",
+			action:      "write",
+			want:        true,
+		},
+		{
+			name:        "analyst can evaluate recommendations",
+			systemRoles: []string{"analyst"},
+			resource:    "recommendations",
+			action:      "evaluate",
+			want:        true,
+		},
+		{
+			name:     "membership viewer can read recommendations",
+			orgRole:  "viewer",
+			resource: "recommendations",
+			action:   "read",
+			want:     true,
+		},
+		{
+			name:     "membership viewer cannot generate recommendations",
+			orgRole:  "viewer",
+			resource: "recommendations",
+			action:   "write",
+			want:     false,
+		},
+		{
+			name:     "membership admin can generate recommendations",
+			orgRole:  "admin",
+			resource: "recommendations",
+			action:   "write",
+			want:     true,
+		},
 	}
 
 	for _, tt := range tests {

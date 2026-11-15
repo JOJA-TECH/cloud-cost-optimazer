@@ -22,6 +22,9 @@ var (
 	_ data.RunReader               = (*DataRepository)(nil)
 	_ data.CostRepository          = (*DataRepository)(nil)
 	_ data.ConfigurationRepository = (*DataRepository)(nil)
+	_ data.PriceCatalogReader      = (*DataRepository)(nil)
+	_ data.SKUReader               = (*DataRepository)(nil)
+	_ data.ResourceContextReader   = (*DataRepository)(nil)
 )
 
 // DataRepository implements the Gestión de Datos contracts (DataWriter,
@@ -48,6 +51,7 @@ func MigrateDataTables(db *gorm.DB) error {
 		&costDailyRow{},
 		&configSnapshotRow{},
 		&sqlSkuRow{},
+		&priceCatalogRow{},
 	}
 	for _, m := range models {
 		if err := db.AutoMigrate(m); err != nil {
@@ -232,6 +236,27 @@ type sqlSkuRow struct {
 }
 
 func (sqlSkuRow) TableName() string { return "sql_sku" }
+
+type priceCatalogRow struct {
+	PriceID        int64      `gorm:"column:price_id;primaryKey;autoIncrement"`
+	ProviderCode   string     `gorm:"column:provider_code;not null"`
+	RegionCode     string     `gorm:"column:region_code;not null"`
+	MeterID        string     `gorm:"column:meter_id;not null"`
+	MeterName      string     `gorm:"column:meter_name;not null"`
+	ProductName    string     `gorm:"column:product_name;not null"`
+	SKUName        *string    `gorm:"column:sku_name"`
+	ARMSKUName     *string    `gorm:"column:arm_sku_name"`
+	ServiceName    string     `gorm:"column:service_name;not null"`
+	PriceType      string     `gorm:"column:price_type;not null"`
+	UnitOfMeasure  string     `gorm:"column:unit_of_measure;not null"`
+	UnitPrice      float64    `gorm:"column:unit_price;not null"`
+	Currency       string     `gorm:"column:currency;not null"`
+	TierMinimum    float64    `gorm:"column:tier_minimum_units;not null"`
+	EffectiveStart time.Time  `gorm:"column:effective_start;not null"`
+	EffectiveEnd   *time.Time `gorm:"column:effective_end"`
+}
+
+func (priceCatalogRow) TableName() string { return "price_catalog" }
 
 // ---- resource resolution ----
 
@@ -912,6 +937,7 @@ func (r *DataRepository) ConfigSnapshotHistory(ctx context.Context, resourceUID 
 	if err != nil {
 		return nil, err
 	}
+
 	db := r.db.WithContext(ctx).
 		Table(database.TableName(r.db, "core", "resource_config_snapshot")).
 		Where("resource_id = ?", resourceID)
@@ -933,6 +959,101 @@ func (r *DataRepository) ConfigSnapshotHistory(ctx context.Context, resourceUID 
 		snap := configRowToSnapshot(row)
 		snap.ResourceUID = resourceUID
 		out = append(out, snap)
+	}
+	return out, nil
+}
+
+// PricingContext returns the provider and region needed to query price
+// catalog entries; the internal resource ID is never exposed.
+func (r *DataRepository) PricingContext(ctx context.Context, resourceUID uuid.UUID) (data.ResourcePricingContext, error) {
+	var row struct {
+		ProviderCode string `gorm:"column:provider_code"`
+		RegionCode   string `gorm:"column:region_code"`
+	}
+	err := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "core", "resource")).
+		Select("provider_code, region_code").
+		Where("resource_uid = ?", resourceUID).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return data.ResourcePricingContext{}, data.NewError(data.CodeNotFound, "resource not found in cco_data", data.ErrNotFound)
+	}
+	if err != nil {
+		return data.ResourcePricingContext{}, err
+	}
+	return data.ResourcePricingContext{ProviderCode: row.ProviderCode, RegionCode: row.RegionCode}, nil
+}
+
+// ListSKUs returns only catalogued, in-scope SKU configurations for a tier.
+func (r *DataRepository) ListSKUs(ctx context.Context, tier, family string, includeServerless bool) ([]data.SKURecord, error) {
+	db := r.db.WithContext(ctx).Table(database.TableName(r.db, "catalog", "sql_sku")).
+		Where("in_scope_r1 = ?", true)
+	if tier != "" {
+		db = db.Where("tier = ?", tier)
+	}
+	if family != "" {
+		db = db.Where("family = ?", family)
+	}
+	if !includeServerless {
+		db = db.Where("compute_model <> ?", "serverless")
+	}
+	var rows []sqlSkuRow
+	if err := db.Order("capacity_vcores ASC, compute_model ASC, sku_name ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]data.SKURecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, data.SKURecord{
+			ID: row.SKUID, Name: row.SKUName, ARMSKUName: row.ARMSKUName,
+			Tier: row.Tier, Family: row.Family, ComputeModel: row.ComputeModel,
+			CapacityVCores: row.CapacityVCores, MinCapacityVCores: row.MinCapacityVCores,
+			MaxSizeGB: row.MaxSizeGB, InScope: row.InScopeR1,
+		})
+	}
+	return out, nil
+}
+
+// ListPrices reads effective list prices only; observed charges remain in
+// core.cost_daily and are consumed through CostRepository.
+func (r *DataRepository) ListPrices(ctx context.Context, query data.PriceQuery) ([]data.PriceRecord, error) {
+	if query.ProviderCode == "" || query.RegionCode == "" || query.Currency == "" {
+		return nil, data.NewError(data.CodeInvalidQuery, "provider_code, region_code and currency are required", data.ErrInvalidQuery)
+	}
+	effectiveAt := query.EffectiveAt
+	if effectiveAt.IsZero() {
+		effectiveAt = time.Now().UTC()
+	}
+	db := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "core", "price_catalog")).
+		Where("provider_code = ? AND region_code = ?", query.ProviderCode, query.RegionCode).
+		Where("currency = ? AND effective_start <= ?", query.Currency, effectiveAt).
+		Where("(effective_end IS NULL OR effective_end >= ?)", effectiveAt)
+	priceType := query.PriceType
+	if priceType == "" {
+		priceType = "Consumption"
+	}
+	db = db.Where("price_type = ?", priceType)
+	if query.MeterID != "" {
+		db = db.Where("meter_id = ?", query.MeterID)
+	}
+	if query.SKUName != "" || query.ARMSKUName != "" {
+		db = db.Where("(sku_name = ? OR arm_sku_name = ? OR sku_name = ? OR arm_sku_name = ?)",
+			query.SKUName, query.SKUName, query.ARMSKUName, query.ARMSKUName)
+	}
+	var rows []priceCatalogRow
+	if err := db.Order("tier_minimum_units ASC, unit_price ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]data.PriceRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, data.PriceRecord{
+			ProviderCode: row.ProviderCode, RegionCode: row.RegionCode,
+			MeterID: row.MeterID, MeterName: row.MeterName, ProductName: row.ProductName,
+			SKUName: row.SKUName, ARMSKUName: row.ARMSKUName, ServiceName: row.ServiceName,
+			PriceType: row.PriceType, UnitOfMeasure: row.UnitOfMeasure, UnitPrice: row.UnitPrice,
+			Currency: row.Currency, TierMinimum: row.TierMinimum,
+			EffectiveStart: row.EffectiveStart, EffectiveEnd: row.EffectiveEnd,
+		})
 	}
 	return out, nil
 }

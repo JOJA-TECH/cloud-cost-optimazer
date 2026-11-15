@@ -68,3 +68,51 @@ func TestPermissionEngineFailsClosedOnEmptyDB(t *testing.T) {
 		t.Errorf("expected empty DB to fail closed (ok=%v, err=%v)", ok, err)
 	}
 }
+
+func TestSeedRecommendationPermissionsAddsExpectedSystemRoleGrants(t *testing.T) {
+	db, err := database.Open(database.Config{Driver: database.DriverSQLite, DSN: "file::memory:?cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for id, code := range map[int16]string{1: "platform_admin", 2: "db_admin", 3: "analyst", 4: "viewer"} {
+		if err := db.Table("roles").Create(&database.RoleModel{
+			RoleID: id, RoleCode: code, IsSystemRole: true, CreatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed role %q: %v", code, err)
+		}
+	}
+
+	if err := iam.SeedRecommendationPermissions(db); err != nil {
+		t.Fatalf("SeedRecommendationPermissions() error = %v", err)
+	}
+	if err := iam.SeedRecommendationPermissions(db); err != nil {
+		t.Fatalf("second SeedRecommendationPermissions() error = %v", err)
+	}
+
+	engine := iam.NewPermissionEngine(db)
+	tests := []struct {
+		role, action string
+		want         bool
+	}{
+		{"platform_admin", "write", true},
+		{"db_admin", "evaluate", true},
+		{"analyst", "write", true},
+		{"viewer", "read", true},
+		{"viewer", "write", false},
+	}
+	for _, test := range tests {
+		allowed, err := engine.Can(context.Background(), iam.IdentityContext{
+			SystemRoles: []string{test.role},
+		}, "recommendations", test.action)
+		if err != nil {
+			t.Fatalf("Can(%q) error = %v", test.role, err)
+		}
+		if allowed != test.want {
+			t.Errorf("Can(%q, recommendations:%s) = %v, want %v", test.role, test.action, allowed, test.want)
+		}
+	}
+}

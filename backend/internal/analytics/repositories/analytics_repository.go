@@ -137,6 +137,7 @@ func (efficiencyScoreRow) TableName() string { return "efficiency_score" }
 
 type forecastRow struct {
 	ForecastUID    uuid.UUID `gorm:"column:forecast_uid;type:uuid;not null"`
+	ModelVersionID *int64    `gorm:"column:model_version_id"`
 	ResourceID     int64     `gorm:"column:resource_id;not null"`
 	TargetMetric   string    `gorm:"column:target_metric;not null"`
 	HorizonSteps   int       `gorm:"column:horizon_steps;not null"`
@@ -689,6 +690,7 @@ func (r *AnalyticsRepository) Forecasts(ctx context.Context, resourceUID uuid.UU
 	for _, row := range rows {
 		out = append(out, analytics.ForecastResponse{
 			ForecastUID:    row.ForecastUID,
+			ModelVersionID: row.ModelVersionID,
 			ResourceUID:    resourceUID,
 			TargetMetric:   row.TargetMetric,
 			HorizonSteps:   row.HorizonSteps,

@@ -926,6 +926,9 @@ CREATE TABLE opt.scenario_simulation (
     estimated_savings_pct        numeric(6,3),
     feasible                     boolean,
     violated_constraints         text[],
+    forecast_uid                 uuid,
+    forecast_model_version       text,
+    simulation_method            text NOT NULL DEFAULT 'rule_v1',
     simulated_at                 timestamptz NOT NULL DEFAULT now()
 );
 
@@ -1001,6 +1004,8 @@ CREATE TABLE opt.recommendation (
         (confidence IS NOT NULL AND confidence_components IS NOT NULL AND
          jsonb_typeof(confidence_components) = 'object')
     ),
+    domain_payload            jsonb NOT NULL DEFAULT '{}'::jsonb
+        CHECK (jsonb_typeof(domain_payload) = 'object'),
     status                    text NOT NULL DEFAULT 'proposed'
         CHECK (status IN ('proposed','under_review','accepted','rejected','applied','dismissed')),
     rationale                 text NOT NULL,       -- racional legible (Cuadro 5)
@@ -1220,7 +1225,7 @@ SELECT resource_uid, provider_code, subscription_id, resource_group, server_name
 FROM core.resource;
 
 CREATE VIEW contract.v_forecast AS
-SELECT f.forecast_uid, r.resource_uid, f.target_metric, f.horizon_steps,
+SELECT f.forecast_uid, f.model_version_id, r.resource_uid, f.target_metric, f.horizon_steps,
        f.step_unit, f.period_start_utc, f.y_pred, f.y_lower, f.y_upper,
        f.alpha, f.generated_at
 FROM ml.forecast f

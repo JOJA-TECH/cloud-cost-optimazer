@@ -29,6 +29,9 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/valkey"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation"
+	recommendationadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation/adapters"
+	recommendationrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation/repositories"
 	"github.com/google/uuid"
 )
 
@@ -161,6 +164,9 @@ func main() {
 	if err := database.Migrate(db); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
+	if err := iam.SeedRecommendationPermissions(db); err != nil {
+		log.Fatalf("seed recommendation permissions: %v", err)
+	}
 
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
@@ -245,6 +251,7 @@ func main() {
 	var dataSvc *data.Service
 	var analyticsRepo *analyticsrepos.AnalyticsRepository
 	var analyticsSvc *analytics.Service
+	var recommendationSvc *recommendation.Service
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
 		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
 		if err != nil {
@@ -265,6 +272,28 @@ func main() {
 			mlClient = analyticsadapters.NewFakeMLClient()
 		}
 		analyticsSvc = analytics.NewService(analyticsRepo, dataRepo, dataRepo, dataRepo, mlClient, 4)
+
+		// Recommendation Engine (Module 7): consumes Module 4/5 contracts and
+		// persists decisions in cco_data. It never executes infrastructure changes.
+		recommendationRepo := recommendationrepos.NewRecommendationRepository(dataDB)
+		recommendationData := recommendationadapters.NewDataReaders(dataRepo, dataRepo, dataRepo, dataRepo, dataRepo)
+		recommendationAnalytics := recommendationadapters.NewAnalyticsReader(analyticsRepo)
+		recommendationSvc, err = recommendation.NewEngine(recommendation.Dependencies{
+			PolicyEvaluator:  recommendationadapters.NewPolicyEvaluator(),
+			PolicyRepository: recommendationRepo,
+			Repository:       recommendationRepo,
+			Analytics:        recommendationAnalytics,
+			Forecasts:        recommendationAnalytics,
+			Costs:            recommendationData,
+			Configurations:   recommendationData,
+			ResourceContext:  recommendationData,
+			Prices:           recommendationData,
+			SKUs:             recommendationData,
+			Audit:            recommendationadapters.NewSlogAuditSink(slog.Default()),
+		})
+		if err != nil {
+			log.Fatalf("initialize recommendation engine: %v", err)
+		}
 	}
 	acqTargets := acqrepos.NewTargetRepository(db)
 
@@ -410,6 +439,10 @@ func main() {
 	// Analytics routes (Module 5): analytical evidence endpoints. nil service =
 	// CCO_DATA_DSN not configured → endpoints answer 503.
 	analytics.RegisterRoutes(mux, analyticsSvc, authMiddleware, permEngine)
+
+	// Recommendation routes (Module 7): nil service when CCO_DATA_DSN is not
+	// configured → endpoints return 503.
+	recommendation.RegisterRoutes(mux, recommendationSvc, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client

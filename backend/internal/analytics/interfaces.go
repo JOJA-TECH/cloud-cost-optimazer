@@ -238,6 +238,7 @@ type ForecastRequest struct {
 // ForecastResponse mirrors ml.forecast (read via contract.v_forecast).
 type ForecastResponse struct {
 	ForecastUID    uuid.UUID
+	ModelVersionID *int64
 	ResourceUID    uuid.UUID
 	TargetMetric   string
 	HorizonSteps   int

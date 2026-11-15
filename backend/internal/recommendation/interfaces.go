@@ -12,6 +12,7 @@ import (
 type RecommendationEngine interface {
 	GenerateRecommendation(ctx context.Context, input GenerateRecommendationInput) (Recommendation, error)
 	EvaluateOpportunity(ctx context.Context, input OpportunityInput) (OpportunityEvaluation, error)
+	EvaluateRecommendation(ctx context.Context, input GenerateRecommendationInput) (RecommendationEvaluation, error)
 	EstimateSaving(ctx context.Context, input SavingInput) (EstimatedSaving, error)
 	EvaluateRisk(ctx context.Context, input RiskInput) (RecommendationRisk, error)
 	ExplainRecommendation(ctx context.Context, recommendationUID uuid.UUID) (RecommendationRationale, error)
@@ -47,6 +48,21 @@ type ConfigurationReader interface {
 	LatestConfigSnapshot(ctx context.Context, resourceUID uuid.UUID) (*ConfigurationSnapshot, error)
 }
 
+type PricingContext struct {
+	ProviderCode string
+	RegionCode   string
+	MeterID      string
+}
+
+type ResourceContextReader interface {
+	PricingContext(ctx context.Context, resourceUID uuid.UUID) (PricingContext, error)
+}
+
+// SKUReader restricts candidate generation to the supported SKU catalog.
+type SKUReader interface {
+	ListSKUs(ctx context.Context, current ConfigurationSnapshot, includeServerless bool) ([]SKU, error)
+}
+
 // PriceReader provides list prices used to simulate candidate configurations.
 type PriceReader interface {
 	ListPrices(ctx context.Context, query PriceQuery) ([]PriceRecord, error)
@@ -75,6 +91,7 @@ type RecommendationRepository interface {
 	CreateRecommendation(ctx context.Context, recommendation Recommendation) (Recommendation, error)
 	CreateEvidence(ctx context.Context, recommendationUID uuid.UUID, evidence []Evidence) error
 	CreateRiskAssessment(ctx context.Context, recommendationUID uuid.UUID, assessment RiskAssessment) (RiskAssessment, error)
+	PersistDecision(ctx context.Context, decision DecisionPersistence) (Recommendation, error)
 	GetRecommendation(ctx context.Context, recommendationUID uuid.UUID) (Recommendation, error)
 	ListRecommendations(ctx context.Context, filter RecommendationFilter) ([]Recommendation, error)
 	GetLatestRecommendation(ctx context.Context, resourceUID uuid.UUID) (Recommendation, error)

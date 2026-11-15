@@ -22,6 +22,7 @@ Base URL (desarrollo local): `http://localhost:8080`
 4. [Endpoints protegidos](#endpoints-protegidos)
    - [GET /api/v1/users](#get-apiv1users)
    - [POST /api/v1/can](#post-apiv1can)
+   - [Recommendation Engine (Module 7)](#recommendation-engine-module-7)
 5. [Observabilidad y logging](#observabilidad-y-logging)
 6. [Seguridad de la API](#seguridad-de-la-api)
 7. [Códigos de error](#códigos-de-error)
@@ -38,6 +39,7 @@ Base URL (desarrollo local): `http://localhost:8080`
 |----------|------------------|-------------|
 | `CCO_DB_DSN` | `file::memory:?cache=shared` | Cadena de conexión. SQLite en memoria para dev; PostgreSQL DSN para prod. |
 | `CCO_DB_DRIVER` | `sqlite` | `sqlite` o `postgres` |
+| `CCO_DATA_DSN` | (vacío) | DSN PostgreSQL de `cco_data`; habilita los módulos de adquisición, analítica y recomendaciones. |
 | `CCO_JWT_SIGNING_KEY` | `dev-secret-change-in-production` | Clave para firmar JWT. **Cámbiala en producción.** |
 | `CCO_HTTP_ADDR` | `:8080` | Dirección y puerto del servidor HTTP |
 | `CCO_OIDC_ISSUER_URL` | (vacío) | Issuer de Entra ID / Keycloak / Google. Si está vacío, OIDC queda deshabilitado. |
@@ -1386,6 +1388,61 @@ curl -X GET "http://localhost:8080/api/v1/data/config-snapshots?resource_uid=AAA
 
 ---
 
+## Recommendation Engine (Module 7)
+
+El motor genera decisiones declarativas y auditables; no ejecuta cambios sobre recursos. Lee evidencia de Analytics, forecasts mediante su contrato, costos/configuración y precios del catálogo, y persiste escenarios y recomendaciones en `cco_data`. Requiere `CCO_DATA_DSN`; sin esta configuración los endpoints responden `503 RECOMMENDATION_STORAGE_UNAVAILABLE`.
+
+Todas las rutas requieren `Authorization: Bearer <token>`. Los permisos se evalúan sobre el recurso `recommendations`: `write` para generar, `evaluate` para evaluar y `read` para consultar.
+
+### POST /api/v1/recommendations
+
+Genera y persiste una recomendación versionada. Requiere `recommendations:write`.
+
+**Request body:**
+```json
+{
+  "resource_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "policy_uid": "11111111-2222-3333-4444-555555555555",
+  "horizon_days": 30,
+  "from": "2026-10-01T00:00:00Z",
+  "to": "2026-11-01T00:00:00Z",
+  "currency": "USD",
+  "force_refresh": false
+}
+```
+
+**Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia.
+
+`force_refresh: false` reutiliza una recomendación previa solo si coinciden recurso, política, ventana temporal, horizonte y moneda. Si los parámetros difieren, crea una nueva versión.
+
+### POST /api/v1/recommendations/evaluate
+
+Evalúa candidatos y política sin persistir una recomendación. Requiere `recommendations:evaluate`. Acepta el mismo body que la ruta de generación.
+
+**Response (200 OK):** estado (`complete`, `no_action` o `insufficient_information`), confianza, disponibilidad de forecast, degradación, evidencia y candidatos con factibilidad y motivo de descarte.
+
+### GET /api/v1/recommendations
+
+Lista recomendaciones. Requiere `recommendations:read`.
+
+**Query params opcionales:** `resource_uid`, `status`, `limit` (1–500), `offset` (0 o mayor).
+
+### GET /api/v1/recommendations/{uid}
+
+Obtiene una recomendación por UID. Requiere `recommendations:read`.
+
+### GET /api/v1/recommendations/{uid}/evidence
+
+Obtiene la evidencia asociada a una recomendación. Requiere `recommendations:read`.
+
+### POST /api/v1/recommendations/{uid}/evaluate
+
+Reevalúa una recomendación con la evidencia más reciente, sin cambiar ni persistir la recomendación existente. Requiere `recommendations:evaluate`.
+
+**Errores principales:** `400 RECOMMENDATION_INVALID_REQUEST`, `404 NOT_FOUND`, `409 RECOMMENDATION_CONFLICT`, `422 RECOMMENDATION_CONFIGURATION_UNAVAILABLE`, `422 RECOMMENDATION_INSUFFICIENT_EVIDENCE`, `503 RECOMMENDATION_DEPENDENCY_UNAVAILABLE`.
+
+---
+
 ### GET /api/v1/data/coverage
 
 Disponibilidad y cobertura de una métrica en una ventana (HU-05). Bucketiza las lecturas por hora/día, cuenta huecos y emite estado `sufficient`/`insufficient` contra `min_coverage`. Requiere permiso `data:read`.
@@ -1412,4 +1469,3 @@ curl -X GET "http://localhost:8080/api/v1/data/coverage?resource_uid=AAAAAAAA-BB
 ```
 
 **Errores posibles:** `DATA_INVALID_QUERY` (parámetros), `DATA_NOT_FOUND`, `DATA_STORAGE_UNAVAILABLE`, `401/403`.
-

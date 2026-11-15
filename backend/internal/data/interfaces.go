@@ -246,6 +246,66 @@ type ConfigurationRepository interface {
 	ConfigSnapshotHistory(ctx context.Context, resourceUID uuid.UUID, from, to time.Time, limit int) ([]ConfigurationSnapshot, error)
 }
 
+type PriceQuery struct {
+	ProviderCode string
+	RegionCode   string
+	MeterID      string
+	SKUName      string
+	ARMSKUName   string
+	ComputeModel string
+	PriceType    string
+	Currency     string
+	EffectiveAt  time.Time
+}
+
+type PriceRecord struct {
+	ProviderCode   string
+	RegionCode     string
+	MeterID        string
+	MeterName      string
+	ProductName    string
+	SKUName        *string
+	ARMSKUName     *string
+	ServiceName    string
+	PriceType      string
+	UnitOfMeasure  string
+	UnitPrice      float64
+	Currency       string
+	TierMinimum    float64
+	EffectiveStart time.Time
+	EffectiveEnd   *time.Time
+}
+
+type PriceCatalogReader interface {
+	ListPrices(ctx context.Context, query PriceQuery) ([]PriceRecord, error)
+}
+
+type SKURecord struct {
+	ID                int64
+	Name              string
+	ARMSKUName        *string
+	Tier              string
+	Family            *string
+	ComputeModel      string
+	CapacityVCores    float64
+	MinCapacityVCores *float64
+	MaxSizeGB         *int
+	InScope           bool
+}
+
+type SKUReader interface {
+	ListSKUs(ctx context.Context, tier, family string, includeServerless bool) ([]SKURecord, error)
+}
+
+type ResourcePricingContext struct {
+	ProviderCode string
+	RegionCode   string
+}
+
+type ResourceContextReader interface {
+	PricingContext(ctx context.Context, resourceUID uuid.UUID) (ResourcePricingContext, error)
+}
+
 // DataQueryService answers availability questions over stored data.
 type DataQueryService interface {
 	// Coverage (HU-05): buckets readings of one metric over [from, to) and

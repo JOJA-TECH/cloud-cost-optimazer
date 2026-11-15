@@ -12,7 +12,11 @@ type GenerateRecommendationInput struct {
 	From             time.Time
 	To               time.Time
 	HorizonDays      int
+	Currency         string
+	ForceRefresh     bool
 	CreatedBy        string
+	RequestID        string
+	CorrelationID    string
 	ObjectiveWeights map[string]float64
 	Constraints      map[string]any
 }
@@ -53,8 +57,12 @@ type Recommendation struct {
 	ScenarioUID           uuid.UUID
 	PolicyUID             uuid.UUID
 	PolicyVersion         int
+	ScenarioID            int64
 	Version               int
 	ResourceUID           uuid.UUID
+	WindowStart           time.Time
+	WindowEnd             time.Time
+	HorizonDays           int
 	ChosenCandidateID     *int64
 	SupersedesUID         *uuid.UUID
 	Action                RecommendationAction
@@ -71,6 +79,8 @@ type Recommendation struct {
 	DecidedAt             *time.Time
 	DecidedBy             *string
 	AppliedAt             *time.Time
+	GenerationState       string
+	Errors                []string
 }
 
 type OpportunityEvaluation struct {
@@ -213,9 +223,13 @@ type Scenario struct {
 type CandidateConfiguration struct {
 	ID                   int64
 	ScenarioID           int64
+	SKUID                *int64
 	SKUName              string
+	Tier                 string
+	Family               *string
 	ComputeModel         *string
 	CapacityVCores       *float64
+	MinCapacityVCores    *float64
 	GeneratedBy          string
 	EstimatedMonthlyCost *float64
 	PriceBasis           *string
@@ -237,6 +251,9 @@ type ScenarioSimulation struct {
 	EstimatedSavingsPct        *float64
 	Feasible                   *bool
 	ViolatedConstraints        []string
+	ForecastUID                *uuid.UUID
+	ForecastModelVersion       *string
+	SimulationMethod           string
 	SimulatedAt                time.Time
 }
 
@@ -248,6 +265,8 @@ type Evidence struct {
 	WindowStartUTC *time.Time
 	WindowEndUTC   *time.Time
 	Context        map[string]any
+	Method         string
+	Quality        *float64
 }
 
 type RiskAssessment struct {
@@ -294,12 +313,62 @@ type OptimizationPolicy struct {
 	CreatedAt        time.Time
 }
 
+type SKU struct {
+	ID                int64
+	Name              string
+	ARMSKUName        *string
+	Tier              string
+	Family            *string
+	ComputeModel      string
+	CapacityVCores    float64
+	MinCapacityVCores *float64
+	MaxSizeGB         *int
+	InScope           bool
+}
+
+type DecisionPersistence struct {
+	Scenario               Scenario
+	Candidates             []CandidateConfiguration
+	Simulations            []ScenarioSimulation
+	Recommendation         Recommendation
+	Evidence               []Evidence
+	RiskAssessment         RiskAssessment
+	SelectedCandidateIndex *int
+}
+
+type RecommendationEvaluation struct {
+	ResourceUID       uuid.UUID
+	PolicyUID         uuid.UUID
+	From              time.Time
+	To                time.Time
+	HorizonDays       int
+	Currency          string
+	Confidence        RecommendationConfidence
+	EvidenceCount     int
+	ForecastAvailable bool
+	Degraded          bool
+	State             string
+	CandidateResults  []CandidateEvaluation
+}
+
+type CandidateEvaluation struct {
+	Candidate     CandidateConfiguration
+	Simulation    ScenarioSimulation
+	Saving        EstimatedSaving
+	Risk          RecommendationRisk
+	Confidence    RecommendationConfidence
+	Policy        PolicyEvaluation
+	Selected      bool
+	DiscardReason string
+}
+
 type PolicyEvaluationInput struct {
 	Candidate            CandidateConfiguration
 	CurrentConfiguration Configuration
 	Simulation           ScenarioSimulation
 	Evidence             EvidenceBundle
 	Confidence           RecommendationConfidence
+	Risk                 RecommendationRisk
 	Action               RecommendationAction
 }
 
@@ -419,6 +488,7 @@ type DESComponents struct {
 
 type Forecast struct {
 	ForecastUID    uuid.UUID
+	ModelVersionID *int64
 	ResourceUID    uuid.UUID
 	TargetMetric   string
 	HorizonSteps   int
@@ -467,6 +537,8 @@ type PriceQuery struct {
 	RegionCode   string
 	MeterID      string
 	SKUName      string
+	ARMSKUName   string
+	ComputeModel string
 	PriceType    string
 	Currency     string
 	EffectiveAt  time.Time
@@ -497,4 +569,14 @@ type DecisionAuditEvent struct {
 	Actor             string
 	OccurredAt        time.Time
 	Details           map[string]any
+	RequestID         string
+	CorrelationID     string
+	PolicyUID         uuid.UUID
+	PolicyVersion     int
+	AlgorithmVersion  string
+	ScenarioUID       uuid.UUID
+	SelectedCandidate string
+	CandidateResults  []map[string]any
+	Duration          time.Duration
+	Errors            []string
 }
