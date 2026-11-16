@@ -60,12 +60,24 @@ type ReportRepository interface {
 	CreateJob(ctx context.Context, job ReportGenerationJob) (ReportGenerationJob, error)
 	UpdateJob(ctx context.Context, job ReportGenerationJob) error
 	GetJob(ctx context.Context, jobUID uuid.UUID) (ReportGenerationJob, error)
+	ListPendingJobs(ctx context.Context) ([]ReportGenerationJob, error)
 	SaveArtifact(
 		ctx context.Context,
 		reportRequestUID uuid.UUID,
 		artifact ReportArtifact,
 	) (ReportArtifact, error)
 	GetArtifact(ctx context.Context, artifactUID uuid.UUID) (ReportArtifact, error)
+}
+
+// ReportJobProcessor manages the asynchronous report job lifecycle: queue,
+// status, cancel and background processing. It does not create new tables;
+// jobs live in app.report_requests.
+type ReportJobProcessor interface {
+	QueueOptimizationReport(ctx context.Context, input OptimizationReportInput) (ReportGenerationJob, error)
+	GetJobStatus(ctx context.Context, jobUID uuid.UUID) (ReportJobStatus, error)
+	CancelJob(ctx context.Context, jobUID uuid.UUID) error
+	ProcessJob(ctx context.Context, jobUID uuid.UUID) error
+	ProcessPendingJobs(ctx context.Context) error
 }
 
 type ReportResourceScope interface {

@@ -48,21 +48,33 @@ func (s *reportDataProviderStub) GetRecommendationTrace(context.Context, uuid.UU
 type reportRepositoryStub struct {
 	calls []string
 	job   ReportGenerationJob
+	jobs  map[uuid.UUID]ReportGenerationJob
 }
 
 func (s *reportRepositoryStub) CreateJob(_ context.Context, job ReportGenerationJob) (ReportGenerationJob, error) {
 	s.calls = append(s.calls, "create_job")
 	s.job = job
+	if s.jobs != nil {
+		s.jobs[job.UID] = job
+	}
 	return job, nil
 }
 
 func (s *reportRepositoryStub) UpdateJob(_ context.Context, job ReportGenerationJob) error {
 	s.calls = append(s.calls, "update_job:"+string(job.Status))
 	s.job = job
+	if s.jobs != nil {
+		s.jobs[job.UID] = job
+	}
 	return nil
 }
 
-func (s *reportRepositoryStub) GetJob(context.Context, uuid.UUID) (ReportGenerationJob, error) {
+func (s *reportRepositoryStub) GetJob(_ context.Context, jobUID uuid.UUID) (ReportGenerationJob, error) {
+	if s.jobs != nil {
+		if j, ok := s.jobs[jobUID]; ok {
+			return j, nil
+		}
+	}
 	return ReportGenerationJob{}, ErrReportNotFound
 }
 
@@ -73,6 +85,19 @@ func (s *reportRepositoryStub) SaveArtifact(_ context.Context, _ uuid.UUID, arti
 
 func (s *reportRepositoryStub) GetArtifact(context.Context, uuid.UUID) (ReportArtifact, error) {
 	return ReportArtifact{}, ErrReportNotFound
+}
+
+func (s *reportRepositoryStub) ListPendingJobs(context.Context) ([]ReportGenerationJob, error) {
+	if s.jobs == nil {
+		return nil, nil
+	}
+	var pending []ReportGenerationJob
+	for _, j := range s.jobs {
+		if j.Status == ReportJobStatusQueued || j.Status == ReportJobStatusRunning {
+			pending = append(pending, j)
+		}
+	}
+	return pending, nil
 }
 
 type reportResourceScopeStub struct {
@@ -550,4 +575,206 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func TestQueueOptimizationReportCreatesQueuedJob(t *testing.T) {
+	now := time.Now().UTC()
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	job, err := service.QueueOptimizationReport(context.Background(), OptimizationReportInput{
+		ProjectID:   projectID, ResourceUID: resourceUID,
+		From: now, To: now.Add(time.Hour), Format: ReportFormatJSON,
+		RequestedBy: userID,
+	})
+	if err != nil {
+		t.Fatalf("QueueOptimizationReport() error = %v", err)
+	}
+	if job.Status != ReportJobStatusQueued || job.ReportUID == nil || *job.ReportUID == uuid.Nil {
+		t.Fatalf("job not queued: %#v", job)
+	}
+	if repository.job.Status != ReportJobStatusQueued {
+		t.Fatalf("repository job status = %s, want queued", repository.job.Status)
+	}
+}
+
+func TestGetJobStatusReturnsPersistedStatus(t *testing.T) {
+	jobUID := uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	repository.jobs[jobUID] = ReportGenerationJob{
+		UID:     jobUID, Status: ReportJobStatusRunning, ReportUID: &jobUID,
+	}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	status, err := service.GetJobStatus(context.Background(), jobUID)
+	if err != nil {
+		t.Fatalf("GetJobStatus() error = %v", err)
+	}
+	if status != ReportJobStatusRunning {
+		t.Fatalf("status = %s, want running", status)
+	}
+}
+
+func TestCancelJobCancelsQueuedJob(t *testing.T) {
+	jobUID := uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	repository.jobs[jobUID] = ReportGenerationJob{
+		UID:     jobUID, Status: ReportJobStatusQueued, ReportUID: &jobUID,
+	}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.CancelJob(context.Background(), jobUID); err != nil {
+		t.Fatalf("CancelJob() error = %v", err)
+	}
+	if repository.job.Status != ReportJobStatusCancelled || repository.job.CompletedAt == nil {
+		t.Fatalf("job not cancelled: %#v", repository.job)
+	}
+}
+
+func TestCancelJobRejectsTerminalJob(t *testing.T) {
+	jobUID := uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	repository.jobs[jobUID] = ReportGenerationJob{
+		UID:     jobUID, Status: ReportJobStatusCompleted, ReportUID: &jobUID,
+	}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.CancelJob(context.Background(), jobUID); err == nil {
+		t.Fatal("CancelJob() error = nil, want terminal job error")
+	}
+}
+
+func TestProcessJobExecutesQueuedJob(t *testing.T) {
+	now := time.Now().UTC()
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+	jobUID := uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	repository.jobs[jobUID] = ReportGenerationJob{
+		UID:         jobUID,
+		ProjectID:   projectID,
+		RequestedBy: userID,
+		ReportType:  ReportTypeOptimization,
+		Parameters: map[string]any{
+			"resource_uid":  resourceUID.String(),
+			"period_start":  now.Format(time.RFC3339),
+			"period_end":    now.Add(time.Hour).Format(time.RFC3339),
+			"format":        string(ReportFormatJSON),
+			"include_audit": false,
+			"title":         "async report",
+		},
+		Status: ReportJobStatusQueued, ReportUID: &jobUID,
+	}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.ProcessJob(context.Background(), jobUID); err != nil {
+		t.Fatalf("ProcessJob() error = %v", err)
+	}
+	if repository.job.Status != ReportJobStatusCompleted {
+		t.Fatalf("job not completed after process: %s", repository.job.Status)
+	}
+}
+
+func TestProcessPendingJobsProcessesQueuedJobs(t *testing.T) {
+	now := time.Now().UTC()
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+	jobUID1, jobUID2 := uuid.New(), uuid.New()
+	repository := &reportRepositoryStub{jobs: make(map[uuid.UUID]ReportGenerationJob)}
+	repository.jobs[jobUID1] = ReportGenerationJob{
+		UID:         jobUID1, ProjectID: projectID, RequestedBy: userID,
+		ReportType:  ReportTypeOptimization,
+		Parameters: map[string]any{
+			"resource_uid": resourceUID.String(),
+			"period_start": now.Format(time.RFC3339),
+			"period_end":   now.Add(time.Hour).Format(time.RFC3339),
+			"format":       string(ReportFormatJSON),
+		},
+		Status: ReportJobStatusQueued, ReportUID: &jobUID1,
+	}
+	repository.jobs[jobUID2] = ReportGenerationJob{
+		UID:         jobUID2, ProjectID: projectID, RequestedBy: userID,
+		ReportType:  ReportTypeOptimization,
+		Parameters: map[string]any{
+			"resource_uid": resourceUID.String(),
+			"period_start": now.Format(time.RFC3339),
+			"period_end":   now.Add(time.Hour).Format(time.RFC3339),
+			"format":       string(ReportFormatJSON),
+		},
+		Status: ReportJobStatusQueued, ReportUID: &jobUID2,
+	}
+	service, err := NewService(Dependencies{
+		DataProvider:  &reportDataProviderStub{},
+		Repository:    repository,
+		ResourceScope: reportResourceScopeStub{allowed: true},
+		Formatters:    []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:      reportExporterStub{calls: &[]string{}},
+		Audit:         &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.ProcessPendingJobs(context.Background()); err != nil {
+		t.Fatalf("ProcessPendingJobs() error = %v", err)
+	}
+	if repository.jobs[jobUID1].Status != ReportJobStatusCompleted ||
+		repository.jobs[jobUID2].Status != ReportJobStatusCompleted {
+		t.Fatalf("pending jobs not completed: %s / %s", repository.jobs[jobUID1].Status, repository.jobs[jobUID2].Status)
+	}
 }

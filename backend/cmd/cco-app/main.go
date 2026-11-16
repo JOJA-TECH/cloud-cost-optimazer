@@ -343,6 +343,7 @@ func main() {
 			Formatters: []reporting.ReportFormatter{
 				reportingadapters.NewJSONFormatter(),
 				reportingadapters.NewCSVFormatter(),
+				reportingadapters.NewHTMLFormatter(),
 			},
 			Exporter: reportExporter,
 			Audit:    reportingadapters.NewAuditSink(auditService),

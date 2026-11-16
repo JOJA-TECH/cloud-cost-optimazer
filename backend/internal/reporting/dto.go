@@ -19,6 +19,7 @@ type ReportFormat string
 const (
 	ReportFormatJSON ReportFormat = "json"
 	ReportFormatCSV  ReportFormat = "csv"
+	ReportFormatHTML ReportFormat = "html"
 )
 
 type ReportStatus string

@@ -135,6 +135,45 @@ func (r *ReportRepository) GetJob(ctx context.Context, jobUID uuid.UUID) (report
 	return job, nil
 }
 
+func (r *ReportRepository) ListPendingJobs(ctx context.Context) ([]reporting.ReportGenerationJob, error) {
+	if r == nil || r.db == nil {
+		return nil, reporting.ErrReportRepository
+	}
+	var models []database.ReportRequestModel
+	err := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "app", "report_requests")).
+		Where("status IN (?, ?)", reporting.ReportJobStatusQueued, reporting.ReportJobStatusRunning).
+		Order("created_at ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, fmt.Errorf("list pending report requests: %w", err)
+	}
+	jobs := make([]reporting.ReportGenerationJob, 0, len(models))
+	for _, model := range models {
+		var parameters map[string]any
+		if err := json.Unmarshal(model.Parameters, &parameters); err != nil {
+			return nil, fmt.Errorf("decode report parameters: %w", err)
+		}
+		if parameters == nil {
+			parameters = make(map[string]any)
+		}
+		jobs = append(jobs, reporting.ReportGenerationJob{
+			UID:          model.ReportRequestID,
+			ProjectID:    model.ProjectID,
+			RequestedBy:  model.RequestedBy,
+			ReportType:   reporting.ReportType(model.ReportType),
+			Parameters:   parameters,
+			Status:       reporting.ReportJobStatus(model.Status),
+			ReportUID:    uuidPointer(model.ReportRequestID),
+			CreatedAt:    model.CreatedAt,
+			StartedAt:    model.StartedAt,
+			CompletedAt:  model.CompletedAt,
+			ErrorMessage: model.ErrorMessage,
+		})
+	}
+	return jobs, nil
+}
+
 func (r *ReportRepository) SaveArtifact(
 	ctx context.Context,
 	reportRequestUID uuid.UUID,

@@ -94,8 +94,7 @@ func (s *Service) GenerateOptimizationReport(
 		return Report{}, err
 	}
 	input.Format = ReportFormat(strings.ToLower(strings.TrimSpace(string(input.Format))))
-	formatter := s.formatterFor(input.Format)
-	if formatter == nil {
+	if s.formatterFor(input.Format) == nil {
 		return Report{}, fmt.Errorf("%w: %q", ErrReportFormatUnsupported, input.Format)
 	}
 	input.Title = strings.TrimSpace(input.Title)
@@ -111,10 +110,13 @@ func (s *Service) GenerateOptimizationReport(
 		return Report{}, ErrReportResourceNotFound
 	}
 
-	period := ReportPeriod{Start: input.From.UTC(), End: input.To.UTC()}
-	var recommendations []RecommendationReportData
+	// Validar recomendaciones seleccionadas antes de crear el job, para que
+	// una selección inválida no genere un trabajo persistido.
+	var validatedRecommendations []RecommendationReportData
 	if len(input.RecommendationUIDs) > 0 {
-		recommendations, err = s.getSelectedRecommendations(ctx, input.RecommendationUIDs, input.ResourceUID, period)
+		var err error
+		validatedRecommendations, err = s.getSelectedRecommendations(ctx, input.RecommendationUIDs,
+			input.ResourceUID, ReportPeriod{Start: input.From.UTC(), End: input.To.UTC()})
 		if err != nil {
 			return Report{}, err
 		}
@@ -122,24 +124,12 @@ func (s *Service) GenerateOptimizationReport(
 
 	now := time.Now().UTC()
 	reportUID := uuid.New()
-	resourceUID := input.ResourceUID
-	parameters := copyReportParameters(input.Parameters)
-	parameters["resource_uid"] = resourceUID.String()
-	parameters["period"] = map[string]any{"start": period.Start, "end": period.End}
-	parameters["format"] = input.Format
-	parameters["recommendation_uids"] = input.RecommendationUIDs
-	parameters["include_audit"] = input.IncludeAudit
-	parameters["include_trace"] = input.IncludeAudit
-	parameters["include_evidence"] = input.IncludeEvidence
-	parameters["include_risks"] = input.IncludeRisks
-	parameters["include_metrics"] = input.IncludeMetrics
-	parameters["title"] = input.Title
 	job := ReportGenerationJob{
 		UID:         reportUID,
 		ProjectID:   input.ProjectID,
 		RequestedBy: input.RequestedBy,
 		ReportType:  ReportTypeOptimization,
-		Parameters:  parameters,
+		Parameters:  copyReportParameters(input.Parameters),
 		Status:      ReportJobStatusRunning,
 		ReportUID:   &reportUID,
 		CreatedAt:   now,
@@ -149,78 +139,7 @@ func (s *Service) GenerateOptimizationReport(
 	if err != nil {
 		return Report{}, fmt.Errorf("%w: create report job: %w", ErrReportRepository, err)
 	}
-	fail := func(cause error) error {
-		completedAt := time.Now().UTC()
-		message := cause.Error()
-		job.Status = ReportJobStatusFailed
-		job.CompletedAt = &completedAt
-		job.ErrorMessage = &message
-		if updateErr := s.repository.UpdateJob(ctx, job); updateErr != nil {
-			return errors.Join(cause, fmt.Errorf("%w: mark report job failed: %w", ErrReportRepository, updateErr))
-		}
-		return cause
-	}
-
-	analyticsData := AnalyticsReportData{ResourceUID: resourceUID, Period: period}
-	if input.IncludeMetrics {
-		analyticsData, err = s.dataProvider.GetAnalytics(ctx, AnalyticsReportQuery{
-			ResourceUID: resourceUID,
-			From:        period.Start,
-			To:          period.End,
-		})
-		if err != nil {
-			return Report{}, fail(fmt.Errorf("read analytics report data: %w", err))
-		}
-	}
-	if len(input.RecommendationUIDs) == 0 {
-		recommendations, err = s.listReportRecommendations(ctx, resourceUID, period)
-		if err != nil {
-			return Report{}, fail(err)
-		}
-	}
-
-	traces := make(map[uuid.UUID]RecommendationTraceData, len(recommendations))
-	if input.IncludeAudit {
-		for i := range recommendations {
-			trace, err := s.dataProvider.GetRecommendationTrace(ctx, recommendations[i].RecommendationUID)
-			if err != nil {
-				return Report{}, fail(fmt.Errorf("read recommendation trace %s: %w", recommendations[i].RecommendationUID, err))
-			}
-			recommendations[i].TraceAvailable = len(trace.DecisionTraces) > 0 || len(trace.Events) > 0
-			traces[recommendations[i].RecommendationUID] = trace
-		}
-	}
-
-	report := buildOptimizationReport(reportUID, input, period, analyticsData, recommendations, traces, now)
-	formatted, err := formatter.Format(ctx, report)
-	if err != nil {
-		return Report{}, fail(fmt.Errorf("format report: %w", err))
-	}
-	artifact, err := s.exporter.Export(ctx, formatted)
-	if err != nil {
-		return Report{}, fail(fmt.Errorf("export report: %w", err))
-	}
-	artifact, err = s.repository.SaveArtifact(ctx, job.UID, artifact)
-	if err != nil {
-		return Report{}, fail(fmt.Errorf("%w: save report artifact: %w", ErrReportRepository, err))
-	}
-	report.Artifact = &artifact
-	completedAt := time.Now().UTC()
-	report.CompletedAt = &completedAt
-	job.Status = ReportJobStatusCompleted
-	job.ArtifactUID = &artifact.UID
-	job.CompletedAt = &completedAt
-	if err := s.repository.UpdateJob(ctx, job); err != nil {
-		return Report{}, fail(fmt.Errorf("%w: complete report job: %w", ErrReportRepository, err))
-	}
-	if err := s.audit.RecordReportGenerated(ctx, job, report); err != nil {
-		return Report{}, fail(fmt.Errorf("record report audit event: %w", err))
-	}
-
-	s.mu.Lock()
-	s.reports[report.UID] = report
-	s.mu.Unlock()
-	return report, nil
+	return s.runOptimizationReport(ctx, input, job, validatedRecommendations)
 }
 
 func (s *Service) GetReport(ctx context.Context, reportUID uuid.UUID) (Report, error) {
@@ -287,6 +206,271 @@ func jobStatusToReportStatus(status ReportJobStatus) ReportStatus {
 	default:
 		return ReportStatusPending
 	}
+}
+
+// QueueOptimizationReport creates a report job in queued status without
+// executing the generation. A background processor (ProcessJob /
+// ProcessPendingJobs) executes it later.
+func (s *Service) QueueOptimizationReport(
+	ctx context.Context,
+	input OptimizationReportInput,
+) (ReportGenerationJob, error) {
+	if s == nil || s.repository == nil || s.resourceScope == nil {
+		return ReportGenerationJob{}, ErrReportDependencyUnavailable
+	}
+	if err := ValidateOptimizationReportInput(input); err != nil {
+		return ReportGenerationJob{}, err
+	}
+	input.Format = ReportFormat(strings.ToLower(strings.TrimSpace(string(input.Format))))
+	if s.formatterFor(input.Format) == nil {
+		return ReportGenerationJob{}, fmt.Errorf("%w: %q", ErrReportFormatUnsupported, input.Format)
+	}
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Title == "" {
+		input.Title = "Reporte de optimización"
+	}
+
+	inProject, err := s.resourceScope.IsResourceInProject(ctx, input.ProjectID, input.ResourceUID)
+	if err != nil {
+		return ReportGenerationJob{}, fmt.Errorf("check report resource scope: %w", err)
+	}
+	if !inProject {
+		return ReportGenerationJob{}, ErrReportResourceNotFound
+	}
+
+	now := time.Now().UTC()
+	reportUID := uuid.New()
+	job := ReportGenerationJob{
+		UID:         reportUID,
+		ProjectID:   input.ProjectID,
+		RequestedBy: input.RequestedBy,
+		ReportType:  ReportTypeOptimization,
+		Parameters:  queueReportParameters(input),
+		Status:      ReportJobStatusQueued,
+		ReportUID:   &reportUID,
+		CreatedAt:   now,
+	}
+	job, err = s.repository.CreateJob(ctx, job)
+	if err != nil {
+		return ReportGenerationJob{}, fmt.Errorf("%w: create report job: %w", ErrReportRepository, err)
+	}
+	return job, nil
+}
+
+// runOptimizationReport executes the full generation flow for an already
+// created job. It marks the job running, builds the report from producer
+// modules (no new calculations), formats, exports, persists the artifact,
+// records audit and completes the job.
+func (s *Service) runOptimizationReport(
+	ctx context.Context,
+	input OptimizationReportInput,
+	job ReportGenerationJob,
+	preValidatedRecommendations ...[]RecommendationReportData,
+) (Report, error) {
+	if s == nil || s.dataProvider == nil || s.exporter == nil || s.audit == nil ||
+		s.resourceScope == nil || s.repository == nil {
+		return Report{}, ErrReportDependencyUnavailable
+	}
+	reportUID := *job.ReportUID
+	now := time.Now().UTC()
+	if job.Status == ReportJobStatusQueued {
+		job.Status = ReportJobStatusRunning
+		job.StartedAt = &now
+		if err := s.repository.UpdateJob(ctx, job); err != nil {
+			return Report{}, fmt.Errorf("%w: mark report job running: %w", ErrReportRepository, err)
+		}
+	}
+
+	fail := func(cause error) error {
+		completedAt := time.Now().UTC()
+		message := cause.Error()
+		job.Status = ReportJobStatusFailed
+		job.CompletedAt = &completedAt
+		job.ErrorMessage = &message
+		if updateErr := s.repository.UpdateJob(ctx, job); updateErr != nil {
+			return errors.Join(cause, fmt.Errorf("%w: mark report job failed: %w", ErrReportRepository, updateErr))
+		}
+		return cause
+	}
+
+	period := ReportPeriod{Start: input.From.UTC(), End: input.To.UTC()}
+	resourceUID := input.ResourceUID
+	var recommendations []RecommendationReportData
+	if len(preValidatedRecommendations) > 0 {
+		recommendations = preValidatedRecommendations[0]
+	} else if len(input.RecommendationUIDs) > 0 {
+		var err error
+		recommendations, err = s.getSelectedRecommendations(ctx, input.RecommendationUIDs, resourceUID, period)
+		if err != nil {
+			return Report{}, fail(err)
+		}
+	}
+
+	analyticsData := AnalyticsReportData{ResourceUID: resourceUID, Period: period}
+	if input.IncludeMetrics {
+		var err error
+		analyticsData, err = s.dataProvider.GetAnalytics(ctx, AnalyticsReportQuery{
+			ResourceUID: resourceUID,
+			From:        period.Start,
+			To:          period.End,
+		})
+		if err != nil {
+			return Report{}, fail(fmt.Errorf("read analytics report data: %w", err))
+		}
+	}
+	if len(input.RecommendationUIDs) == 0 {
+		var err error
+		recommendations, err = s.listReportRecommendations(ctx, resourceUID, period)
+		if err != nil {
+			return Report{}, fail(err)
+		}
+	}
+
+	traces := make(map[uuid.UUID]RecommendationTraceData, len(recommendations))
+	if input.IncludeAudit {
+		for i := range recommendations {
+			trace, err := s.dataProvider.GetRecommendationTrace(ctx, recommendations[i].RecommendationUID)
+			if err != nil {
+				return Report{}, fail(fmt.Errorf("read recommendation trace %s: %w", recommendations[i].RecommendationUID, err))
+			}
+			recommendations[i].TraceAvailable = len(trace.DecisionTraces) > 0 || len(trace.Events) > 0
+			traces[recommendations[i].RecommendationUID] = trace
+		}
+	}
+
+	report := buildOptimizationReport(reportUID, input, period, analyticsData, recommendations, traces, now)
+	formatter := s.formatterFor(input.Format)
+	formatted, err := formatter.Format(ctx, report)
+	if err != nil {
+		return Report{}, fail(fmt.Errorf("format report: %w", err))
+	}
+	artifact, err := s.exporter.Export(ctx, formatted)
+	if err != nil {
+		return Report{}, fail(fmt.Errorf("export report: %w", err))
+	}
+	artifact, err = s.repository.SaveArtifact(ctx, job.UID, artifact)
+	if err != nil {
+		return Report{}, fail(fmt.Errorf("%w: save report artifact: %w", ErrReportRepository, err))
+	}
+	report.Artifact = &artifact
+	completedAt := time.Now().UTC()
+	report.CompletedAt = &completedAt
+	job.Status = ReportJobStatusCompleted
+	job.ArtifactUID = &artifact.UID
+	job.CompletedAt = &completedAt
+	if err := s.repository.UpdateJob(ctx, job); err != nil {
+		return Report{}, fail(fmt.Errorf("%w: complete report job: %w", ErrReportRepository, err))
+	}
+	if err := s.audit.RecordReportGenerated(ctx, job, report); err != nil {
+		return Report{}, fail(fmt.Errorf("record report audit event: %w", err))
+	}
+
+	s.mu.Lock()
+	s.reports[report.UID] = report
+	s.mu.Unlock()
+	return report, nil
+}
+
+// GetJobStatus returns the persisted status of a report job.
+func (s *Service) GetJobStatus(ctx context.Context, jobUID uuid.UUID) (ReportJobStatus, error) {
+	if s == nil || s.repository == nil {
+		return "", ErrReportDependencyUnavailable
+	}
+	if jobUID == uuid.Nil {
+		return "", ErrReportNotFound
+	}
+	job, err := s.repository.GetJob(ctx, jobUID)
+	if err != nil {
+		return "", err
+	}
+	return job.Status, nil
+}
+
+// GetJob returns the persisted report generation job.
+func (s *Service) GetJob(ctx context.Context, jobUID uuid.UUID) (ReportGenerationJob, error) {
+	if s == nil || s.repository == nil {
+		return ReportGenerationJob{}, ErrReportDependencyUnavailable
+	}
+	if jobUID == uuid.Nil {
+		return ReportGenerationJob{}, ErrReportNotFound
+	}
+	return s.repository.GetJob(ctx, jobUID)
+}
+
+// CancelJob marks a queued or running report job as cancelled.
+func (s *Service) CancelJob(ctx context.Context, jobUID uuid.UUID) error {
+	if s == nil || s.repository == nil {
+		return ErrReportDependencyUnavailable
+	}
+	if jobUID == uuid.Nil {
+		return ErrReportNotFound
+	}
+	job, err := s.repository.GetJob(ctx, jobUID)
+	if err != nil {
+		return err
+	}
+	switch job.Status {
+	case ReportJobStatusCompleted, ReportJobStatusFailed, ReportJobStatusCancelled:
+		return fmt.Errorf("%w: report job is already terminal", ErrInvalidReportRequest)
+	}
+	now := time.Now().UTC()
+	job.Status = ReportJobStatusCancelled
+	job.CompletedAt = &now
+	if err := s.repository.UpdateJob(ctx, job); err != nil {
+		return fmt.Errorf("%w: cancel report job: %w", ErrReportRepository, err)
+	}
+	return nil
+}
+
+// ProcessJob executes a single queued/running report job. It reconstructs the
+// generation input from the persisted job parameters and runs the same
+// generation flow as the synchronous path.
+func (s *Service) ProcessJob(ctx context.Context, jobUID uuid.UUID) error {
+	if s == nil || s.repository == nil || s.dataProvider == nil || s.resourceScope == nil ||
+		s.exporter == nil || s.audit == nil {
+		return ErrReportDependencyUnavailable
+	}
+	if jobUID == uuid.Nil {
+		return ErrReportNotFound
+	}
+	job, err := s.repository.GetJob(ctx, jobUID)
+	if err != nil {
+		return err
+	}
+	switch job.Status {
+	case ReportJobStatusCompleted, ReportJobStatusFailed, ReportJobStatusCancelled:
+		return fmt.Errorf("%w: report job is already terminal", ErrInvalidReportRequest)
+	}
+
+	input, err := parseOptimizationReportInput(job.Parameters)
+	if err != nil {
+		return fmt.Errorf("parse report job parameters: %w", err)
+	}
+	input.RequestedBy = job.RequestedBy
+	_, err = s.runOptimizationReport(ctx, input, job)
+	return err
+}
+
+// ProcessPendingJobs processes all queued report jobs in a single pass. It is
+// intended to be invoked periodically by a background scheduler.
+func (s *Service) ProcessPendingJobs(ctx context.Context) error {
+	if s == nil || s.repository == nil {
+		return ErrReportDependencyUnavailable
+	}
+	jobs, err := s.repository.ListPendingJobs(ctx)
+	if err != nil {
+		return fmt.Errorf("list pending report jobs: %w", err)
+	}
+	for _, job := range jobs {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := s.ProcessJob(ctx, job.UID); err != nil {
+			// One failed job must not block the others.
+			_ = err
+		}
+	}
+	return nil
 }
 
 func (s *Service) formatterFor(format ReportFormat) ReportFormatter {
@@ -894,4 +1078,92 @@ func buildOptimizationReport(
 		GeneratedBy:      input.RequestedBy,
 		CreatedAt:        createdAt,
 	}
+}
+
+func queueReportParameters(input OptimizationReportInput) map[string]any {
+	parameters := map[string]any{
+		"resource_uid":        input.ResourceUID.String(),
+		"period_start":        input.From.UTC().Format(time.RFC3339),
+		"period_end":          input.To.UTC().Format(time.RFC3339),
+		"format":              string(input.Format),
+		"include_audit":       input.IncludeAudit,
+		"include_evidence":    input.IncludeEvidence,
+		"include_risks":       input.IncludeRisks,
+		"include_metrics":     input.IncludeMetrics,
+		"title":               input.Title,
+		"recommendation_uids": input.RecommendationUIDs,
+	}
+	if input.Parameters != nil {
+		for key, value := range input.Parameters {
+			parameters[key] = value
+		}
+	}
+	return parameters
+}
+
+func parseOptimizationReportInput(parameters map[string]any) (OptimizationReportInput, error) {
+	input := OptimizationReportInput{}
+	if v, ok := parameters["resource_uid"].(string); ok && v != "" {
+		if parsed, err := uuid.Parse(v); err == nil {
+			input.ResourceUID = parsed
+		}
+	}
+	if v, ok := parameters["period_start"].(string); ok && v != "" {
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			input.From = parsed.UTC()
+		}
+	}
+	if v, ok := parameters["period_end"].(string); ok && v != "" {
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			input.To = parsed.UTC()
+		}
+	}
+	if v, ok := parameters["format"].(string); ok {
+		input.Format = ReportFormat(v)
+	}
+	if v, ok := parameters["include_audit"].(bool); ok {
+		input.IncludeAudit = v
+	}
+	if v, ok := parameters["include_evidence"].(bool); ok {
+		input.IncludeEvidence = v
+	}
+	if v, ok := parameters["include_risks"].(bool); ok {
+		input.IncludeRisks = v
+	}
+	if v, ok := parameters["include_metrics"].(bool); ok {
+		input.IncludeMetrics = v
+	}
+	if v, ok := parameters["title"].(string); ok {
+		input.Title = v
+	}
+	if raw, ok := parameters["recommendation_uids"]; ok {
+		switch value := raw.(type) {
+		case []any:
+			for _, item := range value {
+				if s, ok := item.(string); ok {
+					if parsed, err := uuid.Parse(s); err == nil {
+						input.RecommendationUIDs = append(input.RecommendationUIDs, parsed)
+					}
+				}
+			}
+		case string:
+			if parsed, err := uuid.Parse(value); err == nil {
+				input.RecommendationUIDs = []uuid.UUID{parsed}
+			}
+		}
+	}
+	// Parameters que no son campos conocidos del input se devuelven en el mapa.
+	known := map[string]struct{}{
+		"resource_uid": {}, "period_start": {}, "period_end": {}, "format": {},
+		"include_audit": {}, "include_evidence": {}, "include_risks": {},
+		"include_metrics": {}, "title": {}, "recommendation_uids": {},
+	}
+	extra := make(map[string]any)
+	for key, value := range parameters {
+		if _, isKnown := known[key]; !isKnown {
+			extra[key] = value
+		}
+	}
+	input.Parameters = extra
+	return input, nil
 }

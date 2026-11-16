@@ -64,7 +64,7 @@ func ValidateOptimizationReportInput(input OptimizationReportInput) error {
 
 func ValidateReportFormat(format ReportFormat) error {
 	switch ReportFormat(strings.ToLower(strings.TrimSpace(string(format)))) {
-	case ReportFormatJSON, ReportFormatCSV:
+	case ReportFormatJSON, ReportFormatCSV, ReportFormatHTML:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrReportFormatUnsupported, format)
