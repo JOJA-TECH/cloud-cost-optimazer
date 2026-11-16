@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting"
+	"github.com/google/uuid"
 )
 
 func TestObjectStorageExportAdapterUsesInMemoryStorage(t *testing.T) {
@@ -72,10 +72,14 @@ func TestObjectStorageExportAdapterRejectsInvalidMetadata(t *testing.T) {
 
 func TestCSVFormatterEscapesSpreadsheetFormulas(t *testing.T) {
 	report := reporting.Report{
-		Format: reporting.ReportFormatCSV, Title: "=1+1",
+		Format: reporting.ReportFormatCSV, Title: "Reporte",
 		Sections: []reporting.ReportSection{{
-			Key: "metrics", Title: "Metrics",
-			Metrics: []reporting.ReportMetric{{Code: "external", Label: "External", Value: "=1+1"}},
+			Key: "recommendations", Title: "Recomendaciones",
+			Recommendations: []reporting.ReportRecommendation{{
+				RecommendationUID: uuid.New(),
+				Action:            "=1+1",
+				Status:            "pending",
+			}},
 		}},
 	}
 	formatted, err := NewCSVFormatter().Format(context.Background(), report)
@@ -83,18 +87,15 @@ func TestCSVFormatterEscapesSpreadsheetFormulas(t *testing.T) {
 		t.Fatalf("Format() error = %v", err)
 	}
 	rows, err := csv.NewReader(strings.NewReader(string(formatted.Body))).ReadAll()
-	if err != nil && err != io.EOF {
+	if err != nil {
 		t.Fatalf("parse formatted CSV: %v", err)
 	}
-	var metricRow []string
-	for _, row := range rows[1:] {
-		if row[9] == "metric" {
-			metricRow = row
-			break
-		}
+	if len(rows) != 2 {
+		t.Fatalf("expected header + 1 row, got %d rows", len(rows))
 	}
-	if metricRow == nil || metricRow[4] != "'=1+1" || metricRow[12] != "'=1+1" {
-		t.Fatalf("CSV metric row = %v, want formula-safe values", metricRow)
+	// action está en la columna índice 2.
+	if rows[1][2] != "'=1+1" {
+		t.Fatalf("action cell = %q, want formula-safe %q", rows[1][2], "'=1+1")
 	}
 }
 

@@ -6,13 +6,15 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting"
 )
 
+// CSVFormatter exporta una vista tabular del reporte: una fila por
+// recomendación. No intenta representar la jerarquía completa del reporte en
+// una sola fila; JSON es el formato canónico para la estructura completa.
 type CSVFormatter struct{}
 
 var _ reporting.ReportFormatter = CSVFormatter{}
@@ -35,11 +37,18 @@ func (f CSVFormatter) Format(ctx context.Context, report reporting.Report) (repo
 
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
+
 	header := []string{
-		"report_uid", "project_id", "resource_uid", "report_type", "title",
-		"period_start", "period_end", "section_key", "section_title",
-		"record_type", "code", "label", "value", "unit", "source",
-		"reference", "recommendation_uid", "status", "action", "description", "details",
+		"resource_uid",
+		"recommendation_uid",
+		"action",
+		"status",
+		"estimated_saving",
+		"currency",
+		"risk_level",
+		"risk_score",
+		"confidence_score",
+		"created_at",
 	}
 	if err := writer.Write(header); err != nil {
 		return reporting.FormattedReport{}, fmt.Errorf("write CSV header: %w", err)
@@ -49,56 +58,38 @@ func (f CSVFormatter) Format(ctx context.Context, report reporting.Report) (repo
 	if report.ResourceUID != nil {
 		resourceUID = report.ResourceUID.String()
 	}
-	base := []string{
-		report.UID.String(), report.ProjectID.String(), resourceUID, string(report.ReportType), safeSpreadsheetText(report.Title),
-		report.Period.Start.Format("2006-01-02T15:04:05Z07:00"),
-		report.Period.End.Format("2006-01-02T15:04:05Z07:00"),
-	}
-	qualityRow := append(append([]string(nil), base...), "data_quality", "Calidad de datos", "data_quality")
-	for len(qualityRow) < len(header)-1 {
-		qualityRow = append(qualityRow, "")
-	}
-	qualityRow = append(qualityRow, csvJSON(report.DataQuality))
-	if err := writer.Write(qualityRow); err != nil {
-		return reporting.FormattedReport{}, fmt.Errorf("write CSV data quality row: %w", err)
-	}
+	createdAt := report.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+
 	for _, section := range report.Sections {
-		for _, metric := range section.Metrics {
-			row := append(append([]string(nil), base...), safeSpreadsheetText(section.Key), safeSpreadsheetText(section.Title), "metric",
-				safeSpreadsheetText(metric.Code), safeSpreadsheetText(metric.Label), csvValue(metric.Value),
-				safeSpreadsheetText(metric.Unit), safeSpreadsheetText(string(metric.Source)),
-				"", "", "", "", "", csvJSON(map[string]any{"period": metric.Period, "quality": metric.Quality}))
-			if err := writer.Write(row); err != nil {
-				return reporting.FormattedReport{}, fmt.Errorf("write CSV metric row: %w", err)
+		for _, rec := range section.Recommendations {
+			estimatedSaving := ""
+			if rec.EstimatedSaving.Currency != "" {
+				estimatedSaving = fmt.Sprintf("%.2f", rec.EstimatedSaving.MonthlyAmount)
 			}
-		}
-		for _, recommendation := range section.Recommendations {
-			row := append(append([]string(nil), base...), safeSpreadsheetText(section.Key), safeSpreadsheetText(section.Title), "recommendation",
-				"", "", "", "", string(reporting.ReportSourceRecommendation), "",
-				recommendation.RecommendationUID.String(), safeSpreadsheetText(recommendation.Status),
-				safeSpreadsheetText(recommendation.Action), safeSpreadsheetText(recommendation.Description),
-				csvJSON(recommendation))
+			riskLevel := ""
+			riskScore := ""
+			if rec.Risk != nil {
+				riskLevel = rec.Risk.Level
+				riskScore = fmt.Sprintf("%.2f", rec.Risk.Score)
+			}
+			row := []string{
+				safeSpreadsheetText(resourceUID),
+				safeSpreadsheetText(rec.RecommendationUID.String()),
+				safeSpreadsheetText(rec.Action),
+				safeSpreadsheetText(rec.Status),
+				safeSpreadsheetText(estimatedSaving),
+				safeSpreadsheetText(rec.EstimatedSaving.Currency),
+				safeSpreadsheetText(riskLevel),
+				safeSpreadsheetText(riskScore),
+				safeSpreadsheetText(fmt.Sprintf("%.2f", rec.Confidence.Score)),
+				safeSpreadsheetText(createdAt),
+			}
 			if err := writer.Write(row); err != nil {
 				return reporting.FormattedReport{}, fmt.Errorf("write CSV recommendation row: %w", err)
 			}
 		}
-		for _, evidence := range section.Evidence {
-			row := append(append([]string(nil), base...), safeSpreadsheetText(section.Key), safeSpreadsheetText(section.Title), "evidence",
-				valueOrEmpty(evidence.MetricCode), "", valueOrEmpty(evidence.Value),
-				valueOrEmpty(evidence.Unit), safeSpreadsheetText(string(evidence.Source)), safeSpreadsheetText(evidence.Reference),
-				"", "", "", "", csvJSON(evidence))
-			if err := writer.Write(row); err != nil {
-				return reporting.FormattedReport{}, fmt.Errorf("write CSV evidence row: %w", err)
-			}
-		}
-		if len(section.Data) > 0 {
-			row := append(append([]string(nil), base...), safeSpreadsheetText(section.Key), safeSpreadsheetText(section.Title), "section_data",
-				"", "", "", "", "", "", "", "", "", "", csvJSON(section.Data))
-			if err := writer.Write(row); err != nil {
-				return reporting.FormattedReport{}, fmt.Errorf("write CSV section data row: %w", err)
-			}
-		}
 	}
+
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		return reporting.FormattedReport{}, fmt.Errorf("flush CSV report: %w", err)
@@ -113,31 +104,6 @@ func (f CSVFormatter) Format(ctx context.Context, report reporting.Report) (repo
 		SizeBytes:   int64(len(body)),
 		Checksum:    hex.EncodeToString(checksum[:]),
 	}, nil
-}
-
-func csvValue(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return safeSpreadsheetText(text)
-	}
-	return safeSpreadsheetText(fmt.Sprint(value))
-}
-
-func csvJSON(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return safeSpreadsheetText(fmt.Sprint(value))
-	}
-	return safeSpreadsheetText(string(encoded))
-}
-
-func valueOrEmpty[T any](value *T) string {
-	if value == nil {
-		return ""
-	}
-	return csvValue(*value)
 }
 
 func safeSpreadsheetText(value string) string {
