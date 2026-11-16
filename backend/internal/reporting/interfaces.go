@@ -97,7 +97,7 @@ type OptimizationReportInput struct {
 	From               time.Time
 	To                 time.Time
 	Format             ReportFormat
-	IncludeTrace       bool
+	IncludeAudit       bool
 	RecommendationUIDs []uuid.UUID
 	IncludeEvidence    bool
 	IncludeRisks       bool
@@ -130,6 +130,7 @@ type RecommendationFilter struct {
 type AnalyticsReportData struct {
 	ResourceUID      uuid.UUID
 	Period           ReportPeriod
+	CostCurrency     string
 	DataQuality      ReportDataQuality
 	Metrics          []ReportMetric
 	ObservedCost     []ReportMetric

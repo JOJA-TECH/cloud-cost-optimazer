@@ -96,6 +96,11 @@ func TestAnalyticsReportReaderOmitsUnavailableValuesAndMarksDegradedData(t *test
 	if !hasMetric(data.Metrics, "cpu_avg", float64(0)) {
 		t.Fatal("available CPU average with a real zero value was omitted")
 	}
+	if len(data.Evidence) == 0 || data.Evidence[0].Value == nil ||
+		*data.Evidence[0].Value != 0 || data.Evidence[0].Unit == nil ||
+		*data.Evidence[0].Unit != "percent" || data.Evidence[0].Reference == "" {
+		t.Fatalf("Analytics evidence is missing its value, unit, or reference: %#v", data.Evidence)
+	}
 	if hasMetricCode(data.Metrics, "cpu_max") {
 		t.Fatal("unavailable CPU maximum was emitted")
 	}

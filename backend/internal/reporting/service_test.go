@@ -178,7 +178,7 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 		ProjectID: uuid.New(), ResourceUID: resourceUID,
 		From: now, To: now.Add(24 * time.Hour),
 		Format: ReportFormat(" JSON "), RequestedBy: uuid.New(),
-		IncludeTrace: true, IncludeEvidence: true, IncludeRisks: true, IncludeMetrics: true,
+		IncludeAudit: true, IncludeEvidence: true, IncludeRisks: true, IncludeMetrics: true,
 	})
 	if err != nil {
 		t.Fatalf("GenerateOptimizationReport() error = %v", err)
@@ -200,7 +200,7 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 	if repository.job.Status != ReportJobStatusCompleted || audit.job.Status != ReportJobStatusCompleted {
 		t.Fatalf("report job was not completed before audit: repository=%s audit=%s", repository.job.Status, audit.job.Status)
 	}
-	if !report.Sections[5].Recommendations[0].TraceAvailable {
+	if !reportSection(report, ReportSectionRecommendations).Recommendations[0].TraceAvailable {
 		t.Fatal("report recommendation should indicate available decision trace")
 	}
 }
@@ -352,7 +352,7 @@ func TestGenerateOptimizationReportIncludesOnlySelectedRecommendations(t *testin
 	if !equalStrings(provider.calls, []string{"recommendation"}) {
 		t.Fatalf("provider calls = %v, want only the selected recommendation read", provider.calls)
 	}
-	if got := report.Sections[2].Recommendations; len(got) != 1 || got[0].RecommendationUID != selectedUID {
+	if got := reportSection(report, ReportSectionRecommendations).Recommendations; len(got) != 1 || got[0].RecommendationUID != selectedUID {
 		t.Fatalf("report recommendations = %#v, want only %s", got, selectedUID)
 	}
 }
@@ -403,12 +403,133 @@ func TestGenerateOptimizationReportHonorsIncludeOptions(t *testing.T) {
 			t.Errorf("section %q should be omitted when its include option is false", section.Key)
 		}
 	}
-	if report.Sections[2].Recommendations[0].Risk != nil {
+	if reportSection(report, ReportSectionRecommendations).Recommendations[0].Risk != nil {
 		t.Fatal("recommendation risk should be omitted when risks are disabled")
 	}
-	if report.Sections[2].Recommendations[0].EvidenceCount != 0 {
-		t.Fatal("recommendation evidence count should be omitted when evidence is disabled")
+	if reportSection(report, ReportSectionRecommendations).Recommendations[0].EvidenceCount != 3 {
+		t.Fatal("recommendation evidence count should be retained when evidence details are disabled")
 	}
+}
+
+func TestBuildOptimizationReportOrganizesSummaryCostUtilizationAndOpportunities(t *testing.T) {
+	now := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	resourceUID := uuid.New()
+	firstUID, secondUID := uuid.New(), uuid.New()
+	headroom := 42.0
+	percentUnit := "percent"
+	analytics := AnalyticsReportData{
+		ResourceUID: resourceUID,
+		Period:      ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
+		DataQuality: ReportDataQuality{Status: "degraded", Missing: []string{"forecast"}},
+		Metrics: []ReportMetric{
+			{Code: "cpu_p95", Value: 70.0, Source: ReportSourceAnalytics},
+			{Code: "cpu_p99", Value: 90.0, Source: ReportSourceAnalytics},
+		},
+		ObservedCost: []ReportMetric{
+			{Code: "actual_monthly_cost", Value: 1000.0, Source: ReportSourceAnalytics},
+			{Code: "projected_monthly_cost", Value: 850.0, Source: ReportSourceAnalytics},
+		},
+		Trends: []ReportMetric{{Code: "cpu_avg_slope", Value: 0.2, Source: ReportSourceAnalytics}},
+		Utilization: []ReportMetric{{
+			Code: "peak_hours", Value: []int{9, 10}, Source: ReportSourceAnalytics,
+		}},
+	}
+	recommendations := []RecommendationReportData{
+		{
+			ReportRecommendation: ReportRecommendation{
+				RecommendationUID: firstUID,
+				EstimatedSaving: EstimatedSavingView{
+					CurrentMonthlyCost: 1000, ProposedMonthlyCost: 900, MonthlyAmount: 100,
+					Currency: "USD", CurrentCostBasis: "actual_cost_daily",
+				},
+				Risk:       &RiskView{Score: 0.4, Level: "medium", Variability: 0.2},
+				Confidence: ConfidenceView{Score: 0.8},
+			},
+			Evidence: []ReportEvidence{{
+				Type: "headroom", Value: &headroom, Unit: &percentUnit,
+				Source: ReportSourceRecommendation, Reference: "recommendation.recommendation_evidence/1",
+			}},
+		},
+		{
+			ReportRecommendation: ReportRecommendation{
+				RecommendationUID: secondUID,
+				EstimatedSaving: EstimatedSavingView{
+					CurrentMonthlyCost: 1000, ProposedMonthlyCost: 850, MonthlyAmount: 50,
+					Currency: "USD", CurrentCostBasis: "actual_cost_daily",
+				},
+				Risk:       &RiskView{Score: 0.8, Level: "critical", Variability: 0.6},
+				Confidence: ConfidenceView{Score: 0.6},
+			},
+		},
+	}
+	report := buildOptimizationReport(
+		uuid.New(),
+		OptimizationReportInput{
+			ProjectID: uuid.New(), ResourceUID: resourceUID, Format: ReportFormatJSON,
+			IncludeMetrics: true, IncludeEvidence: true, IncludeRisks: true,
+		},
+		ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
+		analytics, recommendations, nil, now,
+	)
+
+	summary := reportSection(report, ReportSectionExecutiveSummary).Data
+	if summary["current_monthly_cost"] != 1000.0 ||
+		summary["estimated_monthly_saving"] != nil ||
+		summary["recommendation_count"] != 2 ||
+		summary["highest_risk_level"] != "critical" ||
+		summary["average_or_selected_confidence"] != 0.7 {
+		t.Fatalf("executive summary data = %#v", summary)
+	}
+	if len(summary["estimated_monthly_saving_by_recommendation"].([]map[string]any)) != 2 {
+		t.Fatalf("alternative savings were not kept separate: %#v", summary)
+	}
+	singleSummary := buildExecutiveSummaryData(
+		OptimizationReportInput{ResourceUID: resourceUID, IncludeRisks: true},
+		ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
+		analytics, recommendations[:1],
+	)
+	if singleSummary["estimated_monthly_saving"] != 100.0 ||
+		singleSummary["estimated_monthly_saving_currency"] != "USD" {
+		t.Fatalf("single selected recommendation saving = %#v", singleSummary)
+	}
+
+	cost := reportSection(report, ReportSectionCostOverview).Data
+	if cost["currency"] != "USD" || cost["estimated_monthly_cost"] != 850.0 {
+		t.Fatalf("cost overview data = %#v", cost)
+	}
+	if cost["estimated_monthly_saving"] != nil ||
+		len(cost["recommendation_cost_estimates"].([]map[string]any)) != 2 {
+		t.Fatalf("cost overview combined mutually exclusive recommendation savings: %#v", cost)
+	}
+	if baseCost, ok := cost["base_cost"].(map[string]any); !ok ||
+		baseCost["source"] != ReportSourceAnalytics || baseCost["amount"] != 1000.0 {
+		t.Fatalf("base cost = %#v, want observed Analytics cost", cost["base_cost"])
+	}
+
+	utilization := reportSection(report, ReportSectionUtilizationAnalysis).Data
+	if len(utilization["cpu_p95"].([]ReportMetric)) != 1 ||
+		len(utilization["cpu_p99"].([]ReportMetric)) != 1 ||
+		len(utilization["variability"].([]map[string]any)) != 2 ||
+		len(utilization["headroom"].([]ReportEvidence)) != 1 ||
+		utilization["data_coverage"].(map[string]any)["status"] != "degraded" {
+		t.Fatalf("utilization data = %#v", utilization)
+	}
+	if got := reportSection(report, ReportSectionOptimizationOpportunities).Recommendations; len(got) != 2 ||
+		got[0].RecommendationUID != firstUID || got[1].RecommendationUID != secondUID {
+		t.Fatalf("optimization opportunities changed recommendation order or content: %#v", got)
+	}
+	if hasReportSection(report, ReportSectionAuditTrace) {
+		t.Fatal("audit trace section was included without an audit request")
+	}
+}
+
+func reportSection(report Report, key string) ReportSection {
+	for _, section := range report.Sections {
+		if section.Key == key {
+			return section
+		}
+	}
+	return ReportSection{}
 }
 
 func equalStrings(left, right []string) bool {

@@ -72,11 +72,17 @@ func recommendationToReportData(value recommendation.Recommendation) reporting.R
 			ProposedMonthlyCost: value.EstimatedSaving.ProposedMonthlyCost,
 			MonthlyAmount:       value.EstimatedSaving.MonthlyAmount,
 			MonthlyPercentage:   value.EstimatedSaving.MonthlyPercentage,
+			CurrentCostBasis:    string(value.EstimatedSaving.CurrentCostBasis),
+			ProposedCostBasis:   string(value.EstimatedSaving.ProposedCostBasis),
 			Currency:            value.EstimatedSaving.Currency,
 			PeriodStart:         value.EstimatedSaving.PeriodStart,
 			PeriodEnd:           value.EstimatedSaving.PeriodEnd,
 		},
-		Risk:          &reporting.RiskView{Score: value.Risk.Score, Level: string(value.Risk.Level)},
+		Risk: &reporting.RiskView{
+			Score: value.Risk.Score, Level: string(value.Risk.Level),
+			PeakUsage: value.Risk.PeakUsage, Variability: value.Risk.Variability,
+			Trend: value.Risk.Trend, HeadroomRisk: value.Risk.Headroom,
+		},
 		Confidence:    reporting.ConfidenceView{Score: value.Confidence.Score},
 		Rationale:     value.Rationale.Summary,
 		EvidenceCount: len(value.Evidence),
@@ -97,11 +103,27 @@ func recommendationToReportData(value recommendation.Recommendation) reporting.R
 			Source:      reporting.ReportSourceRecommendation,
 			WindowStart: cloneTime(evidence.WindowStartUTC),
 			WindowEnd:   cloneTime(evidence.WindowEndUTC),
+			Quality:     reportEvidenceQuality(evidence.Context),
 			Reference:   reference,
 			Context:     evidence.Context,
 		})
 	}
 	return result
+}
+
+func reportEvidenceQuality(context map[string]any) *float64 {
+	switch value := context["quality"].(type) {
+	case *float64:
+		if value == nil {
+			return nil
+		}
+		copy := *value
+		return &copy
+	case float64:
+		return &value
+	default:
+		return nil
+	}
 }
 
 func cloneTime(value *time.Time) *time.Time {

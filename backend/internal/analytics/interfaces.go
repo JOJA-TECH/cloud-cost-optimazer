@@ -153,6 +153,7 @@ type CostAnalysis struct {
 	ResourceUID       uuid.UUID
 	PeriodStartUTC    time.Time
 	PeriodEndUTC      time.Time
+	Currency          string
 	ActualMonthlyCost float64
 	CostPerVCore      float64
 	ProjectedMonthly  float64

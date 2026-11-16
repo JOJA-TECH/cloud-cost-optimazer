@@ -19,12 +19,16 @@ func RegisterRoutes(
 	permissions iam.PermissionChecker,
 ) {
 	handler := middleware.RequirePermission(permissions, "reports", "write")(
-		http.HandlerFunc(GenerateOptimizationHandler(svc)),
+		http.HandlerFunc(generateOptimizationHandler(svc, permissions)),
 	)
 	mux.Handle("POST /api/v1/reports/optimization", authMiddleware.Handler(handler))
 }
 
 func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
+	return generateOptimizationHandler(svc, nil)
+}
+
+func generateOptimizationHandler(svc *Service, permissions iam.PermissionChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if svc == nil {
 			writeReportError(w, http.StatusServiceUnavailable, "REPORTING_UNAVAILABLE", "reporting service is not configured")
@@ -38,6 +42,15 @@ func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
 		identity, ok := iam.IdentityContextFromContext(r.Context())
 		if !ok || identity.UserID == uuid.Nil {
 			writeReportError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated actor is unavailable")
+			return
+		}
+		includeAudit, err := requestedAuditOption(request)
+		if err != nil {
+			writeReportError(w, http.StatusBadRequest, "INVALID_REPORT_REQUEST", err.Error())
+			return
+		}
+		if includeAudit && !canReadReportAudit(r, permissions, identity) {
+			writeReportError(w, http.StatusForbidden, "FORBIDDEN", "insufficient permissions to include audit trace")
 			return
 		}
 		if identity.ProjectID == nil || *identity.ProjectID == uuid.Nil {
@@ -65,7 +78,7 @@ func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
 			From:               from.UTC(),
 			To:                 to.UTC(),
 			Format:             ReportFormat(request.Format),
-			IncludeTrace:       boolValueOrDefault(request.IncludeTrace, true),
+			IncludeAudit:       includeAudit,
 			RecommendationUIDs: request.RecommendationUIDs,
 			IncludeEvidence:    boolValueOrDefault(request.IncludeEvidence, true),
 			IncludeRisks:       boolValueOrDefault(request.IncludeRisks, true),
@@ -87,12 +100,44 @@ func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
 	}
 }
 
+func requestedAuditOption(request optimizationReportRequest) (bool, error) {
+	if request.IncludeAudit != nil {
+		if request.IncludeTrace != nil && *request.IncludeAudit != *request.IncludeTrace {
+			return false, errors.New("include_audit and include_trace must match when both are provided")
+		}
+		return *request.IncludeAudit, nil
+	}
+	if request.IncludeTrace != nil && *request.IncludeTrace {
+		return false, errors.New("include_audit must be true to include the audit trace")
+	}
+	return false, nil
+}
+
+func canReadReportAudit(
+	r *http.Request,
+	permissions iam.PermissionChecker,
+	identity iam.IdentityContext,
+) bool {
+	if permissions == nil {
+		return false
+	}
+	checks := [][2]string{{"audit", "read"}, {"audit:read", "own"}, {"audit:read", "organization"}}
+	for _, check := range checks {
+		allowed, err := permissions.Can(r.Context(), identity, check[0], check[1])
+		if err == nil && allowed {
+			return true
+		}
+	}
+	return false
+}
+
 type optimizationReportRequest struct {
 	ResourceUID        string         `json:"resource_uid"`
 	From               string         `json:"from"`
 	To                 string         `json:"to"`
 	Format             string         `json:"format"`
 	RecommendationUIDs []uuid.UUID    `json:"recommendation_uids,omitempty"`
+	IncludeAudit       *bool          `json:"include_audit,omitempty"`
 	IncludeTrace       *bool          `json:"include_trace,omitempty"`
 	IncludeEvidence    *bool          `json:"include_evidence,omitempty"`
 	IncludeRisks       *bool          `json:"include_risks,omitempty"`

@@ -50,18 +50,19 @@ const (
 )
 
 const (
-	ReportSectionExecutiveSummary    = "executive_summary"
-	ReportSectionAnalysisPeriod      = "analysis_period"
-	ReportSectionKeyMetrics          = "key_metrics"
-	ReportSectionCostOverview        = "cost_overview"
-	ReportSectionUtilizationAnalysis = "utilization_analysis"
-	ReportSectionRecommendations     = "recommendations"
-	ReportSectionEstimatedSavings    = "estimated_savings"
-	ReportSectionRiskAssessment      = "risk_assessment"
-	ReportSectionConfidence          = "confidence"
-	ReportSectionEvidence            = "evidence"
-	ReportSectionAuditTrace          = "audit_trace"
-	ReportSectionGenerationMetadata  = "generation_metadata"
+	ReportSectionExecutiveSummary          = "executive_summary"
+	ReportSectionAnalysisPeriod            = "analysis_period"
+	ReportSectionKeyMetrics                = "key_metrics"
+	ReportSectionCostOverview              = "cost_overview"
+	ReportSectionUtilizationAnalysis       = "utilization_analysis"
+	ReportSectionOptimizationOpportunities = "optimization_opportunities"
+	ReportSectionRecommendations           = "recommendations"
+	ReportSectionEstimatedSavings          = "estimated_savings"
+	ReportSectionRiskAssessment            = "risk_assessment"
+	ReportSectionConfidence                = "confidence"
+	ReportSectionEvidence                  = "evidence"
+	ReportSectionAuditTrace                = "audit_trace"
+	ReportSectionGenerationMetadata        = "generation_metadata"
 )
 
 type ReportMetadata map[string]any
@@ -136,14 +137,20 @@ type EstimatedSavingView struct {
 	ProposedMonthlyCost float64   `json:"proposed_monthly_cost"`
 	MonthlyAmount       float64   `json:"monthly_amount"`
 	MonthlyPercentage   float64   `json:"monthly_percentage"`
+	CurrentCostBasis    string    `json:"current_cost_basis"`
+	ProposedCostBasis   string    `json:"proposed_cost_basis"`
 	Currency            string    `json:"currency"`
 	PeriodStart         time.Time `json:"period_start"`
 	PeriodEnd           time.Time `json:"period_end"`
 }
 
 type RiskView struct {
-	Score float64 `json:"score"`
-	Level string  `json:"level"`
+	Score        float64 `json:"score"`
+	Level        string  `json:"level"`
+	PeakUsage    float64 `json:"peak_usage"`
+	Variability  float64 `json:"variability"`
+	Trend        float64 `json:"trend"`
+	HeadroomRisk float64 `json:"headroom_risk"`
 }
 
 type ConfidenceView struct {
@@ -158,6 +165,7 @@ type ReportEvidence struct {
 	Source      ReportSource   `json:"source"`
 	WindowStart *time.Time     `json:"window_start,omitempty"`
 	WindowEnd   *time.Time     `json:"window_end,omitempty"`
+	Quality     *float64       `json:"quality,omitempty"`
 	Reference   string         `json:"reference"`
 	Context     map[string]any `json:"context"`
 }

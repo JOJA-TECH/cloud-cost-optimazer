@@ -69,6 +69,7 @@ func (r *AnalyticsReportReader) BuildReportData(
 			})
 			data.Evidence = append(data.Evidence, reporting.ReportEvidence{
 				Type: "metric", MetricCode: stringPointer(code), Source: reporting.ReportSourceAnalytics,
+				Value: reportEvidenceValue(value), Unit: stringPointer(unit),
 				Reference: reference, WindowStart: timePointer(period.Start), WindowEnd: timePointer(period.End),
 			})
 		}
@@ -120,6 +121,7 @@ func (r *AnalyticsReportReader) BuildReportData(
 	if !cost.Available {
 		markMissing("cost_analysis")
 	} else {
+		data.CostCurrency = cost.Currency
 		costPeriod := reporting.ReportPeriod{Start: cost.PeriodStartUTC, End: cost.PeriodEndUTC}
 		costReference := fmt.Sprintf("analytics.cost_analysis/%s/%s/%s",
 			resourceUID, from.UTC().Format(time.RFC3339Nano), to.UTC().Format(time.RFC3339Nano))
@@ -139,6 +141,7 @@ func (r *AnalyticsReportReader) BuildReportData(
 				Unit: stringPointer(metric.Unit), Source: reporting.ReportSourceAnalytics,
 				WindowStart: timePointer(costPeriod.Start), WindowEnd: timePointer(costPeriod.End),
 				Reference: costReference,
+				Context:   map[string]any{"currency": cost.Currency},
 			})
 		}
 		data.SourceReferences = append(data.SourceReferences, reporting.ReportSourceReference{
@@ -168,7 +171,11 @@ func (r *AnalyticsReportReader) BuildReportData(
 				Type: "percentile", MetricCode: stringPointer(metricCode), Value: floatPointer(*percentile.Value),
 				Unit: stringPointer("percent"), Source: reporting.ReportSourceAnalytics,
 				WindowStart: timePointer(period.Start), WindowEnd: timePointer(period.End), Reference: reference,
-				Context: map[string]any{"percentile": percentile.Percentile, "method": percentile.Method},
+				Context: map[string]any{
+					"percentile": percentile.Percentile, "method": percentile.Method,
+					"observation_count":  percentile.ObservationCount,
+					"source_granularity": percentile.SourceGranularity,
+				},
 			})
 			data.SourceReferences = append(data.SourceReferences, reporting.ReportSourceReference{
 				Source: reporting.ReportSourceAnalytics, Reference: reference,
@@ -196,11 +203,15 @@ func (r *AnalyticsReportReader) BuildReportData(
 			metric.Quality = floatPointer(trend.RSquared)
 		}
 		data.Trends = append(data.Trends, metric)
-		data.Evidence = append(data.Evidence, reporting.ReportEvidence{
+		trendEvidence := reporting.ReportEvidence{
 			Type: "trend", MetricCode: stringPointer(code), Value: floatPointer(trend.Slope),
 			Unit: stringPointer("per_hour"), Source: reporting.ReportSourceAnalytics,
 			WindowStart: timePointer(period.Start), WindowEnd: timePointer(period.End), Reference: reference,
-		})
+		}
+		if trend.RSquaredAvailable {
+			trendEvidence.Quality = floatPointer(trend.RSquared)
+		}
+		data.Evidence = append(data.Evidence, trendEvidence)
 		data.SourceReferences = append(data.SourceReferences, reporting.ReportSourceReference{
 			Source: reporting.ReportSourceAnalytics, Reference: reference,
 		})
@@ -324,6 +335,19 @@ func timePointer(value time.Time) *time.Time {
 
 func floatPointer(value float64) *float64 {
 	return &value
+}
+
+func reportEvidenceValue(value any) *float64 {
+	switch number := value.(type) {
+	case float64:
+		return floatPointer(number)
+	case int:
+		return floatPointer(float64(number))
+	case int64:
+		return floatPointer(float64(number))
+	default:
+		return nil
+	}
 }
 
 func formatPercentile(percentile float64) string {
