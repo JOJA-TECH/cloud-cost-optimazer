@@ -191,6 +191,23 @@ func (s *Service) DownloadArtifact(ctx context.Context, artifact ReportArtifact)
 	return s.exporter.Download(ctx, artifact)
 }
 
+// RecordReportDownload persists a report_downloaded audit event for the given
+// job and artifact. It looks up the job by jobUID (which equals report UID
+// because job.ReportUID is set to job.UID at creation time).
+func (s *Service) RecordReportDownload(ctx context.Context, jobUID uuid.UUID, artifact ReportArtifact) error {
+	if s == nil || s.repository == nil || s.audit == nil {
+		return ErrReportDependencyUnavailable
+	}
+	if jobUID == uuid.Nil {
+		return ErrReportNotFound
+	}
+	job, err := s.repository.GetJob(ctx, jobUID)
+	if err != nil {
+		return err
+	}
+	return s.audit.RecordReportDownloaded(ctx, job, artifact)
+}
+
 func jobStatusToReportStatus(status ReportJobStatus) ReportStatus {
 	switch status {
 	case ReportJobStatusQueued:
@@ -254,6 +271,9 @@ func (s *Service) QueueOptimizationReport(
 	if err != nil {
 		return ReportGenerationJob{}, fmt.Errorf("%w: create report job: %w", ErrReportRepository, err)
 	}
+	if err := s.audit.RecordReportGenerationStarted(ctx, job, input); err != nil {
+		return ReportGenerationJob{}, fmt.Errorf("record report generation started audit event: %w", err)
+	}
 	return job, nil
 }
 
@@ -280,6 +300,9 @@ func (s *Service) runOptimizationReport(
 			return Report{}, fmt.Errorf("%w: mark report job running: %w", ErrReportRepository, err)
 		}
 	}
+	if err := s.audit.RecordReportGenerationStarted(ctx, job, input); err != nil {
+		return Report{}, fmt.Errorf("record report generation started audit event: %w", err)
+	}
 
 	fail := func(cause error) error {
 		completedAt := time.Now().UTC()
@@ -289,6 +312,9 @@ func (s *Service) runOptimizationReport(
 		job.ErrorMessage = &message
 		if updateErr := s.repository.UpdateJob(ctx, job); updateErr != nil {
 			return errors.Join(cause, fmt.Errorf("%w: mark report job failed: %w", ErrReportRepository, updateErr))
+		}
+		if auditErr := s.audit.RecordReportGenerationFailed(ctx, job, *job.ReportUID, cause); auditErr != nil {
+			// Do not mask the original generation error with an audit recording error.
 		}
 		return cause
 	}
@@ -353,6 +379,9 @@ func (s *Service) runOptimizationReport(
 		return Report{}, fail(fmt.Errorf("%w: save report artifact: %w", ErrReportRepository, err))
 	}
 	report.Artifact = &artifact
+	if err := s.audit.RecordReportExported(ctx, job, report, artifact); err != nil {
+		return Report{}, fail(fmt.Errorf("record report exported audit event: %w", err))
+	}
 	completedAt := time.Now().UTC()
 	report.CompletedAt = &completedAt
 	job.Status = ReportJobStatusCompleted
@@ -361,8 +390,8 @@ func (s *Service) runOptimizationReport(
 	if err := s.repository.UpdateJob(ctx, job); err != nil {
 		return Report{}, fail(fmt.Errorf("%w: complete report job: %w", ErrReportRepository, err))
 	}
-	if err := s.audit.RecordReportGenerated(ctx, job, report); err != nil {
-		return Report{}, fail(fmt.Errorf("record report audit event: %w", err))
+	if err := s.audit.RecordReportGenerationCompleted(ctx, job, report); err != nil {
+		return Report{}, fail(fmt.Errorf("record report generation completed audit event: %w", err))
 	}
 
 	s.mu.Lock()

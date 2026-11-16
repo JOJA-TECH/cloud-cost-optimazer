@@ -287,6 +287,9 @@ func getReportArtifactHandler(svc *Service, permissions iam.PermissionChecker) h
 			writeReportError(w, http.StatusInternalServerError, "ARTIFACT_READ_FAILED", "the artifact could not be read")
 			return
 		}
+		if err := svc.RecordReportDownload(r.Context(), reportUID, *report.Artifact); err != nil {
+			// No se bloquea la descarga por un fallo en la auditoría de descarga.
+		}
 		w.Header().Set("Content-Type", report.Artifact.MIMEType)
 		if report.Artifact.FileSizeBytes != nil {
 			w.Header().Set("Content-Length", strconv.FormatInt(*report.Artifact.FileSizeBytes, 10))

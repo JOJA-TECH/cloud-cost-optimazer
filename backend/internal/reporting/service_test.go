@@ -155,9 +155,33 @@ type reportAuditSinkStub struct {
 	err    error
 }
 
-func (s *reportAuditSinkStub) RecordReportGenerated(_ context.Context, job ReportGenerationJob, report Report) error {
-	*s.calls = append(*s.calls, "audit")
+func (s *reportAuditSinkStub) RecordReportGenerationStarted(_ context.Context, job ReportGenerationJob, input OptimizationReportInput) error {
+	*s.calls = append(*s.calls, "audit:started")
+	s.job = job
+	return s.err
+}
+
+func (s *reportAuditSinkStub) RecordReportGenerationCompleted(_ context.Context, job ReportGenerationJob, report Report) error {
+	*s.calls = append(*s.calls, "audit:completed")
 	s.job, s.report = job, report
+	return s.err
+}
+
+func (s *reportAuditSinkStub) RecordReportGenerationFailed(_ context.Context, job ReportGenerationJob, reportUID uuid.UUID, err error) error {
+	*s.calls = append(*s.calls, "audit:failed")
+	s.job = job
+	return s.err
+}
+
+func (s *reportAuditSinkStub) RecordReportExported(_ context.Context, job ReportGenerationJob, report Report, artifact ReportArtifact) error {
+	*s.calls = append(*s.calls, "audit:exported")
+	s.job, s.report = job, report
+	return s.err
+}
+
+func (s *reportAuditSinkStub) RecordReportDownloaded(_ context.Context, job ReportGenerationJob, artifact ReportArtifact) error {
+	*s.calls = append(*s.calls, "audit:downloaded")
+	s.job = job
 	return s.err
 }
 
@@ -216,7 +240,7 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateOptimizationReport() error = %v", err)
 	}
-	wantCalls := []string{"format", "export", "audit"}
+	wantCalls := []string{"audit:started", "format", "export", "audit:exported", "audit:completed"}
 	if !equalStrings(calls, wantCalls) {
 		t.Fatalf("post-persistence call order = %v, want %v", calls, wantCalls)
 	}
@@ -299,8 +323,8 @@ func TestGenerateOptimizationReportMarksJobFailedWhenAnalyticsReadFails(t *testi
 	if !equalStrings(repository.calls, []string{"create_job", "update_job:failed"}) {
 		t.Fatalf("repository calls = %v, want job creation and failure update", repository.calls)
 	}
-	if len(calls) != 0 {
-		t.Fatalf("formatter/export/audit called after analytics failure: %v", calls)
+	if !equalStrings(calls, []string{"audit:started", "audit:failed"}) {
+		t.Fatalf("audit calls = %v, want started and failed", calls)
 	}
 }
 

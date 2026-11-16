@@ -85,7 +85,11 @@ type ReportResourceScope interface {
 }
 
 type ReportAuditSink interface {
-	RecordReportGenerated(ctx context.Context, job ReportGenerationJob, report Report) error
+	RecordReportGenerationStarted(ctx context.Context, job ReportGenerationJob, input OptimizationReportInput) error
+	RecordReportGenerationCompleted(ctx context.Context, job ReportGenerationJob, report Report) error
+	RecordReportGenerationFailed(ctx context.Context, job ReportGenerationJob, reportUID uuid.UUID, err error) error
+	RecordReportExported(ctx context.Context, job ReportGenerationJob, report Report, artifact ReportArtifact) error
+	RecordReportDownloaded(ctx context.Context, job ReportGenerationJob, artifact ReportArtifact) error
 }
 
 type GenerateReportInput struct {
