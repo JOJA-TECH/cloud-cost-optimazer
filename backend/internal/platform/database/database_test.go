@@ -16,6 +16,11 @@ func TestMigrateAndUserRepositoryOnSQLite(t *testing.T) {
 	if err := database.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	for _, column := range []string{"ActorType", "CorrelationID", "OperationID", "EventVersion"} {
+		if !db.Migrator().HasColumn(&database.AuditEventModel{}, column) {
+			t.Errorf("audit.events is missing column %q", column)
+		}
+	}
 
 	repo := iam.NewUserRepository(db)
 	created, err := repo.CreateUser(context.Background(), iam.CreateUserInput{Email: "ana@example.com", DisplayName: "Ana"})
