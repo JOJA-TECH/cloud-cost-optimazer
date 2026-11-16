@@ -86,4 +86,4 @@ La capa de servicio con interfaces desacopla el dominio de GORM y del esquema f�
 
 ## Referencias
 
-[1]: docs/MODULES.md — Módulo 4, Gestión de Datos.
+[1]: docs/04-architecture/MODULES.md — Módulo 4, Gestión de Datos.

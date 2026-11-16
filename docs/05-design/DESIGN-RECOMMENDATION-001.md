@@ -161,18 +161,25 @@ El rationale se construye a partir de evidencia computada y asociada a la ventan
 | `GET /api/v1/recommendations/{uid}` | `recommendations:read` | Lee una recomendación |
 | `GET /api/v1/recommendations/{uid}/evidence` | `recommendations:read` | Lee la evidencia |
 | `POST /api/v1/recommendations/{uid}/evaluate` | `recommendations:evaluate` | Reevalúa con datos actuales sin mutar el historial |
+| `GET /api/v1/recommendations/{uid}/trace` | `recommendations:read` | Combina la recomendación de `cco_data` con sus eventos de `cco_app`, dentro del alcance del usuario |
+| `POST /api/v1/recommendations/{uid}/accept` | `recommendations:write` | Acepta una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/reject` | `recommendations:write` | Rechaza una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/dismiss` | `recommendations:write` | Descarta una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/apply` | `recommendations:write` | Registra como aplicada una recomendación aceptada; no modifica recursos cloud |
 
 Los detalles de request/response y errores HTTP se mantienen en `backend/API.md`.
 
+Las transiciones `accepted`, `rejected` y `dismissed` solo se permiten desde `proposed` o `under_review`; `applied` solo se permite desde `accepted`. La actualización de estado se persiste en `cco_data` antes de auditarla. Si falla la auditoría, la respuesta identifica `audit_pending` sin revertir el estado ya confirmado.
+
 ## Auditoría
 
-`PersistentAuditSink` adapta el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; el sink operativo `SlogAuditSink` se conserva para callers que lo necesiten. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y el conteo de errores en metadata (no el texto crudo de errores). Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
+`PersistentAuditSink` y `DecisionTraceService` adaptan el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; `SlogAuditSink` se conserva como adapter operativo alternativo. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y el conteo de errores en metadata (no el texto crudo de errores). Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
 
 La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, el sink emite un error estructurado con `recommendation_uid`, `correlation_id` y `operation_id`, y la respuesta conserva la recomendación con `audit_status: "audit_pending"` sin alterar `generation_state`. Esta primera versión no reintenta automáticamente: el estado pendiente requiere reconciliación operativa. Un outbox transaccional en `cco_data` queda como mejora futura.
 
 `GET /api/v1/recommendations/{uid}/trace` consulta primero los datos de recomendación en `cco_data` y luego obtiene eventos en `cco_app` mediante el adapter de trazabilidad. Los historiales se combinan en memoria por `recommendation_uid`, `correlation_id` y `operation_id`; no se emite SQL entre bases.
 
-Las rutas de consulta de auditoría aplican el alcance `all`, `organization` o `own` en el handler antes de responder. El middleware transversal registra acciones IAM, cloud y adquisición con actor y trace context, y solo almacena método/estado HTTP; nunca inspecciona el body. Los valores con nombres de campos sensibles se rechazan durante la validación de metadata.
+Las rutas de consulta de auditoría aplican el alcance `all`, `organization` o `own` en el handler antes de responder. El middleware transversal registra acciones IAM, cloud y adquisición con actor y trace context, conserva método/estado HTTP y referencia genérica del recurso, y nunca inspecciona el body. Recommendation registra sus decisiones y transiciones mediante el sink persistente. Los valores con nombres de campos sensibles se rechazan durante la validación de metadata.
 
 ## Pruebas y estado de validación
 
@@ -190,5 +197,8 @@ Pendiente para completar la validación del diseño:
 - `docs/04-architecture/decisions/ADR-013-recommendation-engine.md`
 - `docs/04-architecture/decisions/ADR-011-data-module.md`
 - `docs/04-architecture/decisions/ADR-012-analytics-module.md`
+- `docs/04-architecture/decisions/ADR-014-audit-traceability.md`
+- `docs/05-design/DESIGN-AUDIT-001.md`
+- `docs/04-architecture/MODULES.md`
 - `databases/cco_data/cco_data_schema.sql`
 - `backend/API.md`

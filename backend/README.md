@@ -1,6 +1,6 @@
 # Backend — Cloud Cost Optimizer
 
-Este módulo es el backend de aplicación (API HTTP en Go) de `cco_app`. Expone autenticación, gestión de nube, adquisición de datos, consultas de datos y analítica. Es intencionalmente un **monolito modular**: un solo binario Go, paquetes separados por dominio y contratos Go nativos entre módulos.
+Este módulo es el backend de aplicación (API HTTP en Go) de `cco_app`. Expone autenticación, gestión de nube, adquisición y consulta de datos, analítica, recomendaciones y auditoría. Es intencionalmente un **monolito modular**: un solo binario Go, paquetes separados por dominio y contratos Go nativos entre módulos.
 
 ## Estructura
 
@@ -15,6 +15,8 @@ backend/
 │   ├── acquisition/        # Module 3 — Adquisición y Monitoreo de Datos (implementado)
 │   ├── data/               # Module 4 — Gestión de Datos (implementado)
 │   ├── analytics/          # Module 5 — Analítica y Optimización (implementado)
+│   ├── recommendation/     # Module 7 — Motor de Recomendaciones (implementado)
+│   ├── audit/              # Module 8 — Auditoría y Trazabilidad (implementado)
 │   └── platform/           # infraestructura transversal
 │       ├── database/       # GORM portable (SQLite/PostgreSQL), migración
 │       └── valkey/         # cliente Valkey compartido (rate limiting, lockout)
@@ -23,6 +25,7 @@ backend/
 ```
 
 Cada paquete interno contiene `handlers.go`, `service.go`, `interfaces.go`, `errors.go` y su carpeta `repositories/`/`adapters/` cuando corresponde. Ver `API.md` para la referencia HTTP completa y `docs/04-architecture/` para los ADR y diagramas.
+El catálogo de módulos y sus límites está en [`docs/04-architecture/MODULES.md`](../docs/04-architecture/MODULES.md).
 
 ## Módulos de negocio (estado de implementación)
 
@@ -31,28 +34,35 @@ Cada paquete interno contiene `handlers.go`, `service.go`, `interfaces.go`, `err
 | Identidad y Acceso | `internal/iam` | Implementado | Auth (JWT/Argon2id), OIDC, M2M, refresh tokens, roles, permisos, rate limiting, lockout |
 | Gestión de Nube y Fuentes de Datos | `internal/cloud` | Implementado | Cuentas cloud, validación de conexión, sincronización de recursos, bindings (fuentes de datos) |
 | Adquisición y Monitoreo de Datos | `internal/acquisition` | Implementado | Ciclos de adquisición, Azure Monitor, DMVs SQL, Query Store, costos diarios |
-| Gestión de Datos | `internal/data` | Implementado | API de solo lectura sobre `cco_data`: métricas, costos, snapshots, cobertura |
+| Gestión de Datos | `internal/data` | Implementado | Lectura de métricas/costos/configuración y contratos de escritura para adquisición en `cco_data` |
 | Analítica y Optimización | `internal/analytics` | Implementado | Snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts |
-| Integración con ML | `internal/analytics/adapters` | Pendiente | Contrato `MLPort` definido; cliente fake en desarrollo (Module 6) |
-| Motor de Recomendaciones | — | Pendiente | Decisión de negocio final (Module 7) |
-| Auditoría y Trazabilidad | — | Pendiente | Trazabilidad transversal vía logs (`request_id`/`correlation_id`) |
+| Integración con ML | `internal/analytics` (contrato) | Parcial | Contrato `MLPort`; proveedor productivo pendiente (Module 6) |
+| Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación, persistencia versionada, trazas y transiciones explícitas (Module 7) |
+| Auditoría y Trazabilidad | `internal/audit` | Implementado | Eventos append-only, consultas protegidas y propagación de trazas (Module 8) |
 | Simulación y Laboratorio | — | Pendiente | Escenarios controlados y datos sintéticos |
 | Reportes | — | Pendiente | Consolidación y exportación de reportes |
 
 ## Principio de dependencia entre módulos
 
 ```
-iam (transversal) ◄── cloud ◄── acquisition ──► data ◄── analytics ──► ML (futuro)
-                                    ▲                                   │
-                                    └─────────────── costos ────────────┘
+iam ──► cloud ──► acquisition ──► data ──► analytics ──► recommendation ──► audit
+ └────────────────────────────────────────────────────────────────────────► audit
 ```
 
 - `iam` no depende de ningún módulo de negocio; todos los demás dependen de `iam` para autenticación y autorización.
 - `cloud` depende de `iam` y de sus propios adaptadores de proveedor.
 - `acquisition` depende de `cloud` (credenciales), `iam` y escribe en `cco_data` mediante los contratos de `data` (no toca `cco_data` directamente).
-- `data` depende solo de `cco_data` y `iam` (permiso `data:read`).
+- `data` expone contratos de lectura/escritura sobre `cco_data` y aplica los permisos de IAM correspondientes.
 - `analytics` depende de `data` (lectura), `iam` y `MLPort` (Module 6, futuro).
-- Ningún módulo de negocio importa `platform/database` directamente; usan DTOs e interfaces de repositorio.
+- `recommendation` usa contratos de Data/Analytics y persiste decisiones en `cco_data`; integra auditoría mediante el contrato genérico de `audit`.
+- El dominio de `audit` no depende de Recommendation, Analytics, Cloud ni GORM. Su repositorio GORM y adapter de `slog` están separados del dominio.
+- Los repositorios de infraestructura pueden usar `platform/database`; las entidades y servicios de dominio dependen de interfaces y DTOs.
+
+## Auditoría y trazabilidad
+
+`audit.events` en `cco_app` es el registro persistente de acciones de la aplicación; `slog` se usa para operación y diagnóstico, y `cco_data.raw.activity_log` conserva actividad observada del proveedor cloud. El middleware propaga `X-Request-ID`, `X-Correlation-ID` y `X-Operation-ID`; las consultas de auditoría y de trazas están protegidas por permisos y alcance de organización/usuario.
+
+La decisión de Recommendation se confirma primero en `cco_data` y luego se audita en `cco_app`. Si falla el segundo paso, la respuesta conserva la recomendación e indica `audit_pending`. No hay outbox ni transacción distribuida en esta versión. Los endpoints de estado, incluido `/apply`, registran transiciones; no realizan cambios en infraestructura.
 
 ## Variables de entorno
 
@@ -60,7 +70,7 @@ iam (transversal) ◄── cloud ◄── acquisition ──► data ◄──
 |----------|------------------|-------------|
 | `CCO_DB_DSN` | `file::memory:?cache=shared` | DSN de `cco_app` (SQLite en dev; PostgreSQL DSN en prod) |
 | `CCO_DB_DRIVER` | `sqlite` | `sqlite` o `postgres` |
-| `CCO_DATA_DSN` | (vacío) | DSN de `cco_data` (PostgreSQL). Sin él, `data`/`analytics`/`acquisition` responden `503` y el scheduler no arranca |
+| `CCO_DATA_DSN` | (vacío) | DSN de `cco_data` (PostgreSQL). Sin él, `data`/`analytics`/`acquisition`/`recommendation` responden `503` y el scheduler no arranca |
 | `CCO_JWT_SIGNING_KEY` | `dev-secret-change-in-production` | Clave para firmar JWT HS256 |
 | `CCO_HTTP_ADDR` | `:8080` | Dirección y puerto del servidor HTTP |
 | `CCO_LOG_FORMAT` | (texto) | `json` para salida de logs en JSON (colector externo) |
@@ -113,8 +123,8 @@ cco-app listening on :8080 (driver=sqlite)
 1. Se abre `cco_app` (SQLite o PostgreSQL) y se ejecuta `database.Migrate`.
 2. Se construye `tokenMgr` (JWT), `lockout` (Valkey o memoria) y el repositorio compuesto de IAM.
 3. Se construyen los repositorios de `cloud` (cuentas, recursos, bindings) y se elige el adaptador de proveedor (fake por defecto, Azure si `CCO_CLOUD_PROVIDER_MODE=azure`).
-4. Si `CCO_DATA_DSN` está configurado, se abre `cco_data` (PostgreSQL) y se construyen los servicios de `data`, `analytics` y `acquisition`; de lo contrario esos endpoints responden `503`.
-5. Se registran las rutas de cada módulo sobre el `*http.ServeMux` y se envuelven con CORS, security headers y rate limiting.
+4. Si `CCO_DATA_DSN` está configurado, se abre `cco_data` (PostgreSQL) y se construyen los servicios de `data`, `analytics`, `acquisition` y `recommendation`; de lo contrario sus endpoints responden `503`.
+5. Se conectan el sink de auditoría persistente y el lector de trazas de Recommendation; se registran rutas y se envuelven con middleware transversal, autenticación, autorización, CORS y security headers.
 6. El scheduler de adquisición (y el de costos) arranca en goroutines separadas cuando `cco_data` está disponible.
 
 ## Reglas de portabilidad
@@ -124,6 +134,7 @@ cco-app listening on :8080 (driver=sqlite)
 - Los datos JSON usan `gorm.io/datatypes`, no tipos JSON exclusivos de PostgreSQL en código de aplicación.
 - Los UUID se generan en Go en el límite del repositorio, así que SQLite no necesita `pgcrypto`.
 - La creación de esquema específica de PostgreSQL está aislada en `Migrate`; el dominio y los repositorios se mantienen neutrales al dialecto.
+- `audit.events` reside en `cco_app`; el esquema `cco_data` no contiene una copia de auditoría de la aplicación. La consulta de trazas combina lecturas independientes y no cruza SQL entre bases.
 - El dump PostgreSQL existente sigue siendo la referencia de producción para RLS, check constraints, índices, triggers, extensiones y claves foráneas. La migración GORM es para bootstrap local/testing y cambios incrementales propiedad de la aplicación; no debe reemplazar silenciosamente políticas de seguridad.
 
 ## Ejecutar pruebas
@@ -132,7 +143,7 @@ cco-app listening on :8080 (driver=sqlite)
 go test ./...
 ```
 
-El objetivo de migración inicial es SQLite para pruebas rápidas e isoladas. PostgreSQL se selecciona con `database.DriverPostgres` y un DSN normal. Los mismos modelos y repositorios se usan en ambos casos.
+SQLite se usa para pruebas rápidas cuando CGO está habilitado. PostgreSQL se selecciona con `database.DriverPostgres`; las pruebas PostgreSQL optativas requieren `CCO_TEST_POSTGRES_DSN`. Los mismos modelos y repositorios se usan en ambos casos.
 
 ## Testes de integración
 

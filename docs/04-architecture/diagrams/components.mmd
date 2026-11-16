@@ -6,7 +6,7 @@ flowchart TB
     classDef contract fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
 
     subgraph Main["cmd/cco-app/main.go — DI + router"]
-        Router[Router + middlewares<br/>(auth, CORS, security, rate limit)]:::entry
+        Router[Router + middlewares<br/>(trace, auth, CORS, security, rate limit)]:::entry
     end
 
     subgraph IAM["internal/iam — Identidad y Acceso"]
@@ -32,7 +32,7 @@ flowchart TB
         AcqAdapters[adapters · Azure Monitor · SQL DMV ·<br/>Query Store · ARM config · Cost · fake]
     end
 
-    subgraph Data["internal/data — Gestión de Datos (solo lectura)"]
+    subgraph Data["internal/data — Gestión de Datos (lectura y escritura de ingesta)"]
         DataHandlers[Handlers /data/*]
         DataSvc[Service · series · costos ·<br/>config-snapshots · cobertura (HU-05)]
         DataRepos[repository · GORM (cco_data)]
@@ -45,8 +45,23 @@ flowchart TB
         AnAdapters[adapters · FakeMLClient]
     end
 
+    subgraph Recommendation["internal/recommendation — Motor de Recomendaciones"]
+        RecHandlers[Handlers /recommendations/*]
+        RecSvc[Service · evaluación · generación · estados]
+        RecRepos[repository · opt.* (cco_data)]
+        RecAdapters[adapters · Analytics/Data · auditoría persistente]
+    end
+
+    subgraph Audit["internal/audit — Auditoría y Trazabilidad"]
+        AuditHandlers[Handlers /audit/*]
+        AuditSvc[Service · validación · enriquecimiento · consultas]
+        AuditRepos[repositories · audit.events (cco_app)]
+        AuditLogger[adapters · slog]
+    end
+
     subgraph Platform["internal/platform — Infraestructura"]
-        DB[database · GORM portable<br/>SQLite / PostgreSQL]
+        DBApp[database · cco_app<br/>SQLite / PostgreSQL]
+        DBData[database · cco_data<br/>PostgreSQL]
         Valkey[valkey · cliente compartido<br/>rate limit · lockout]
     end
 
@@ -55,6 +70,8 @@ flowchart TB
         CloudContr[cloud interfaces]
         DataContr[data interfaces<br/>DataWriter · DataReader]
         AnalyticsContr[analytics interfaces<br/>AnalyticsEngine · MLPort]
+        RecommendationContr[recommendation interfaces]
+        AuditContr[audit interfaces<br/>AuditLogger · DecisionTraceService]
     end
 
     Router -->|routes| IAMHandlers
@@ -62,6 +79,8 @@ flowchart TB
     Router -->|routes| AcqHandlers
     Router -->|routes| DataHandlers
     Router -->|routes| AnHandlers
+    Router -->|routes| RecHandlers
+    Router -->|routes| AuditHandlers
 
     IAMHandlers --> IAMAuth --> IAMMiddleware
     IAMHandlers --> IAMRepos
@@ -80,10 +99,11 @@ flowchart TB
     AnSvc --> AnAdapters
 
     IAMSvc[IAM servicio]:::module
-    IAMRepos --> DB
-    CloudRepos --> DB
-    DataRepos --> DB
-    AnRepos --> DB
+    IAMRepos --> DBApp
+    CloudRepos --> DBApp
+    AcqRepos --> DBApp
+    DataRepos --> DBData
+    AnRepos --> DBData
     IAMMiddleware --> Valkey
 
     IAMHandlers -.->|contrato| IAMContr
@@ -91,9 +111,14 @@ flowchart TB
     AcqSvc -.->|contrato| DataContr
     DataSvc -.->|contrato| DataContr
     AnSvc -.->|contrato| AnalyticsContr
+    RecHandlers --> RecSvc --> RecRepos
+    RecSvc --> RecAdapters
+    RecRepos --> DBData
+    RecAdapters -.->|contrato| AuditContr
+    RecAdapters --> AuditSvc
+    AuditHandlers --> AuditSvc
+    AuditSvc --> AuditRepos
+    AuditSvc --> AuditLogger
+    AuditRepos --> DBApp
 
     linkStyle default stroke-width:2px,fill:none,stroke:#666
-    linkStyle 0,1,2,3,4 stroke:#e65100,stroke-width:3px
-    linkStyle 12,13,14,15 stroke:#1b5e20,stroke-width:2px
-    linkStyle 16,17 stroke:#37474f,stroke-width:2px
-    linkStyle 18,19,20,21 stroke:#4a148c,stroke-dasharray: 5 5

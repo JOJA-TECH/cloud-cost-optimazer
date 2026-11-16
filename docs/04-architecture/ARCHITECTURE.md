@@ -42,7 +42,9 @@ Ver `diagrams/containers.mmd` (diagrama de contenedores Mermaid).
 
 ## 6. Components
 
-Los componentes se organizarán inicialmente en gestión de usuarios, gestión de recursos, recolección de datos, normalización, análisis, generación de sugerencias y visualización. La aplicación no tendrá un componente de ejecución automática de cambios sobre infraestructura en la primera versión.
+El backend es un monolito modular con módulos IAM, Cloud, Acquisition, Data, Analytics, Recommendation y Audit. Recommendation produce propuestas no ejecutables; Audit conserva eventos append-only en `cco_app.audit.events`. `slog` se mantiene para observabilidad operativa y `cco_data.raw.activity_log` para actividad observada del proveedor cloud.
+
+La decisión de Recommendation se persiste en `cco_data`; después se registra su traza en `cco_app`. Al no existir una transacción distribuida, un fallo de auditoría deja la decisión disponible con estado `audit_pending`. El diagrama de componentes refleja la composición y las dependencias entre módulos.
 
 ## 7. Deployment
 
@@ -97,6 +99,8 @@ La separación de bases permite evolucionar de forma independiente la persistenc
 | ADR-010 | Módulo Adquisición y Monitoreo de Datos (Module 3) | Aceptado e implementado |
 | ADR-011 | Módulo Gestión de Datos (Module 4) | Aceptado e implementado |
 | ADR-012 | Módulo Analítica y Optimización (Module 5) | Aceptado e implementado |
+| ADR-013 | Motor de Recomendaciones (Module 7) | Aceptado e implementado; validación PostgreSQL pendiente |
+| ADR-014 | Auditoría y Trazabilidad persistente | Aceptado e implementado; validación PostgreSQL pendiente |
 
 Todas las ADR viven en `docs/04-architecture/decisions/`.
 
@@ -110,12 +114,12 @@ Todas las ADR viven en `docs/04-architecture/decisions/`.
 | Gestión de Datos | `backend/internal/data` | ADR-011 | Implementado | `/api/v1/data/{metrics,costs,config-snapshots,coverage}` |
 | Analítica y Optimización | `backend/internal/analytics` | ADR-012 | Implementado | `/api/v1/analytics/{snapshots,percentiles,trends,patterns,capacity,costs,des,datasets,forecasts}` |
 | Integración con ML | `backend/internal/analytics/adapters` | ADR-012 | Pendiente (contrato `MLPort`) | `/api/v1/analytics/forecasts` (requiere ML service) |
-| Motor de Recomendaciones | — | — | Pendiente | — |
-| Auditoría y Trazabilidad | — | — | Pendiente | Trazabilidad vía logs (`request_id`/`correlation_id`) |
+| Motor de Recomendaciones | `backend/internal/recommendation` | ADR-013 | Implementado | `/api/v1/recommendations/*`, incluida `/trace` |
+| Auditoría y Trazabilidad | `backend/internal/audit` | ADR-014 | Implementado | `/api/v1/audit/events`, correlaciones e historial por recurso |
 | Simulación y Laboratorio | — | — | Pendiente | — |
 | Reportes | — | — | Pendiente | — |
 
-Referencia completa de la API: `backend/API.md`. Guía de ejecución y portabilidad: `backend/README.md`.
+Referencia completa de la API: [`backend/API.md`](../../backend/API.md). Guía de ejecución y portabilidad: [`backend/README.md`](../../backend/README.md). Catálogo de módulos: [`MODULES.md`](MODULES.md).
 
 ## 14. Limitaciones conocidas
 

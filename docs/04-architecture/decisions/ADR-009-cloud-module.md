@@ -84,4 +84,4 @@ Los adaptadores en los bordes mantienen el dominio independiente del proveedor c
 
 ## Referencias
 
-[1]: docs/MODULES.md — Módulo 2, Gestión de Nube y Fuentes de Datos.
+[1]: docs/04-architecture/MODULES.md — Módulo 2, Gestión de Nube y Fuentes de Datos.

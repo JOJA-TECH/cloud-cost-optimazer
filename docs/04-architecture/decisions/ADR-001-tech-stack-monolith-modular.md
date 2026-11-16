@@ -94,7 +94,7 @@ La Alternativa B cumple DEC-005 y DEC-011 sin agregar componentes operativos en 
 - `backend/cmd/cco-app/main.go` — DI y router.
 - `backend/internal/` — paquetes de módulo.
 - `backend/go.mod` — Go 1.25 y dependencias.
-- `docs/MODULES.md` — definición de módulos y dependencias prohibidas.
+- `docs/04-architecture/MODULES.md` — definición de módulos y dependencias prohibidas.
 
 ## Revisión
 
