@@ -78,6 +78,7 @@ type Report struct {
 	Format           ReportFormat            `json:"format"`
 	Status           ReportStatus            `json:"status"`
 	Sections         []ReportSection         `json:"sections"`
+	DataQuality      ReportDataQuality       `json:"data_quality"`
 	Metadata         ReportMetadata          `json:"metadata"`
 	SourceReferences []ReportSourceReference `json:"source_references"`
 	GeneratedBy      uuid.UUID               `json:"generated_by"`
@@ -89,6 +90,11 @@ type Report struct {
 type ReportPeriod struct {
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
+}
+
+type ReportDataQuality struct {
+	Status  string   `json:"status"`
+	Missing []string `json:"missing,omitempty"`
 }
 
 type ReportSection struct {
@@ -118,7 +124,7 @@ type ReportRecommendation struct {
 	Description       string              `json:"description"`
 	Status            string              `json:"status"`
 	EstimatedSaving   EstimatedSavingView `json:"estimated_saving"`
-	Risk              RiskView            `json:"risk"`
+	Risk              *RiskView           `json:"risk,omitempty"`
 	Confidence        ConfidenceView      `json:"confidence"`
 	Rationale         string              `json:"rationale"`
 	EvidenceCount     int                 `json:"evidence_count"`

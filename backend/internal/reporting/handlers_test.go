@@ -69,6 +69,9 @@ func TestGenerateOptimizationHandlerRejectsInvalidRequestAndMissingProject(t *te
 	}{
 		{name: "invalid JSON", body: "{", projectID: &projectID, wantStatus: http.StatusBadRequest},
 		{name: "missing project", body: `{}`, wantStatus: http.StatusBadRequest},
+		{name: "arbitrary organization is rejected", body: `{"organization_id":"` + uuid.NewString() + `"}`, projectID: &projectID, wantStatus: http.StatusBadRequest},
+		{name: "arbitrary project is rejected", body: `{"project_id":"` + uuid.NewString() + `"}`, projectID: &projectID, wantStatus: http.StatusBadRequest},
+		{name: "invalid recommendation UUID is rejected", body: `{"recommendation_uids":["not-a-uuid"]}`, projectID: &projectID, wantStatus: http.StatusBadRequest},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

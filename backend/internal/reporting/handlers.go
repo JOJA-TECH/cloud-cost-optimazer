@@ -60,12 +60,19 @@ func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
 			return
 		}
 		report, err := svc.GenerateOptimizationReport(r.Context(), OptimizationReportInput{
-			ProjectID:   *identity.ProjectID,
-			ResourceUID: resourceUID,
-			Period:      ReportPeriod{Start: from.UTC(), End: to.UTC()},
-			Format:      ReportFormat(request.Format),
-			RequestedBy: identity.UserID,
-			Parameters:  request.Parameters,
+			ProjectID:          *identity.ProjectID,
+			ResourceUID:        resourceUID,
+			From:               from.UTC(),
+			To:                 to.UTC(),
+			Format:             ReportFormat(request.Format),
+			IncludeTrace:       boolValueOrDefault(request.IncludeTrace, true),
+			RecommendationUIDs: request.RecommendationUIDs,
+			IncludeEvidence:    boolValueOrDefault(request.IncludeEvidence, true),
+			IncludeRisks:       boolValueOrDefault(request.IncludeRisks, true),
+			IncludeMetrics:     boolValueOrDefault(request.IncludeMetrics, true),
+			Title:              request.Title,
+			RequestedBy:        identity.UserID,
+			Parameters:         request.Parameters,
 		})
 		if err != nil {
 			writeReportDomainError(w, err)
@@ -81,11 +88,24 @@ func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
 }
 
 type optimizationReportRequest struct {
-	ResourceUID string         `json:"resource_uid"`
-	From        string         `json:"from"`
-	To          string         `json:"to"`
-	Format      string         `json:"format"`
-	Parameters  map[string]any `json:"parameters,omitempty"`
+	ResourceUID        string         `json:"resource_uid"`
+	From               string         `json:"from"`
+	To                 string         `json:"to"`
+	Format             string         `json:"format"`
+	RecommendationUIDs []uuid.UUID    `json:"recommendation_uids,omitempty"`
+	IncludeTrace       *bool          `json:"include_trace,omitempty"`
+	IncludeEvidence    *bool          `json:"include_evidence,omitempty"`
+	IncludeRisks       *bool          `json:"include_risks,omitempty"`
+	IncludeMetrics     *bool          `json:"include_metrics,omitempty"`
+	Title              string         `json:"title,omitempty"`
+	Parameters         map[string]any `json:"parameters,omitempty"`
+}
+
+func boolValueOrDefault(value *bool, defaultValue bool) bool {
+	if value == nil {
+		return defaultValue
+	}
+	return *value
 }
 
 func decodeOptimizationReportRequest(w http.ResponseWriter, r *http.Request, request *optimizationReportRequest) error {

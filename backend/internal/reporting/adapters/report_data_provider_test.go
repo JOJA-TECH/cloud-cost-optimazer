@@ -2,9 +2,11 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting"
 	"github.com/google/uuid"
 )
@@ -31,10 +33,15 @@ type recommendationReaderStub struct {
 }
 
 func (s *recommendationReaderStub) GetRecommendation(
-	context.Context,
-	uuid.UUID,
+	_ context.Context,
+	recommendationUID uuid.UUID,
 ) (reporting.RecommendationReportData, error) {
-	return reporting.RecommendationReportData{}, nil
+	for _, value := range s.result {
+		if value.RecommendationUID == recommendationUID {
+			return value, nil
+		}
+	}
+	return reporting.RecommendationReportData{}, recommendation.ErrRecommendationNotFound
 }
 
 func (s *recommendationReaderStub) ListRecommendations(
@@ -87,6 +94,19 @@ func TestCompositeReportDataProviderDelegatesWithoutTransformingResults(t *testi
 		!analytics.from.Equal(from) ||
 		!analytics.to.Equal(to) {
 		t.Fatal("GetAnalytics() did not forward the query and reader result")
+	}
+
+	recommendationData[0].RecommendationUID = recommendationUID
+	recommendations.result = recommendationData
+	gotRecommendation, err := provider.GetRecommendation(ctx, recommendationUID)
+	if err != nil {
+		t.Fatalf("GetRecommendation() error = %v", err)
+	}
+	if gotRecommendation.RecommendationUID != recommendationUID {
+		t.Fatal("GetRecommendation() did not forward the UID and reader result")
+	}
+	if _, err := provider.GetRecommendation(ctx, uuid.New()); !errors.Is(err, reporting.ErrReportRecommendationNotFound) {
+		t.Fatalf("GetRecommendation() missing result error = %v, want ErrReportRecommendationNotFound", err)
 	}
 
 	gotRecommendations, err := provider.GetRecommendations(ctx, reporting.RecommendationReportQuery{

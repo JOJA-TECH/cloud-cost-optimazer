@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting"
 	"github.com/google/uuid"
 )
@@ -42,6 +43,20 @@ func (p *CompositeReportDataProvider) GetAnalytics(
 		return reporting.AnalyticsReportData{}, errAnalyticsReportReaderUnavailable
 	}
 	return p.analytics.BuildReportData(ctx, input.ResourceUID, input.From, input.To)
+}
+
+func (p *CompositeReportDataProvider) GetRecommendation(
+	ctx context.Context,
+	recommendationUID uuid.UUID,
+) (reporting.RecommendationReportData, error) {
+	if p == nil || p.recommendations == nil {
+		return reporting.RecommendationReportData{}, errRecommendationReaderUnavailable
+	}
+	result, err := p.recommendations.GetRecommendation(ctx, recommendationUID)
+	if errors.Is(err, recommendation.ErrRecommendationNotFound) {
+		return reporting.RecommendationReportData{}, reporting.ErrReportRecommendationNotFound
+	}
+	return result, err
 }
 
 func (p *CompositeReportDataProvider) GetRecommendations(

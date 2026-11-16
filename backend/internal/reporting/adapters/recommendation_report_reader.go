@@ -76,7 +76,7 @@ func recommendationToReportData(value recommendation.Recommendation) reporting.R
 			PeriodStart:         value.EstimatedSaving.PeriodStart,
 			PeriodEnd:           value.EstimatedSaving.PeriodEnd,
 		},
-		Risk:          reporting.RiskView{Score: value.Risk.Score, Level: string(value.Risk.Level)},
+		Risk:          &reporting.RiskView{Score: value.Risk.Score, Level: string(value.Risk.Level)},
 		Confidence:    reporting.ConfidenceView{Score: value.Confidence.Score},
 		Rationale:     value.Rationale.Summary,
 		EvidenceCount: len(value.Evidence),

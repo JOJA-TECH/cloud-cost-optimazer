@@ -71,7 +71,7 @@ func TestObjectStorageExportAdapterRejectsInvalidMetadata(t *testing.T) {
 
 func TestCSVFormatterEscapesSpreadsheetFormulas(t *testing.T) {
 	report := reporting.Report{
-		Format: reporting.ReportFormatCSV,
+		Format: reporting.ReportFormatCSV, Title: "=1+1",
 		Sections: []reporting.ReportSection{{
 			Key: "metrics", Title: "Metrics",
 			Metrics: []reporting.ReportMetric{{Code: "external", Label: "External", Value: "=1+1"}},
@@ -85,8 +85,15 @@ func TestCSVFormatterEscapesSpreadsheetFormulas(t *testing.T) {
 	if err != nil && err != io.EOF {
 		t.Fatalf("parse formatted CSV: %v", err)
 	}
-	if len(rows) != 2 || rows[1][11] != "'=1+1" {
-		t.Fatalf("CSV metric value = %v, want formula-safe value", rows)
+	var metricRow []string
+	for _, row := range rows[1:] {
+		if row[9] == "metric" {
+			metricRow = row
+			break
+		}
+	}
+	if metricRow == nil || metricRow[4] != "'=1+1" || metricRow[12] != "'=1+1" {
+		t.Fatalf("CSV metric row = %v, want formula-safe values", metricRow)
 	}
 }
 

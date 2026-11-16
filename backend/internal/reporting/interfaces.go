@@ -16,6 +16,7 @@ type ReportGenerator interface {
 // ReportDataProvider is Reporting's only entry point to producer modules.
 type ReportDataProvider interface {
 	GetAnalytics(ctx context.Context, input AnalyticsReportQuery) (AnalyticsReportData, error)
+	GetRecommendation(ctx context.Context, recommendationUID uuid.UUID) (RecommendationReportData, error)
 	GetRecommendations(ctx context.Context, input RecommendationReportQuery) ([]RecommendationReportData, error)
 	GetRecommendationTrace(ctx context.Context, recommendationUID uuid.UUID) (RecommendationTraceData, error)
 }
@@ -74,22 +75,36 @@ type ReportAuditSink interface {
 }
 
 type GenerateReportInput struct {
-	ProjectID   uuid.UUID
-	ResourceUID *uuid.UUID
-	ReportType  ReportType
-	Period      ReportPeriod
-	Format      ReportFormat
-	RequestedBy uuid.UUID
-	Parameters  map[string]any
+	ProjectID          uuid.UUID
+	ResourceUID        *uuid.UUID
+	ReportType         ReportType
+	From               time.Time
+	To                 time.Time
+	Format             ReportFormat
+	RecommendationUIDs []uuid.UUID
+	IncludeEvidence    bool
+	IncludeAudit       bool
+	IncludeRisks       bool
+	IncludeMetrics     bool
+	Title              string
+	RequestedBy        uuid.UUID
+	Parameters         map[string]any
 }
 
 type OptimizationReportInput struct {
-	ProjectID   uuid.UUID
-	ResourceUID uuid.UUID
-	Period      ReportPeriod
-	Format      ReportFormat
-	RequestedBy uuid.UUID
-	Parameters  map[string]any
+	ProjectID          uuid.UUID
+	ResourceUID        uuid.UUID
+	From               time.Time
+	To                 time.Time
+	Format             ReportFormat
+	IncludeTrace       bool
+	RecommendationUIDs []uuid.UUID
+	IncludeEvidence    bool
+	IncludeRisks       bool
+	IncludeMetrics     bool
+	Title              string
+	RequestedBy        uuid.UUID
+	Parameters         map[string]any
 }
 
 type AnalyticsReportQuery struct {
@@ -115,6 +130,7 @@ type RecommendationFilter struct {
 type AnalyticsReportData struct {
 	ResourceUID      uuid.UUID
 	Period           ReportPeriod
+	DataQuality      ReportDataQuality
 	Metrics          []ReportMetric
 	ObservedCost     []ReportMetric
 	Trends           []ReportMetric

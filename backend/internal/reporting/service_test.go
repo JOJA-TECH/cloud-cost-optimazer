@@ -22,6 +22,19 @@ func (s *reportDataProviderStub) GetAnalytics(context.Context, AnalyticsReportQu
 	return s.analytics, s.err
 }
 
+func (s *reportDataProviderStub) GetRecommendation(_ context.Context, recommendationUID uuid.UUID) (RecommendationReportData, error) {
+	s.calls = append(s.calls, "recommendation")
+	if s.err != nil {
+		return RecommendationReportData{}, s.err
+	}
+	for _, recommendation := range s.recommendations {
+		if recommendation.RecommendationUID == recommendationUID {
+			return recommendation, nil
+		}
+	}
+	return RecommendationReportData{}, ErrReportRecommendationNotFound
+}
+
 func (s *reportDataProviderStub) GetRecommendations(context.Context, RecommendationReportQuery) ([]RecommendationReportData, error) {
 	s.calls = append(s.calls, "recommendations")
 	return s.recommendations, s.err
@@ -124,6 +137,7 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 		analytics: AnalyticsReportData{
 			ResourceUID: resourceUID,
 			Period:      ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
+			DataQuality: ReportDataQuality{Status: "degraded", Missing: []string{"forecast"}},
 			Metrics: []ReportMetric{{
 				Code: "cpu_avg", Value: 45.0, Source: ReportSourceAnalytics,
 			}},
@@ -133,6 +147,7 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 				RecommendationUID: recommendationUID,
 				Action:            "resize_down",
 				EstimatedSaving:   EstimatedSavingView{MonthlyAmount: 12.5},
+				Risk:              &RiskView{Level: "low"},
 			},
 			ResourceUID: resourceUID,
 			Period:      ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
@@ -161,8 +176,9 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 
 	report, err := service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
 		ProjectID: uuid.New(), ResourceUID: resourceUID,
-		Period: ReportPeriod{Start: now, End: now.Add(24 * time.Hour)},
+		From: now, To: now.Add(24 * time.Hour),
 		Format: ReportFormat(" JSON "), RequestedBy: uuid.New(),
+		IncludeTrace: true, IncludeEvidence: true, IncludeRisks: true, IncludeMetrics: true,
 	})
 	if err != nil {
 		t.Fatalf("GenerateOptimizationReport() error = %v", err)
@@ -177,6 +193,9 @@ func TestGenerateOptimizationReportRunsSynchronousFlowInOrder(t *testing.T) {
 	if report.Status != ReportStatusCompleted || report.Format != ReportFormatJSON ||
 		report.Artifact == nil || report.Sections[0].Key != ReportSectionExecutiveSummary {
 		t.Fatalf("generated report is incomplete: %#v", report)
+	}
+	if report.DataQuality.Status != "degraded" || !equalStrings(report.DataQuality.Missing, []string{"forecast"}) {
+		t.Fatalf("report data quality = %#v, want degraded with missing forecast", report.DataQuality)
 	}
 	if repository.job.Status != ReportJobStatusCompleted || audit.job.Status != ReportJobStatusCompleted {
 		t.Fatalf("report job was not completed before audit: repository=%s audit=%s", repository.job.Status, audit.job.Status)
@@ -204,7 +223,7 @@ func TestGenerateOptimizationReportRejectsResourceOutsideProjectBeforeCreatingJo
 	}
 	_, err = service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
 		ProjectID: uuid.New(), ResourceUID: uuid.New(),
-		Period: ReportPeriod{Start: now, End: now.Add(time.Hour)},
+		From: now, To: now.Add(time.Hour),
 		Format: ReportFormatJSON, RequestedBy: uuid.New(),
 	})
 	if !errors.Is(err, ErrReportResourceNotFound) {
@@ -235,8 +254,8 @@ func TestGenerateOptimizationReportMarksJobFailedWhenAnalyticsReadFails(t *testi
 
 	_, err = service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
 		ProjectID: uuid.New(), ResourceUID: uuid.New(),
-		Period: ReportPeriod{Start: now, End: now.Add(time.Hour)},
-		Format: ReportFormatJSON, RequestedBy: uuid.New(),
+		From: now, To: now.Add(time.Hour),
+		Format: ReportFormatJSON, RequestedBy: uuid.New(), IncludeMetrics: true,
 	})
 	if err == nil {
 		t.Fatal("GenerateOptimizationReport() error = nil, want analytics read error")
@@ -249,6 +268,146 @@ func TestGenerateOptimizationReportMarksJobFailedWhenAnalyticsReadFails(t *testi
 	}
 	if len(calls) != 0 {
 		t.Fatalf("formatter/export/audit called after analytics failure: %v", calls)
+	}
+}
+
+func TestGenerateOptimizationReportRejectsRecommendationOutsideResource(t *testing.T) {
+	now := time.Now().UTC()
+	resourceUID := uuid.New()
+	recommendationUID := uuid.New()
+	repository := &reportRepositoryStub{}
+	service, err := NewService(Dependencies{
+		DataProvider: &reportDataProviderStub{
+			recommendations: []RecommendationReportData{{
+				ReportRecommendation: ReportRecommendation{RecommendationUID: recommendationUID},
+				ResourceUID:          uuid.New(),
+				Period:               ReportPeriod{Start: now, End: now.Add(time.Hour)},
+			}},
+		},
+		Repository: repository,
+		ResourceScope: reportResourceScopeStub{
+			allowed: true,
+		},
+		Formatters: []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:   reportExporterStub{calls: &[]string{}},
+		Audit:      &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
+		ProjectID: uuid.New(), ResourceUID: resourceUID,
+		From: now, To: now.Add(time.Hour), Format: ReportFormatJSON,
+		RequestedBy: uuid.New(), RecommendationUIDs: []uuid.UUID{recommendationUID},
+	})
+	if !errors.Is(err, ErrInvalidReportRequest) {
+		t.Fatalf("GenerateOptimizationReport() error = %v, want ErrInvalidReportRequest", err)
+	}
+	if len(repository.calls) != 0 {
+		t.Fatalf("created report job for a recommendation outside the resource: %v", repository.calls)
+	}
+}
+
+func TestGenerateOptimizationReportIncludesOnlySelectedRecommendations(t *testing.T) {
+	now := time.Now().UTC()
+	resourceUID := uuid.New()
+	selectedUID, otherUID := uuid.New(), uuid.New()
+	provider := &reportDataProviderStub{
+		recommendations: []RecommendationReportData{
+			{
+				ReportRecommendation: ReportRecommendation{RecommendationUID: selectedUID},
+				ResourceUID:          resourceUID,
+				Period:               ReportPeriod{Start: now, End: now.Add(time.Hour)},
+			},
+			{
+				ReportRecommendation: ReportRecommendation{RecommendationUID: otherUID},
+				ResourceUID:          resourceUID,
+				Period:               ReportPeriod{Start: now, End: now.Add(time.Hour)},
+			},
+		},
+	}
+	service, err := NewService(Dependencies{
+		DataProvider: provider,
+		Repository:   &reportRepositoryStub{},
+		ResourceScope: reportResourceScopeStub{
+			allowed: true,
+		},
+		Formatters: []ReportFormatter{reportFormatterStub{calls: &[]string{}}},
+		Exporter:   reportExporterStub{calls: &[]string{}},
+		Audit:      &reportAuditSinkStub{calls: &[]string{}},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	report, err := service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
+		ProjectID: uuid.New(), ResourceUID: resourceUID,
+		From: now, To: now.Add(time.Hour), Format: ReportFormatJSON,
+		RequestedBy: uuid.New(), RecommendationUIDs: []uuid.UUID{selectedUID},
+	})
+	if err != nil {
+		t.Fatalf("GenerateOptimizationReport() error = %v", err)
+	}
+	if !equalStrings(provider.calls, []string{"recommendation"}) {
+		t.Fatalf("provider calls = %v, want only the selected recommendation read", provider.calls)
+	}
+	if got := report.Sections[2].Recommendations; len(got) != 1 || got[0].RecommendationUID != selectedUID {
+		t.Fatalf("report recommendations = %#v, want only %s", got, selectedUID)
+	}
+}
+
+func TestGenerateOptimizationReportHonorsIncludeOptions(t *testing.T) {
+	now := time.Now().UTC()
+	resourceUID := uuid.New()
+	calls := []string{}
+	provider := &reportDataProviderStub{
+		recommendations: []RecommendationReportData{{
+			ReportRecommendation: ReportRecommendation{
+				RecommendationUID: uuid.New(),
+				Risk:              &RiskView{Level: "high"},
+				EvidenceCount:     3,
+			},
+			ResourceUID: resourceUID,
+			Period:      ReportPeriod{Start: now, End: now.Add(time.Hour)},
+		}},
+	}
+	service, err := NewService(Dependencies{
+		DataProvider: provider,
+		Repository:   &reportRepositoryStub{},
+		ResourceScope: reportResourceScopeStub{
+			allowed: true,
+		},
+		Formatters: []ReportFormatter{reportFormatterStub{calls: &calls}},
+		Exporter:   reportExporterStub{calls: &calls},
+		Audit:      &reportAuditSinkStub{calls: &calls},
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	report, err := service.GenerateOptimizationReport(context.Background(), OptimizationReportInput{
+		ProjectID: uuid.New(), ResourceUID: resourceUID,
+		From: now, To: now.Add(time.Hour), Format: ReportFormatJSON, RequestedBy: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("GenerateOptimizationReport() error = %v", err)
+	}
+	if !equalStrings(provider.calls, []string{"recommendations"}) {
+		t.Fatalf("provider calls = %v, want recommendation read only", provider.calls)
+	}
+	for _, section := range report.Sections {
+		switch section.Key {
+		case ReportSectionKeyMetrics, ReportSectionCostOverview, ReportSectionUtilizationAnalysis,
+			ReportSectionRiskAssessment, ReportSectionEvidence, ReportSectionAuditTrace:
+			t.Errorf("section %q should be omitted when its include option is false", section.Key)
+		}
+	}
+	if report.Sections[2].Recommendations[0].Risk != nil {
+		t.Fatal("recommendation risk should be omitted when risks are disabled")
+	}
+	if report.Sections[2].Recommendations[0].EvidenceCount != 0 {
+		t.Fatal("recommendation evidence count should be omitted when evidence is disabled")
 	}
 }
 

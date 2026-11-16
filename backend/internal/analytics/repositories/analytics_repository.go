@@ -71,33 +71,96 @@ type featureSnapshotRow struct {
 	ConfigSnapshotID   *int64    `gorm:"column:config_snapshot_id"`
 	ComputeModel       string    `gorm:"column:compute_model"`
 	CapacityVCores     float64   `gorm:"column:capacity_vcores"`
-	CPUAvg             float64   `gorm:"column:cpu_avg"`
+	CPUAvg             *float64  `gorm:"column:cpu_avg"`
 	CPUP50             *float64  `gorm:"column:cpu_p50"`
 	CPUP95             *float64  `gorm:"column:cpu_p95"`
 	CPUP99             *float64  `gorm:"column:cpu_p99"`
-	CPUMax             float64   `gorm:"column:cpu_max"`
-	CPUSlope           float64   `gorm:"column:cpu_slope"`
-	DataIOAvg          float64   `gorm:"column:data_io_avg"`
+	CPUMax             *float64  `gorm:"column:cpu_max"`
+	CPUSlope           *float64  `gorm:"column:cpu_slope"`
+	DataIOAvg          *float64  `gorm:"column:data_io_avg"`
 	DataIOP95          *float64  `gorm:"column:data_io_p95"`
-	LogWriteAvg        float64   `gorm:"column:log_write_avg"`
+	LogWriteAvg        *float64  `gorm:"column:log_write_avg"`
 	LogWriteP95        *float64  `gorm:"column:log_write_p95"`
-	SessionsAvg        float64   `gorm:"column:sessions_avg"`
+	SessionsAvg        *float64  `gorm:"column:sessions_avg"`
 	SessionsP95        *float64  `gorm:"column:sessions_p95"`
-	WorkersAvg         float64   `gorm:"column:workers_avg"`
-	StorageUsedPct     float64   `gorm:"column:storage_used_pct"`
-	StorageUsedBytes   int64     `gorm:"column:storage_used_bytes"`
-	StorageGrowthBytes float64   `gorm:"column:storage_growth_bytes"`
+	WorkersAvg         *float64  `gorm:"column:workers_avg"`
+	StorageUsedPct     *float64  `gorm:"column:storage_used_pct"`
+	StorageUsedBytes   *int64    `gorm:"column:storage_used_bytes"`
+	StorageGrowthBytes *float64  `gorm:"column:storage_growth_bytes"`
 	IsPeakHour         bool      `gorm:"column:is_peak_hour"`
 	DayOfWeek          int       `gorm:"column:day_of_week"`
 	HourOfDay          int       `gorm:"column:hour_of_day"`
-	WorkloadIntensity  float64   `gorm:"column:workload_intensity"`
+	WorkloadIntensity  *float64  `gorm:"column:workload_intensity"`
 	WorkloadRunID      *int64    `gorm:"column:workload_run_id"`
-	DeadlockCount      int       `gorm:"column:deadlock_count"`
+	DeadlockCount      *int      `gorm:"column:deadlock_count"`
 	LatencyP95Ms       *float64  `gorm:"column:latency_p95_ms"`
 	ComputedAt         time.Time `gorm:"column:computed_at;not null"`
 }
 
 func (featureSnapshotRow) TableName() string { return "feature_snapshot" }
+
+func featureMetricFloat(row analytics.FeatureSnapshotRow, code string, value float64) *float64 {
+	if !row.HasMetric(code) {
+		return nil
+	}
+	return &value
+}
+
+func featureMetricInt64(row analytics.FeatureSnapshotRow, code string, value int64) *int64 {
+	if !row.HasMetric(code) {
+		return nil
+	}
+	return &value
+}
+
+func featureMetricInt(row analytics.FeatureSnapshotRow, code string, value int) *int {
+	if !row.HasMetric(code) {
+		return nil
+	}
+	return &value
+}
+
+func valueOrZero[T any](value *T) T {
+	if value == nil {
+		var zero T
+		return zero
+	}
+	return *value
+}
+
+func featureSnapshotAvailableMetrics(row featureSnapshotRow) []string {
+	available := make([]string, 0, 19)
+	fields := []struct {
+		code      string
+		available bool
+	}{
+		{"cpu_avg", row.CPUAvg != nil},
+		{"cpu_p50", row.CPUP50 != nil},
+		{"cpu_p95", row.CPUP95 != nil},
+		{"cpu_p99", row.CPUP99 != nil},
+		{"cpu_max", row.CPUMax != nil},
+		{"cpu_slope", row.CPUSlope != nil},
+		{"data_io_avg", row.DataIOAvg != nil},
+		{"data_io_p95", row.DataIOP95 != nil},
+		{"log_write_avg", row.LogWriteAvg != nil},
+		{"log_write_p95", row.LogWriteP95 != nil},
+		{"sessions_avg", row.SessionsAvg != nil},
+		{"sessions_p95", row.SessionsP95 != nil},
+		{"workers_avg", row.WorkersAvg != nil},
+		{"storage_used_pct", row.StorageUsedPct != nil},
+		{"storage_used_bytes", row.StorageUsedBytes != nil},
+		{"storage_growth_bytes", row.StorageGrowthBytes != nil},
+		{"workload_intensity", row.WorkloadIntensity != nil},
+		{"deadlock_count", row.DeadlockCount != nil},
+		{"latency_p95_ms", row.LatencyP95Ms != nil},
+	}
+	for _, field := range fields {
+		if field.available {
+			available = append(available, field.code)
+		}
+	}
+	return available
+}
 
 type trainingDatasetRow struct {
 	DatasetID      int64     `gorm:"column:dataset_id;primaryKey;autoIncrement"`
@@ -259,28 +322,28 @@ func (r *AnalyticsRepository) WriteFeatureSnapshots(ctx context.Context, resourc
 			ConfigSnapshotID:   s.ConfigSnapshotID,
 			ComputeModel:       s.ComputeModel,
 			CapacityVCores:     s.CapacityVCores,
-			CPUAvg:             s.CPUAvg,
+			CPUAvg:             featureMetricFloat(s, "cpu_avg", s.CPUAvg),
 			CPUP50:             s.CPUP50,
 			CPUP95:             s.CPUP95,
 			CPUP99:             s.CPUP99,
-			CPUMax:             s.CPUMax,
-			CPUSlope:           s.CPUSlope,
-			DataIOAvg:          s.DataIOAvg,
+			CPUMax:             featureMetricFloat(s, "cpu_max", s.CPUMax),
+			CPUSlope:           featureMetricFloat(s, "cpu_slope", s.CPUSlope),
+			DataIOAvg:          featureMetricFloat(s, "data_io_avg", s.DataIOAvg),
 			DataIOP95:          s.DataIOP95,
-			LogWriteAvg:        s.LogWriteAvg,
+			LogWriteAvg:        featureMetricFloat(s, "log_write_avg", s.LogWriteAvg),
 			LogWriteP95:        s.LogWriteP95,
-			SessionsAvg:        s.SessionsAvg,
+			SessionsAvg:        featureMetricFloat(s, "sessions_avg", s.SessionsAvg),
 			SessionsP95:        s.SessionsP95,
-			WorkersAvg:         s.WorkersAvg,
-			StorageUsedPct:     s.StorageUsedPct,
-			StorageUsedBytes:   s.StorageUsedBytes,
-			StorageGrowthBytes: s.StorageGrowthBytes,
+			WorkersAvg:         featureMetricFloat(s, "workers_avg", s.WorkersAvg),
+			StorageUsedPct:     featureMetricFloat(s, "storage_used_pct", s.StorageUsedPct),
+			StorageUsedBytes:   featureMetricInt64(s, "storage_used_bytes", s.StorageUsedBytes),
+			StorageGrowthBytes: featureMetricFloat(s, "storage_growth_bytes", s.StorageGrowthBytes),
 			IsPeakHour:         s.IsPeakHour,
 			DayOfWeek:          s.DayOfWeek,
 			HourOfDay:          s.HourOfDay,
-			WorkloadIntensity:  s.WorkloadIntensity,
+			WorkloadIntensity:  featureMetricFloat(s, "workload_intensity", s.WorkloadIntensity),
 			WorkloadRunID:      s.WorkloadRunID,
-			DeadlockCount:      s.DeadlockCount,
+			DeadlockCount:      featureMetricInt(s, "deadlock_count", s.DeadlockCount),
 			LatencyP95Ms:       s.LatencyP95Ms,
 			ComputedAt:         now,
 		})
@@ -341,29 +404,30 @@ func (r *AnalyticsRepository) FeatureSnapshot(ctx context.Context, resourceUID u
 			ConfigSnapshotID:   row.ConfigSnapshotID,
 			ComputeModel:       row.ComputeModel,
 			CapacityVCores:     row.CapacityVCores,
-			CPUAvg:             row.CPUAvg,
+			CPUAvg:             valueOrZero(row.CPUAvg),
 			CPUP50:             row.CPUP50,
 			CPUP95:             row.CPUP95,
 			CPUP99:             row.CPUP99,
-			CPUMax:             row.CPUMax,
-			CPUSlope:           row.CPUSlope,
-			DataIOAvg:          row.DataIOAvg,
+			CPUMax:             valueOrZero(row.CPUMax),
+			CPUSlope:           valueOrZero(row.CPUSlope),
+			DataIOAvg:          valueOrZero(row.DataIOAvg),
 			DataIOP95:          row.DataIOP95,
-			LogWriteAvg:        row.LogWriteAvg,
+			LogWriteAvg:        valueOrZero(row.LogWriteAvg),
 			LogWriteP95:        row.LogWriteP95,
-			SessionsAvg:        row.SessionsAvg,
+			SessionsAvg:        valueOrZero(row.SessionsAvg),
 			SessionsP95:        row.SessionsP95,
-			WorkersAvg:         row.WorkersAvg,
-			StorageUsedPct:     row.StorageUsedPct,
-			StorageUsedBytes:   row.StorageUsedBytes,
-			StorageGrowthBytes: row.StorageGrowthBytes,
+			WorkersAvg:         valueOrZero(row.WorkersAvg),
+			StorageUsedPct:     valueOrZero(row.StorageUsedPct),
+			StorageUsedBytes:   valueOrZero(row.StorageUsedBytes),
+			StorageGrowthBytes: valueOrZero(row.StorageGrowthBytes),
 			IsPeakHour:         row.IsPeakHour,
 			DayOfWeek:          row.DayOfWeek,
 			HourOfDay:          row.HourOfDay,
-			WorkloadIntensity:  row.WorkloadIntensity,
+			WorkloadIntensity:  valueOrZero(row.WorkloadIntensity),
 			WorkloadRunID:      row.WorkloadRunID,
-			DeadlockCount:      row.DeadlockCount,
+			DeadlockCount:      valueOrZero(row.DeadlockCount),
 			LatencyP95Ms:       row.LatencyP95Ms,
+			AvailableMetrics:   featureSnapshotAvailableMetrics(row),
 			ComputedAt:         row.ComputedAt,
 		})
 	}
@@ -379,8 +443,8 @@ func (r *AnalyticsRepository) Trend(ctx context.Context, resourceUID uuid.UUID, 
 	}
 	type trendRow struct {
 		PeriodStartUTC time.Time
-		CPUSlope       float64
-		StorageGrowth  float64
+		CPUSlope       *float64
+		StorageGrowth  *float64
 	}
 	var rows []trendRow
 	err = r.db.WithContext(ctx).
@@ -395,13 +459,15 @@ func (r *AnalyticsRepository) Trend(ctx context.Context, resourceUID uuid.UUID, 
 	}
 	out := make([]analytics.TrendResult, 0, len(rows))
 	for _, row := range rows {
+		if row.CPUSlope == nil {
+			continue
+		}
 		out = append(out, analytics.TrendResult{
 			ResourceUID: resourceUID,
 			MetricCode:  "cpu_avg",
 			WindowStart: row.PeriodStartUTC,
 			WindowEnd:   row.PeriodStartUTC.Add(time.Hour),
-			Slope:       row.CPUSlope,
-			RSquared:    0, // not stored; shortcut
+			Slope:       *row.CPUSlope,
 			ComputedAt:  time.Now().UTC(),
 		})
 	}
@@ -416,9 +482,9 @@ func (r *AnalyticsRepository) WorkloadPattern(ctx context.Context, resourceUID u
 		return analytics.WorkloadPattern{}, err
 	}
 	type patternRow struct {
-		HourOfDay         int
-		IsPeakHour        bool
-		WorkloadIntensity float64
+		HourOfDay         *int
+		IsPeakHour        *bool
+		WorkloadIntensity *float64
 		WorkloadRunID     *int64
 	}
 	var rows []patternRow
@@ -436,12 +502,20 @@ func (r *AnalyticsRepository) WorkloadPattern(ctx context.Context, resourceUID u
 	// Aggregate: peak hours = hours where is_peak_hour=true
 	peakHours := []int{}
 	var totalIntensity float64
+	intensityCount := 0
+	peakDataAvailable := false
 	var runID *int64
 	for _, row := range rows {
-		if row.IsPeakHour {
-			peakHours = append(peakHours, row.HourOfDay)
+		if row.IsPeakHour != nil && row.HourOfDay != nil {
+			peakDataAvailable = true
+			if *row.IsPeakHour {
+				peakHours = append(peakHours, *row.HourOfDay)
+			}
 		}
-		totalIntensity += row.WorkloadIntensity
+		if row.WorkloadIntensity != nil {
+			totalIntensity += *row.WorkloadIntensity
+			intensityCount++
+		}
 		if row.WorkloadRunID != nil {
 			runID = row.WorkloadRunID
 		}
@@ -454,27 +528,37 @@ func (r *AnalyticsRepository) WorkloadPattern(ctx context.Context, resourceUID u
 	}
 	peakFreq := float64(len(peakHours)) / float64(days)
 
-	// Intensity band
-	avgIntensity := totalIntensity / float64(max(1, len(rows)))
+	// Intensity band is available only when Analytics has measured intensity.
 	var band string
-	if avgIntensity < 1000 {
-		band = "low"
-	} else if avgIntensity < 5000 {
-		band = "medium"
-	} else {
-		band = "high"
+	if intensityCount > 0 {
+		avgIntensity := totalIntensity / float64(intensityCount)
+		if avgIntensity < 1000 {
+			band = "low"
+		} else if avgIntensity < 5000 {
+			band = "medium"
+		} else {
+			band = "high"
+		}
 	}
 
+	availableMetrics := make([]string, 0, 3)
+	if peakDataAvailable {
+		availableMetrics = append(availableMetrics, "peak_hours", "peak_frequency")
+	}
+	if intensityCount > 0 {
+		availableMetrics = append(availableMetrics, "intensity_band")
+	}
 	return analytics.WorkloadPattern{
-		ResourceUID:     resourceUID,
-		WindowStart:     from,
-		WindowEnd:       to,
-		PeakHours:       peakHours,
-		PeakFrequency:   peakFreq,
-		AvgPeakDuration: 1.0, // shortcut: assume 1h peaks
-		IntensityBand:   band,
-		WorkloadRunID:   runID,
-		ComputedAt:      time.Now().UTC(),
+		ResourceUID:      resourceUID,
+		WindowStart:      from,
+		WindowEnd:        to,
+		PeakHours:        peakHours,
+		PeakFrequency:    peakFreq,
+		AvgPeakDuration:  1.0, // shortcut: assume 1h peaks
+		IntensityBand:    band,
+		WorkloadRunID:    runID,
+		AvailableMetrics: availableMetrics,
+		ComputedAt:       time.Now().UTC(),
 	}, nil
 }
 
