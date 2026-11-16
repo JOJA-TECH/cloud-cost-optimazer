@@ -71,3 +71,24 @@ type DecisionTrace struct {
 	Actor              Actor
 	CreatedAt          time.Time
 }
+
+// AuditFilter selects audit events. Time bounds use the half-open interval
+// [FromUTC, ToUTC); zero values leave that bound unbounded.
+type AuditFilter struct {
+	OrganizationID *uuid.UUID
+	ActorUserID    *uuid.UUID
+	ActorType      string
+	Action         string
+	Resource       *ResourceReference
+	FromUTC        time.Time
+	ToUTC          time.Time
+	Limit          int
+	Offset         int
+}
+
+// RecommendationTrace groups decision traces and audit events for a recommendation.
+type RecommendationTrace struct {
+	RecommendationUID uuid.UUID
+	DecisionTraces    []DecisionTrace
+	Events            []AuditEvent
+}
