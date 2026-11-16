@@ -79,15 +79,17 @@ type DecisionTrace struct {
 }
 
 // AuditFilter selects audit events. Time bounds use the half-open interval
-// [FromUTC, ToUTC); zero values leave that bound unbounded.
+// [From, To); nil bounds are unbounded.
 type AuditFilter struct {
 	OrganizationID *uuid.UUID
-	ActorUserID    *uuid.UUID
-	ActorType      string
+	UserID         *uuid.UUID
 	Action         string
-	Resource       *ResourceReference
-	FromUTC        time.Time
-	ToUTC          time.Time
+	EntityType     string
+	EntityID       *uuid.UUID
+	CorrelationID  *uuid.UUID
+	OperationID    *uuid.UUID
+	From           *time.Time
+	To             *time.Time
 	Limit          int
 	Offset         int
 }
