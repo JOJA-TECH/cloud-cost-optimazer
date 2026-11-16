@@ -10,6 +10,11 @@ type AuditLogger interface {
 	Record(ctx context.Context, event AuditEvent) error
 }
 
+// AuditFailureLogger reports operational failures while persisting audit events.
+type AuditFailureLogger interface {
+	PersistenceFailed(ctx context.Context, event AuditEvent, err error)
+}
+
 type TraceContext interface {
 	FromContext(ctx context.Context) (CorrelationContext, bool)
 	WithContext(ctx context.Context, trace CorrelationContext) context.Context
