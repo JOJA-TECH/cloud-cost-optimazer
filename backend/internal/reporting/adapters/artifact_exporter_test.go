@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"io"
 	"net/url"
 	"os"
@@ -22,7 +23,7 @@ func TestObjectStorageExportAdapterUsesInMemoryStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
-	body, err := storage.Read(context.Background(), artifact.StorageURI)
+	body, err := storage.Get(context.Background(), artifact.StorageURI)
 	if err != nil || string(body) != string(formatted.Body) {
 		t.Fatalf("stored artifact read error=%v body=%q", err, body)
 	}
@@ -102,5 +103,50 @@ func formattedReportForTest() reporting.FormattedReport {
 	return reporting.FormattedReport{
 		Format: reporting.ReportFormatJSON, ContentType: "application/json",
 		Filename: "report.json", Body: body, SizeBytes: int64(len(body)),
+	}
+}
+
+func TestInMemoryObjectStoragePutGetDelete(t *testing.T) {
+	storage := NewInMemoryObjectStorage()
+	uri, err := storage.Put(context.Background(), "test.txt", []byte("hello"))
+	if err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	if uri == "" {
+		t.Fatal("Put() returned empty URI")
+	}
+	body, err := storage.Get(context.Background(), uri)
+	if err != nil || string(body) != "hello" {
+		t.Fatalf("Get() error=%v body=%q", err, body)
+	}
+	if err := storage.Delete(context.Background(), uri); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, err := storage.Get(context.Background(), uri); !errors.Is(err, reporting.ErrReportNotFound) {
+		t.Fatalf("Get() after delete error=%v, want ErrReportNotFound", err)
+	}
+}
+
+func TestLocalFilesystemObjectStoragePutGetDelete(t *testing.T) {
+	storage, err := NewLocalFilesystemObjectStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalFilesystemObjectStorage() error = %v", err)
+	}
+	uri, err := storage.Put(context.Background(), "test.txt", []byte("world"))
+	if err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	if uri == "" {
+		t.Fatal("Put() returned empty URI")
+	}
+	body, err := storage.Get(context.Background(), uri)
+	if err != nil || string(body) != "world" {
+		t.Fatalf("Get() error=%v body=%q", err, body)
+	}
+	if err := storage.Delete(context.Background(), uri); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, err := storage.Get(context.Background(), uri); !errors.Is(err, reporting.ErrReportNotFound) {
+		t.Fatalf("Get() after delete error=%v, want ErrReportNotFound", err)
 	}
 }

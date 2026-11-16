@@ -20,10 +20,10 @@ import (
 var errInvalidFormattedReport = errors.New("formatted report is invalid")
 
 type ObjectStorageExportAdapter struct {
-	storage reporting.ReportObjectStorage
+	storage reporting.ReportArtifactStorage
 }
 
-func NewObjectStorageExportAdapter(storage reporting.ReportObjectStorage) *ObjectStorageExportAdapter {
+func NewObjectStorageExportAdapter(storage reporting.ReportArtifactStorage) *ObjectStorageExportAdapter {
 	return &ObjectStorageExportAdapter{storage: storage}
 }
 
@@ -44,17 +44,20 @@ func (a *ObjectStorageExportAdapter) Export(ctx context.Context, report reportin
 	if err != nil {
 		return reporting.ReportArtifact{}, err
 	}
-	stored, err := a.storage.Store(ctx, reporting.ReportStorageObject{
-		Filename: filename, ContentType: report.ContentType, Body: append([]byte(nil), report.Body...),
-	})
+	uri, err := a.storage.Put(ctx, filename, append([]byte(nil), report.Body...))
 	if err != nil {
 		return reporting.ReportArtifact{}, fmt.Errorf("store report artifact: %w", err)
 	}
-	if stored.StorageURI == "" || stored.MIMEType != expected.MIMEType ||
-		stored.FileSizeBytes != expected.FileSizeBytes || !strings.EqualFold(stored.ChecksumSHA256, expected.ChecksumSHA256) {
-		return reporting.ReportArtifact{}, fmt.Errorf("%w: storage returned inconsistent metadata", errInvalidFormattedReport)
-	}
-	return artifactFromStored(stored), nil
+	size := expected.FileSizeBytes
+	checksum := expected.ChecksumSHA256
+	return reporting.ReportArtifact{
+		UID:            uuid.New(),
+		StorageURI:     uri,
+		MIMEType:       report.ContentType,
+		FileSizeBytes:  &size,
+		ChecksumSHA256: &checksum,
+		CreatedAt:      time.Now().UTC(),
+	}, nil
 }
 
 func (a *ObjectStorageExportAdapter) Download(ctx context.Context, artifact reporting.ReportArtifact) ([]byte, error) {
@@ -67,7 +70,7 @@ func (a *ObjectStorageExportAdapter) Download(ctx context.Context, artifact repo
 	if artifact.StorageURI == "" {
 		return nil, reporting.ErrInvalidReportRequest
 	}
-	body, err := a.storage.Read(ctx, artifact.StorageURI)
+	body, err := a.storage.Get(ctx, artifact.StorageURI)
 	if err != nil {
 		return nil, fmt.Errorf("download report artifact: %w", err)
 	}
@@ -83,31 +86,30 @@ func NewInMemoryObjectStorage() *InMemoryObjectStorage {
 	return &InMemoryObjectStorage{objects: make(map[string][]byte)}
 }
 
-var _ reporting.ReportObjectStorage = (*InMemoryObjectStorage)(nil)
+var _ reporting.ReportArtifactStorage = (*InMemoryObjectStorage)(nil)
 
-func (s *InMemoryObjectStorage) Store(ctx context.Context, object reporting.ReportStorageObject) (reporting.StoredReportObject, error) {
+func (s *InMemoryObjectStorage) Put(ctx context.Context, name string, content []byte) (string, error) {
 	if s == nil {
-		return reporting.StoredReportObject{}, reporting.ErrReportDependencyUnavailable
+		return "", reporting.ErrReportDependencyUnavailable
 	}
 	if err := ctx.Err(); err != nil {
-		return reporting.StoredReportObject{}, err
+		return "", err
 	}
-	filename := safeFilename(object.Filename)
-	if filename == "" || filename == "." || filename == ".." || object.ContentType == "" || len(object.Body) == 0 {
-		return reporting.StoredReportObject{}, errInvalidFormattedReport
+	filename := safeFilename(name)
+	if filename == "" || filename == "." || filename == ".." || len(content) == 0 {
+		return "", errInvalidFormattedReport
 	}
 	uri := "memory://reports/" + uuid.NewString() + "/" + filename
-	stored := describeObject(uri, object.ContentType, object.Body)
 	s.mu.Lock()
 	if s.objects == nil {
 		s.objects = make(map[string][]byte)
 	}
-	s.objects[uri] = append([]byte(nil), object.Body...)
+	s.objects[uri] = append([]byte(nil), content...)
 	s.mu.Unlock()
-	return stored, nil
+	return uri, nil
 }
 
-func (s *InMemoryObjectStorage) Read(ctx context.Context, uri string) ([]byte, error) {
+func (s *InMemoryObjectStorage) Get(ctx context.Context, uri string) ([]byte, error) {
 	if s == nil {
 		return nil, reporting.ErrReportDependencyUnavailable
 	}
@@ -121,6 +123,22 @@ func (s *InMemoryObjectStorage) Read(ctx context.Context, uri string) ([]byte, e
 		return nil, reporting.ErrReportNotFound
 	}
 	return append([]byte(nil), body...), nil
+}
+
+func (s *InMemoryObjectStorage) Delete(ctx context.Context, uri string) error {
+	if s == nil {
+		return reporting.ErrReportDependencyUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.objects[uri]; !ok {
+		return reporting.ErrReportNotFound
+	}
+	delete(s.objects, uri)
+	return nil
 }
 
 type InMemoryExportAdapter struct {
@@ -155,7 +173,7 @@ func (a *InMemoryExportAdapter) Read(ctx context.Context, uri string) ([]byte, e
 	if a == nil {
 		return nil, reporting.ErrReportDependencyUnavailable
 	}
-	return a.storage.Read(ctx, uri)
+	return a.storage.Get(ctx, uri)
 }
 
 type LocalFilesystemObjectStorage struct {
@@ -173,59 +191,35 @@ func NewLocalFilesystemObjectStorage(root string) (*LocalFilesystemObjectStorage
 	return &LocalFilesystemObjectStorage{root: absoluteRoot}, nil
 }
 
-var _ reporting.ReportObjectStorage = (*LocalFilesystemObjectStorage)(nil)
+var _ reporting.ReportArtifactStorage = (*LocalFilesystemObjectStorage)(nil)
 
-func (s *LocalFilesystemObjectStorage) Store(ctx context.Context, object reporting.ReportStorageObject) (reporting.StoredReportObject, error) {
+func (s *LocalFilesystemObjectStorage) Put(ctx context.Context, name string, content []byte) (string, error) {
 	if s == nil || s.root == "" {
-		return reporting.StoredReportObject{}, reporting.ErrReportDependencyUnavailable
-	}
-	filename := safeFilename(object.Filename)
-	if filename == "" || filename == "." || filename == ".." || object.ContentType == "" || len(object.Body) == 0 {
-		return reporting.StoredReportObject{}, errInvalidFormattedReport
+		return "", reporting.ErrReportDependencyUnavailable
 	}
 	if err := ctx.Err(); err != nil {
-		return reporting.StoredReportObject{}, err
+		return "", err
+	}
+	filename := safeFilename(name)
+	if filename == "" || filename == "." || filename == ".." || len(content) == 0 {
+		return "", errInvalidFormattedReport
 	}
 	if err := os.MkdirAll(s.root, 0700); err != nil {
-		return reporting.StoredReportObject{}, fmt.Errorf("create report storage directory: %w", err)
+		return "", fmt.Errorf("create report storage directory: %w", err)
 	}
 	target := filepath.Join(s.root, uuid.NewString()+"-"+filename)
-	temp, err := os.CreateTemp(s.root, ".report-*.tmp")
-	if err != nil {
-		return reporting.StoredReportObject{}, fmt.Errorf("create temporary report artifact: %w", err)
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := temp.Chmod(0600); err != nil {
-		_ = temp.Close()
-		return reporting.StoredReportObject{}, fmt.Errorf("secure temporary report artifact: %w", err)
-	}
-	if _, err := temp.Write(object.Body); err != nil {
-		_ = temp.Close()
-		return reporting.StoredReportObject{}, fmt.Errorf("write report artifact: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
-		return reporting.StoredReportObject{}, fmt.Errorf("sync report artifact: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return reporting.StoredReportObject{}, fmt.Errorf("close report artifact: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return reporting.StoredReportObject{}, err
-	}
-	if err := os.Rename(tempPath, target); err != nil {
-		return reporting.StoredReportObject{}, fmt.Errorf("publish report artifact: %w", err)
+	if err := os.WriteFile(target, content, 0600); err != nil {
+		return "", fmt.Errorf("write report artifact: %w", err)
 	}
 	absoluteTarget, err := filepath.Abs(target)
 	if err != nil {
-		return reporting.StoredReportObject{}, fmt.Errorf("resolve report artifact path: %w", err)
+		return "", fmt.Errorf("resolve report artifact path: %w", err)
 	}
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absoluteTarget)}).String()
-	return describeObject(uri, object.ContentType, object.Body), nil
+	return uri, nil
 }
 
-func (s *LocalFilesystemObjectStorage) Read(ctx context.Context, uri string) ([]byte, error) {
+func (s *LocalFilesystemObjectStorage) Get(ctx context.Context, uri string) ([]byte, error) {
 	if s == nil || s.root == "" {
 		return nil, reporting.ErrReportDependencyUnavailable
 	}
@@ -245,6 +239,27 @@ func (s *LocalFilesystemObjectStorage) Read(ctx context.Context, uri string) ([]
 		return nil, fmt.Errorf("read report artifact: %w", err)
 	}
 	return body, nil
+}
+
+func (s *LocalFilesystemObjectStorage) Delete(ctx context.Context, uri string) error {
+	if s == nil || s.root == "" {
+		return reporting.ErrReportDependencyUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("parse artifact uri: %w", err)
+	}
+	path := filepath.FromSlash(u.Path)
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return reporting.ErrReportNotFound
+		}
+		return fmt.Errorf("delete report artifact: %w", err)
+	}
+	return nil
 }
 
 type LocalFilesystemExportAdapter struct {
@@ -291,16 +306,10 @@ func describeFormattedReport(report reporting.FormattedReport) (reporting.Stored
 		return reporting.StoredReportObject{}, fmt.Errorf("%w: checksum does not match body", errInvalidFormattedReport)
 	}
 	return reporting.StoredReportObject{
-		MIMEType: report.ContentType, FileSizeBytes: int64(len(report.Body)), ChecksumSHA256: checksumHex,
+		MIMEType:       report.ContentType,
+		FileSizeBytes:  int64(len(report.Body)),
+		ChecksumSHA256: checksumHex,
 	}, nil
-}
-
-func describeObject(uri, mimeType string, body []byte) reporting.StoredReportObject {
-	checksum := sha256.Sum256(body)
-	return reporting.StoredReportObject{
-		StorageURI: uri, MIMEType: mimeType, FileSizeBytes: int64(len(body)),
-		ChecksumSHA256: hex.EncodeToString(checksum[:]),
-	}
 }
 
 func artifactFromStored(stored reporting.StoredReportObject) reporting.ReportArtifact {

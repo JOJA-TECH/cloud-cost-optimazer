@@ -50,10 +50,13 @@ type ReportExportAdapter interface {
 	Download(ctx context.Context, artifact ReportArtifact) ([]byte, error)
 }
 
-// ReportObjectStorage keeps export adapters independent of storage vendors and SDKs.
-type ReportObjectStorage interface {
-	Store(ctx context.Context, object ReportStorageObject) (StoredReportObject, error)
-	Read(ctx context.Context, uri string) ([]byte, error)
+// ReportArtifactStorage keeps export adapters independent of storage vendors
+// and SDKs. It only stores/retrieves artifact bytes; metadata lives in
+// app.report_artifacts and is managed by ReportRepository.
+type ReportArtifactStorage interface {
+	Put(ctx context.Context, name string, content []byte) (uri string, err error)
+	Get(ctx context.Context, uri string) ([]byte, error)
+	Delete(ctx context.Context, uri string) error
 }
 
 type ReportRepository interface {
