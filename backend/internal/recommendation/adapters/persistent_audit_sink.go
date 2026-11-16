@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
@@ -12,26 +13,34 @@ import (
 )
 
 type PersistentAuditSink struct {
-	logger audit.AuditLogger
+	auditLogger audit.AuditLogger
+	logger      *slog.Logger
 }
 
-func NewPersistentAuditSink(logger audit.AuditLogger) *PersistentAuditSink {
-	return &PersistentAuditSink{logger: logger}
+func NewPersistentAuditSink(auditLogger audit.AuditLogger, logger *slog.Logger) *PersistentAuditSink {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PersistentAuditSink{auditLogger: auditLogger, logger: logger}
 }
 
 func (s *PersistentAuditSink) RecordDecision(ctx context.Context, event recommendation.DecisionAuditEvent) error {
-	if s == nil || s.logger == nil {
-		return audit.ErrAuditLogger
+	if s == nil {
+		return logAuditPending(nil, ctx, event, audit.ErrAuditLogger)
+	}
+	if s.auditLogger == nil {
+		return s.logAuditPending(ctx, event, audit.ErrAuditLogger)
 	}
 	if event.RecommendationUID == uuid.Nil || event.ResourceUID == uuid.Nil ||
 		event.PolicyUID == uuid.Nil || event.ScenarioUID == uuid.Nil {
-		return fmt.Errorf("%w: recommendation, resource, policy, and scenario IDs are required",
+		err := fmt.Errorf("%w: recommendation, resource, policy, and scenario IDs are required",
 			audit.ErrInvalidAuditEvent)
+		return s.logAuditPending(ctx, event, err)
 	}
 
 	actor, organizationID, trace, hasIdentity, err := auditContextFromDecision(ctx, event)
 	if err != nil {
-		return err
+		return s.logAuditPending(ctx, event, err)
 	}
 	metadata := map[string]any{
 		"recommendation_uid": event.RecommendationUID.String(),
@@ -72,10 +81,49 @@ func (s *PersistentAuditSink) RecordDecision(ctx context.Context, event recommen
 		Trace:      trace,
 		Metadata:   metadata,
 	}
-	if err := s.logger.Record(ctx, auditEvent); err != nil {
-		return fmt.Errorf("persist recommendation decision audit: %w", err)
+	if err := s.auditLogger.Record(ctx, auditEvent); err != nil {
+		return s.logAuditPending(ctx, event, err)
 	}
 	return nil
+}
+
+func (s *PersistentAuditSink) logAuditPending(
+	ctx context.Context,
+	event recommendation.DecisionAuditEvent,
+	err error,
+) error {
+	if s == nil {
+		return logAuditPending(nil, ctx, event, err)
+	}
+	return logAuditPending(s.logger, ctx, event, err)
+}
+
+func logAuditPending(
+	logger *slog.Logger,
+	ctx context.Context,
+	event recommendation.DecisionAuditEvent,
+	err error,
+) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	correlationID := strings.TrimSpace(event.CorrelationID)
+	operationID := strings.TrimSpace(event.OperationID)
+	if trace, ok := audit.CorrelationContextFromContext(ctx); ok {
+		if trace.CorrelationID != uuid.Nil {
+			correlationID = trace.CorrelationID.String()
+		}
+		if trace.OperationID != nil {
+			operationID = trace.OperationID.String()
+		}
+	}
+	logger.ErrorContext(ctx, "recommendation audit pending",
+		"recommendation_uid", event.RecommendationUID.String(),
+		"correlation_id", correlationID,
+		"operation_id", operationID,
+		"error", err,
+	)
+	return fmt.Errorf("record recommendation decision audit: %w", err)
 }
 
 func auditContextFromDecision(

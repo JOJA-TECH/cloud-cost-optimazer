@@ -167,7 +167,7 @@ Los detalles de request/response y errores HTTP se mantienen en `backend/API.md`
 
 `PersistentAuditSink` adapta el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; el sink operativo `SlogAuditSink` se conserva para callers que lo necesiten. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y errores en metadata. Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
 
-La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, la recomendación ya está guardada y el error se devuelve al caller para que la pérdida de trazabilidad no quede silenciosa.
+La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, el sink emite un error estructurado con `recommendation_uid`, `correlation_id` y `operation_id`, y la respuesta conserva la recomendación con `audit_status: "audit_pending"` sin alterar `generation_state`. Esta primera versión no reintenta automáticamente: el estado pendiente requiere reconciliación operativa. Un outbox transaccional en `cco_data` queda como mejora futura.
 
 ## Pruebas y estado de validación
 

@@ -81,8 +81,11 @@ type Recommendation struct {
 	DecidedBy             *string
 	AppliedAt             *time.Time
 	GenerationState       string
+	AuditStatus           string
 	Errors                []string
 }
+
+const AuditStatusPending = "audit_pending"
 
 type OpportunityEvaluation struct {
 	Candidate CandidateConfiguration

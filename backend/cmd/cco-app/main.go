@@ -303,7 +303,7 @@ func main() {
 			ResourceContext:  resourceContextReader,
 			Prices:           priceReader,
 			SKUs:             skuReader,
-			Audit:            recommendationadapters.NewPersistentAuditSink(auditService),
+			Audit:            recommendationadapters.NewPersistentAuditSink(auditService, slog.Default()),
 		})
 		if err != nil {
 			log.Fatalf("initialize recommendation engine: %v", err)

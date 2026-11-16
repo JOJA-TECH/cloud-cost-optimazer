@@ -1,8 +1,11 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -43,7 +46,7 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(_ context.Context, event audit.AuditEvent) error {
 		recorded = event
 		return nil
-	}))
+	}), nil)
 	event := recommendation.DecisionAuditEvent{
 		RecommendationUID: recommendationID,
 		ResourceUID:       resourceID,
@@ -111,7 +114,7 @@ func TestPersistentAuditSinkRejectsInvalidTraceIDsWithoutContext(t *testing.T) {
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(context.Context, audit.AuditEvent) error {
 		called = true
 		return nil
-	}))
+	}), nil)
 	err := sink.RecordDecision(context.Background(), recommendation.DecisionAuditEvent{
 		RecommendationUID: uuid.New(),
 		ResourceUID:       uuid.New(),
@@ -129,17 +132,38 @@ func TestPersistentAuditSinkRejectsInvalidTraceIDsWithoutContext(t *testing.T) {
 
 func TestPersistentAuditSinkPropagatesLoggerFailure(t *testing.T) {
 	wantErr := errors.New("audit storage unavailable")
+	var logBuffer bytes.Buffer
+	structuredLogger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(context.Context, audit.AuditEvent) error {
 		return wantErr
-	}))
+	}), structuredLogger)
+	correlationID := uuid.New()
+	operationID := uuid.New()
+	ctx := audit.WithCorrelationContext(context.Background(), audit.CorrelationContext{
+		CorrelationID: correlationID, OperationID: &operationID,
+	})
+	recommendationID := uuid.New()
 	event := recommendation.DecisionAuditEvent{
-		RecommendationUID: uuid.New(),
+		RecommendationUID: recommendationID,
 		ResourceUID:       uuid.New(),
 		PolicyUID:         uuid.New(),
 		ScenarioUID:       uuid.New(),
 	}
-	err := sink.RecordDecision(context.Background(), event)
+	err := sink.RecordDecision(ctx, event)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("got %v, want wrapped logger error", err)
+	}
+	var logged map[string]any
+	if err := json.Unmarshal(logBuffer.Bytes(), &logged); err != nil {
+		t.Fatalf("decode structured failure log: %v", err)
+	}
+	for key, want := range map[string]string{
+		"recommendation_uid": recommendationID.String(),
+		"correlation_id":     correlationID.String(),
+		"operation_id":       operationID.String(),
+	} {
+		if logged[key] != want {
+			t.Errorf("log field %q = %#v, want %q", key, logged[key], want)
+		}
 	}
 }

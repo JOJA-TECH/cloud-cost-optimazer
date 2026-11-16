@@ -277,7 +277,7 @@ func recommendationResponse(value Recommendation) map[string]any {
 			}
 		}
 	}
-	return map[string]any{
+	response := map[string]any{
 		"recommendation_uid": value.UID,
 		"scenario_uid":       value.ScenarioUID,
 		"policy_uid":         value.PolicyUID,
@@ -319,6 +319,10 @@ func recommendationResponse(value Recommendation) map[string]any {
 		"decided_at":     value.DecidedAt,
 		"decided_by":     value.DecidedBy,
 	}
+	if value.AuditStatus != "" {
+		response["audit_status"] = value.AuditStatus
+	}
+	return response
 }
 
 func evaluationResponse(value RecommendationEvaluation) map[string]any {

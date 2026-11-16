@@ -493,7 +493,8 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 			Errors:        evidence.PartialErrors,
 		}
 		if err := s.audit.RecordDecision(ctx, auditEvent); err != nil {
-			return generationOutcome{recommendation: persisted}, fmt.Errorf("record recommendation decision audit: %w", err)
+			persisted.AuditStatus = AuditStatusPending
+			return generationOutcome{recommendation: persisted, result: result}, nil
 		}
 	}
 	resultRecommendation := persisted
@@ -681,6 +682,41 @@ func (s *Service) PublishRecommendation(ctx context.Context, input PublishRecomm
 	persisted, err := s.repository.CreateRecommendation(ctx, input.Recommendation)
 	if err != nil {
 		return Recommendation{}, evaluation, fmt.Errorf("persist policy-approved recommendation: %w", err)
+	}
+	if s.audit != nil {
+		selectedCandidate := input.Candidate.SKUName
+		var selectedCandidatePointer *string
+		if selectedCandidate != "" {
+			selectedCandidatePointer = &selectedCandidate
+		}
+		auditEvent := DecisionAuditEvent{
+			RecommendationUID: persisted.UID,
+			ResourceUID:       persisted.ResourceUID,
+			Decision:          string(persisted.Action.Type),
+			Actor:             persisted.GeneratedBy,
+			OccurredAt:        persisted.CreatedAt,
+			PolicyUID:         persisted.PolicyUID,
+			PolicyVersion:     persisted.PolicyVersion,
+			AlgorithmVersion:  persisted.GeneratedBy,
+			ScenarioUID:       persisted.ScenarioUID,
+			SelectedCandidate: selectedCandidatePointer,
+			RiskScore:         persisted.Risk.Score,
+			RiskLevel:         string(persisted.Risk.Level),
+			ConfidenceScore:   persisted.Confidence.Score,
+			EstimatedSaving:   persisted.EstimatedSaving.MonthlyAmount,
+			EvidenceCount:     len(persisted.Evidence),
+			CandidateResults: []map[string]any{{
+				"sku_name": selectedCandidate,
+				"selected": true,
+			}},
+			Errors: persisted.Errors,
+		}
+		if auditEvent.AlgorithmVersion == "" {
+			auditEvent.AlgorithmVersion = defaultAlgorithm
+		}
+		if err := s.audit.RecordDecision(ctx, auditEvent); err != nil {
+			persisted.AuditStatus = AuditStatusPending
+		}
 	}
 	return persisted, evaluation, nil
 }

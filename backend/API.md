@@ -1411,7 +1411,7 @@ Genera y persiste una recomendación versionada. Requiere `recommendations:write
 }
 ```
 
-**Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia.
+**Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia. Si la recomendación se guardó en `cco_data` pero falló su auditoría síncrona en `cco_app`, también incluye `audit_status: "audit_pending"`; la recomendación se devuelve y el fallo queda registrado en un error estructurado de `slog`. La auditoría pendiente requiere reconciliación manual en esta versión; no hay reintento automático.
 
 `force_refresh: false` reutiliza una recomendación previa solo si coinciden recurso, política, ventana temporal, horizonte y moneda. Si los parámetros difieren, crea una nueva versión.
 
