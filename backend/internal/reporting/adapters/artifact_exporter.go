@@ -57,6 +57,23 @@ func (a *ObjectStorageExportAdapter) Export(ctx context.Context, report reportin
 	return artifactFromStored(stored), nil
 }
 
+func (a *ObjectStorageExportAdapter) Download(ctx context.Context, artifact reporting.ReportArtifact) ([]byte, error) {
+	if a == nil || a.storage == nil {
+		return nil, reporting.ErrReportDependencyUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if artifact.StorageURI == "" {
+		return nil, reporting.ErrInvalidReportRequest
+	}
+	body, err := a.storage.Read(ctx, artifact.StorageURI)
+	if err != nil {
+		return nil, fmt.Errorf("download report artifact: %w", err)
+	}
+	return body, nil
+}
+
 type InMemoryObjectStorage struct {
 	mu      sync.RWMutex
 	objects map[string][]byte
@@ -90,14 +107,20 @@ func (s *InMemoryObjectStorage) Store(ctx context.Context, object reporting.Repo
 	return stored, nil
 }
 
-func (s *InMemoryObjectStorage) Read(uri string) ([]byte, bool) {
+func (s *InMemoryObjectStorage) Read(ctx context.Context, uri string) ([]byte, error) {
 	if s == nil {
-		return nil, false
+		return nil, reporting.ErrReportDependencyUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	body, ok := s.objects[uri]
-	return append([]byte(nil), body...), ok
+	if !ok {
+		return nil, reporting.ErrReportNotFound
+	}
+	return append([]byte(nil), body...), nil
 }
 
 type InMemoryExportAdapter struct {
@@ -121,11 +144,18 @@ func (a *InMemoryExportAdapter) Export(ctx context.Context, report reporting.For
 	return a.exporter.Export(ctx, report)
 }
 
-func (a *InMemoryExportAdapter) Read(uri string) ([]byte, bool) {
-	if a == nil {
-		return nil, false
+func (a *InMemoryExportAdapter) Download(ctx context.Context, artifact reporting.ReportArtifact) ([]byte, error) {
+	if a == nil || a.exporter == nil {
+		return nil, reporting.ErrReportDependencyUnavailable
 	}
-	return a.storage.Read(uri)
+	return a.exporter.Download(ctx, artifact)
+}
+
+func (a *InMemoryExportAdapter) Read(ctx context.Context, uri string) ([]byte, error) {
+	if a == nil {
+		return nil, reporting.ErrReportDependencyUnavailable
+	}
+	return a.storage.Read(ctx, uri)
 }
 
 type LocalFilesystemObjectStorage struct {
@@ -195,6 +225,28 @@ func (s *LocalFilesystemObjectStorage) Store(ctx context.Context, object reporti
 	return describeObject(uri, object.ContentType, object.Body), nil
 }
 
+func (s *LocalFilesystemObjectStorage) Read(ctx context.Context, uri string) ([]byte, error) {
+	if s == nil || s.root == "" {
+		return nil, reporting.ErrReportDependencyUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil, fmt.Errorf("parse artifact uri: %w", err)
+	}
+	path := filepath.FromSlash(u.Path)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, reporting.ErrReportNotFound
+		}
+		return nil, fmt.Errorf("read report artifact: %w", err)
+	}
+	return body, nil
+}
+
 type LocalFilesystemExportAdapter struct {
 	storage  *LocalFilesystemObjectStorage
 	exporter *ObjectStorageExportAdapter
@@ -217,6 +269,13 @@ func (a *LocalFilesystemExportAdapter) Export(ctx context.Context, report report
 		return reporting.ReportArtifact{}, reporting.ErrReportDependencyUnavailable
 	}
 	return a.exporter.Export(ctx, report)
+}
+
+func (a *LocalFilesystemExportAdapter) Download(ctx context.Context, artifact reporting.ReportArtifact) ([]byte, error) {
+	if a == nil || a.exporter == nil {
+		return nil, reporting.ErrReportDependencyUnavailable
+	}
+	return a.exporter.Download(ctx, artifact)
 }
 
 func describeFormattedReport(report reporting.FormattedReport) (reporting.StoredReportObject, error) {

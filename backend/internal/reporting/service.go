@@ -230,13 +230,63 @@ func (s *Service) GetReport(ctx context.Context, reportUID uuid.UUID) (Report, e
 	if reportUID == uuid.Nil {
 		return Report{}, ErrReportNotFound
 	}
+	// Caché de generación síncrona (mismo proceso).
 	s.mu.RLock()
 	report, ok := s.reports[reportUID]
 	s.mu.RUnlock()
 	if ok {
 		return report, nil
 	}
-	return Report{}, ErrReportNotFound
+	// Persistencia: app.report_requests / app.report_artifacts.
+	job, err := s.repository.GetJob(ctx, reportUID)
+	if err != nil {
+		return Report{}, err
+	}
+	var artifact *ReportArtifact
+	if job.ArtifactUID != nil {
+		a, err := s.repository.GetArtifact(ctx, *job.ArtifactUID)
+		if err != nil {
+			return Report{}, err
+		}
+		artifact = &a
+	}
+	return Report{
+		UID:         job.UID,
+		ProjectID:   job.ProjectID,
+		ReportType:  job.ReportType,
+		Status:      jobStatusToReportStatus(job.Status),
+		GeneratedBy: job.RequestedBy,
+		CreatedAt:   job.CreatedAt,
+		CompletedAt: job.CompletedAt,
+		Artifact:    artifact,
+	}, nil
+}
+
+// DownloadArtifact returns the artifact content bytes through the export
+// adapter's underlying object storage, without exposing cloud SDKs to the
+// service layer.
+func (s *Service) DownloadArtifact(ctx context.Context, artifact ReportArtifact) ([]byte, error) {
+	if s == nil || s.exporter == nil {
+		return nil, ErrReportDependencyUnavailable
+	}
+	return s.exporter.Download(ctx, artifact)
+}
+
+func jobStatusToReportStatus(status ReportJobStatus) ReportStatus {
+	switch status {
+	case ReportJobStatusQueued:
+		return ReportStatusPending
+	case ReportJobStatusRunning:
+		return ReportStatusGenerating
+	case ReportJobStatusCompleted:
+		return ReportStatusCompleted
+	case ReportJobStatusFailed:
+		return ReportStatusFailed
+	case ReportJobStatusCancelled:
+		return ReportStatusCancelled
+	default:
+		return ReportStatusPending
+	}
 }
 
 func (s *Service) formatterFor(format ReportFormat) ReportFormatter {

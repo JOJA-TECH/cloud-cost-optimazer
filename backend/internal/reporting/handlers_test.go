@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/middleware"
 	"github.com/google/uuid"
 )
 
@@ -205,4 +206,257 @@ func newHandlerTestService() (*Service, error) {
 		Exporter:   reportExporterStub{calls: &[]string{}},
 		Audit:      &reportAuditSinkStub{calls: &[]string{}},
 	})
+}
+
+// reportTestMux registra las rutas de reporte en un mux de prueba para que
+// r.PathValue("{uid}") se poblará al invocar los handlers.
+func reportTestMux(svc *Service, permissions iam.PermissionChecker) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("POST /api/v1/reports/optimization", http.HandlerFunc(GenerateOptimizationHandler(svc)))
+	mux.Handle("GET /api/v1/reports/{uid}", middleware.RequirePermission(permissions, "reports", "read")(
+		http.HandlerFunc(getReportHandler(svc, permissions))))
+	mux.Handle("GET /api/v1/reports/{uid}/artifact", middleware.RequirePermission(permissions, "reports", "export")(
+		http.HandlerFunc(getReportArtifactHandler(svc, permissions))))
+	return mux
+}
+
+func TestGetReportHandlerReturnsReportMetadata(t *testing.T) {
+	service, err := newHandlerTestService()
+	if err != nil {
+		t.Fatalf("newHandlerTestService() error = %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+
+	// Generar un reporte para que quede en el caché en memoria del service.
+	genBody, _ := json.Marshal(map[string]any{
+		"resource_uid": resourceUID.String(),
+		"from":         now.Format(time.RFC3339),
+		"to":           now.Add(time.Hour).Format(time.RFC3339),
+		"format":       "json",
+	})
+	genReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/optimization", bytes.NewReader(genBody))
+	genIdentity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	genIdentity.ProjectID = &projectID
+	genReq = genReq.WithContext(iam.WithIdentityContext(context.Background(), genIdentity))
+	genResp := httptest.NewRecorder()
+	GenerateOptimizationHandler(service).ServeHTTP(genResp, genReq)
+	if genResp.Code != http.StatusCreated {
+		t.Fatalf("generate status = %d, want %d: %s", genResp.Code, http.StatusCreated, genResp.Body)
+	}
+	var genResult ReportResponse
+	if err := json.Unmarshal(genResp.Body.Bytes(), &genResult); err != nil {
+		t.Fatalf("decode generate response: %v", err)
+	}
+	reportUID := genResult.Report.UID
+
+	// Consultar metadata del reporte con el mismo proyecto.
+	mux := reportTestMux(service, reportPermissionStub{"reports:read": true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/"+reportUID.String(), nil)
+	identity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	identity.ProjectID = &projectID
+	req = req.WithContext(iam.WithIdentityContext(context.Background(), identity))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusOK, resp.Body)
+	}
+	var report Report
+	if err := json.Unmarshal(resp.Body.Bytes(), &report); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if report.UID != reportUID || report.ProjectID != projectID || report.GeneratedBy != userID {
+		t.Fatalf("report identity mismatch: %#v", report)
+	}
+	if report.Status != ReportStatusCompleted {
+		t.Fatalf("report status = %s, want %s", report.Status, ReportStatusCompleted)
+	}
+}
+
+func TestGetReportHandlerForbidsDifferentProject(t *testing.T) {
+	service, err := newHandlerTestService()
+	if err != nil {
+		t.Fatalf("newHandlerTestService() error = %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := uuid.New()
+	otherProjectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+
+	genBody, _ := json.Marshal(map[string]any{
+		"resource_uid": resourceUID.String(),
+		"from":         now.Format(time.RFC3339),
+		"to":           now.Add(time.Hour).Format(time.RFC3339),
+		"format":       "json",
+	})
+	genReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/optimization", bytes.NewReader(genBody))
+	genIdentity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	genIdentity.ProjectID = &projectID
+	genReq = genReq.WithContext(iam.WithIdentityContext(context.Background(), genIdentity))
+	genResp := httptest.NewRecorder()
+	GenerateOptimizationHandler(service).ServeHTTP(genResp, genReq)
+	if genResp.Code != http.StatusCreated {
+		t.Fatalf("generate status = %d, want %d: %s", genResp.Code, http.StatusCreated, genResp.Body)
+	}
+	var genResult ReportResponse
+	if err := json.Unmarshal(genResp.Body.Bytes(), &genResult); err != nil {
+		t.Fatalf("decode generate response: %v", err)
+	}
+	reportUID := genResult.Report.UID
+
+	// Consultar con un proyecto distinto.
+	mux := reportTestMux(service, reportPermissionStub{"reports:read": true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/"+reportUID.String(), nil)
+	identity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	identity.ProjectID = &otherProjectID
+	req = req.WithContext(iam.WithIdentityContext(context.Background(), identity))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusForbidden, resp.Body)
+	}
+}
+
+func TestGetReportHandlerAllowsPlatformAdmin(t *testing.T) {
+	service, err := newHandlerTestService()
+	if err != nil {
+		t.Fatalf("newHandlerTestService() error = %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+
+	genBody, _ := json.Marshal(map[string]any{
+		"resource_uid": resourceUID.String(),
+		"from":         now.Format(time.RFC3339),
+		"to":           now.Add(time.Hour).Format(time.RFC3339),
+		"format":       "json",
+	})
+	genReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/optimization", bytes.NewReader(genBody))
+	genIdentity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	genIdentity.ProjectID = &projectID
+	genReq = genReq.WithContext(iam.WithIdentityContext(context.Background(), genIdentity))
+	genResp := httptest.NewRecorder()
+	GenerateOptimizationHandler(service).ServeHTTP(genResp, genReq)
+	if genResp.Code != http.StatusCreated {
+		t.Fatalf("generate status = %d, want %d: %s", genResp.Code, http.StatusCreated, genResp.Body)
+	}
+	var genResult ReportResponse
+	if err := json.Unmarshal(genResp.Body.Bytes(), &genResult); err != nil {
+		t.Fatalf("decode generate response: %v", err)
+	}
+	reportUID := genResult.Report.UID
+
+	// platform_admin sin proyecto activo puede consultar cualquier reporte.
+	mux := reportTestMux(service, reportPermissionStub{"reports:read": true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/"+reportUID.String(), nil)
+	identity := iam.NewIdentityContext(userID, "user@example.com", "Admin User", "test")
+	identity.SystemRoles = []string{"platform_admin"}
+	req = req.WithContext(iam.WithIdentityContext(context.Background(), identity))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusOK, resp.Body)
+	}
+}
+
+func TestGetReportArtifactHandlerReturnsContent(t *testing.T) {
+	service, err := newHandlerTestService()
+	if err != nil {
+		t.Fatalf("newHandlerTestService() error = %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+
+	genBody, _ := json.Marshal(map[string]any{
+		"resource_uid": resourceUID.String(),
+		"from":         now.Format(time.RFC3339),
+		"to":           now.Add(time.Hour).Format(time.RFC3339),
+		"format":       "json",
+	})
+	genReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/optimization", bytes.NewReader(genBody))
+	genIdentity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	genIdentity.ProjectID = &projectID
+	genReq = genReq.WithContext(iam.WithIdentityContext(context.Background(), genIdentity))
+	genResp := httptest.NewRecorder()
+	GenerateOptimizationHandler(service).ServeHTTP(genResp, genReq)
+	if genResp.Code != http.StatusCreated {
+		t.Fatalf("generate status = %d, want %d: %s", genResp.Code, http.StatusCreated, genResp.Body)
+	}
+	var genResult ReportResponse
+	if err := json.Unmarshal(genResp.Body.Bytes(), &genResult); err != nil {
+		t.Fatalf("decode generate response: %v", err)
+	}
+	reportUID := genResult.Report.UID
+
+	mux := reportTestMux(service, reportPermissionStub{"reports:export": true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/"+reportUID.String()+"/artifact", nil)
+	identity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	identity.ProjectID = &projectID
+	req = req.WithContext(iam.WithIdentityContext(context.Background(), identity))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusOK, resp.Body)
+	}
+	if resp.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("content-type = %q, want application/json", resp.Header().Get("Content-Type"))
+	}
+	if string(resp.Body.Bytes()) != `{"report":true}` {
+		t.Fatalf("artifact body = %q, want %q", resp.Body.Bytes(), `{"report":true}`)
+	}
+}
+
+func TestGetReportArtifactHandlerForbidsWithoutExportPermission(t *testing.T) {
+	service, err := newHandlerTestService()
+	if err != nil {
+		t.Fatalf("newHandlerTestService() error = %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	projectID := uuid.New()
+	userID := uuid.New()
+	resourceUID := uuid.New()
+
+	genBody, _ := json.Marshal(map[string]any{
+		"resource_uid": resourceUID.String(),
+		"from":         now.Format(time.RFC3339),
+		"to":           now.Add(time.Hour).Format(time.RFC3339),
+		"format":       "json",
+	})
+	genReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/optimization", bytes.NewReader(genBody))
+	genIdentity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	genIdentity.ProjectID = &projectID
+	genReq = genReq.WithContext(iam.WithIdentityContext(context.Background(), genIdentity))
+	genResp := httptest.NewRecorder()
+	GenerateOptimizationHandler(service).ServeHTTP(genResp, genReq)
+	if genResp.Code != http.StatusCreated {
+		t.Fatalf("generate status = %d, want %d: %s", genResp.Code, http.StatusCreated, genResp.Body)
+	}
+	var genResult ReportResponse
+	if err := json.Unmarshal(genResp.Body.Bytes(), &genResult); err != nil {
+		t.Fatalf("decode generate response: %v", err)
+	}
+	reportUID := genResult.Report.UID
+
+	mux := reportTestMux(service, reportPermissionStub{"reports:read": true})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/"+reportUID.String()+"/artifact", nil)
+	identity := iam.NewIdentityContext(userID, "user@example.com", "Report User", "test")
+	identity.ProjectID = &projectID
+	req = req.WithContext(iam.WithIdentityContext(context.Background(), identity))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d: %s", resp.Code, http.StatusForbidden, resp.Body)
+	}
 }

@@ -16,15 +16,16 @@ func SeedReportPermissions(db *gorm.DB) error {
 		return errors.New("database handle is nil")
 	}
 	grants := map[string][]string{
-		"platform_admin": {"reports:read", "reports:write"},
-		"db_admin":       {"reports:read", "reports:write"},
-		"analyst":        {"reports:read", "reports:write"},
-		"member":         {"reports:read"},
-		"viewer":         {"reports:read"},
+		"platform_admin": {"reports:read", "reports:write", "reports:export"},
+		"db_admin":       {"reports:read", "reports:write", "reports:export"},
+		"analyst":        {"reports:read", "reports:write", "reports:export"},
+		"member":         {"reports:read", "reports:export"},
+		"viewer":         {"reports:read", "reports:export"},
 	}
 	descriptions := map[string]string{
 		"reports:read":  "Read generated reports and artifacts",
 		"reports:write": "Generate reports for authorized projects",
+		"reports:export":"Download exported report artifacts",
 	}
 
 	return db.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {

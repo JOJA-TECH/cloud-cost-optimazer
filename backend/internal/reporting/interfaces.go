@@ -47,11 +47,13 @@ type ReportFormatter interface {
 
 type ReportExportAdapter interface {
 	Export(ctx context.Context, report FormattedReport) (ReportArtifact, error)
+	Download(ctx context.Context, artifact ReportArtifact) ([]byte, error)
 }
 
 // ReportObjectStorage keeps export adapters independent of storage vendors and SDKs.
 type ReportObjectStorage interface {
 	Store(ctx context.Context, object ReportStorageObject) (StoredReportObject, error)
+	Read(ctx context.Context, uri string) ([]byte, error)
 }
 
 type ReportRepository interface {

@@ -110,9 +110,17 @@ func (s reportExporterStub) Export(context.Context, FormattedReport) (ReportArti
 	*s.calls = append(*s.calls, "export")
 	size := int64(15)
 	return ReportArtifact{
-		UID: uuid.New(), StorageURI: "memory://report", MIMEType: "application/json",
-		FileSizeBytes: &size, CreatedAt: time.Now().UTC(),
+		UID:            uuid.New(),
+		StorageURI:     "memory://report",
+		MIMEType:       "application/json",
+		FileSizeBytes:  &size,
+		CreatedAt:      time.Now().UTC(),
 	}, nil
+}
+
+func (s reportExporterStub) Download(context.Context, ReportArtifact) ([]byte, error) {
+	*s.calls = append(*s.calls, "download")
+	return []byte(`{"report":true}`), nil
 }
 
 type reportAuditSinkStub struct {

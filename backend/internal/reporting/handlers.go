@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
@@ -22,6 +23,16 @@ func RegisterRoutes(
 		http.HandlerFunc(generateOptimizationHandler(svc, permissions)),
 	)
 	mux.Handle("POST /api/v1/reports/optimization", authMiddleware.Handler(handler))
+
+	getHandler := middleware.RequirePermission(permissions, "reports", "read")(
+		http.HandlerFunc(getReportHandler(svc, permissions)),
+	)
+	mux.Handle("GET /api/v1/reports/{uid}", authMiddleware.Handler(getHandler))
+
+	getArtifactHandler := middleware.RequirePermission(permissions, "reports", "export")(
+		http.HandlerFunc(getReportArtifactHandler(svc, permissions)),
+	)
+	mux.Handle("GET /api/v1/reports/{uid}/artifact", authMiddleware.Handler(getArtifactHandler))
 }
 
 func GenerateOptimizationHandler(svc *Service) http.HandlerFunc {
@@ -186,4 +197,101 @@ func writeReportJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func getReportHandler(svc *Service, permissions iam.PermissionChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if svc == nil {
+			writeReportError(w, http.StatusServiceUnavailable, "REPORTING_UNAVAILABLE", "reporting service is not configured")
+			return
+		}
+		identity, ok := iam.IdentityContextFromContext(r.Context())
+		if !ok || identity.UserID == uuid.Nil {
+			writeReportError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated actor is unavailable")
+			return
+		}
+		uidStr := r.PathValue("uid")
+		reportUID, err := uuid.Parse(uidStr)
+		if err != nil || reportUID == uuid.Nil {
+			writeReportError(w, http.StatusBadRequest, "INVALID_REPORT_UID", "report uid must be a non-zero UUID")
+			return
+		}
+		report, err := svc.GetReport(r.Context(), reportUID)
+		if err != nil {
+			if errors.Is(err, ErrReportNotFound) {
+				writeReportError(w, http.StatusNotFound, "REPORT_NOT_FOUND", "report was not found")
+				return
+			}
+			writeReportError(w, http.StatusInternalServerError, "REPORT_READ_FAILED", "the report could not be read")
+			return
+		}
+		if !canAccessReport(identity, report) {
+			writeReportError(w, http.StatusForbidden, "FORBIDDEN", "insufficient permissions to access this report")
+			return
+		}
+		writeReportJSON(w, http.StatusOK, report)
+	}
+}
+
+func getReportArtifactHandler(svc *Service, permissions iam.PermissionChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if svc == nil {
+			writeReportError(w, http.StatusServiceUnavailable, "REPORTING_UNAVAILABLE", "reporting service is not configured")
+			return
+		}
+		identity, ok := iam.IdentityContextFromContext(r.Context())
+		if !ok || identity.UserID == uuid.Nil {
+			writeReportError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated actor is unavailable")
+			return
+		}
+		uidStr := r.PathValue("uid")
+		reportUID, err := uuid.Parse(uidStr)
+		if err != nil || reportUID == uuid.Nil {
+			writeReportError(w, http.StatusBadRequest, "INVALID_REPORT_UID", "report uid must be a non-zero UUID")
+			return
+		}
+		report, err := svc.GetReport(r.Context(), reportUID)
+		if err != nil {
+			if errors.Is(err, ErrReportNotFound) {
+				writeReportError(w, http.StatusNotFound, "REPORT_NOT_FOUND", "report was not found")
+				return
+			}
+			writeReportError(w, http.StatusInternalServerError, "REPORT_READ_FAILED", "the report could not be read")
+			return
+		}
+		if !canAccessReport(identity, report) {
+			writeReportError(w, http.StatusForbidden, "FORBIDDEN", "insufficient permissions to access this report")
+			return
+		}
+		if report.Artifact == nil || report.Artifact.UID == uuid.Nil || report.Artifact.StorageURI == "" {
+			writeReportError(w, http.StatusNotFound, "ARTIFACT_NOT_FOUND", "report artifact is not available")
+			return
+		}
+		content, err := svc.DownloadArtifact(r.Context(), *report.Artifact)
+		if err != nil {
+			writeReportError(w, http.StatusInternalServerError, "ARTIFACT_READ_FAILED", "the artifact could not be read")
+			return
+		}
+		w.Header().Set("Content-Type", report.Artifact.MIMEType)
+		if report.Artifact.FileSizeBytes != nil {
+			w.Header().Set("Content-Length", strconv.FormatInt(*report.Artifact.FileSizeBytes, 10))
+		}
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+report.Artifact.UID.String()+"\"")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
+	}
+}
+
+func canAccessReport(identity iam.IdentityContext, report Report) bool {
+	// platform_admin tiene acceso global a cualquier reporte.
+	for _, role := range identity.SystemRoles {
+		if role == "platform_admin" {
+			return true
+		}
+	}
+	// Miembros del proyecto: solo reportes de su proyecto activo.
+	if identity.ProjectID != nil && report.ProjectID == *identity.ProjectID {
+		return true
+	}
+	return false
 }

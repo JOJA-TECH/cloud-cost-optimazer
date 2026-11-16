@@ -22,9 +22,9 @@ func TestObjectStorageExportAdapterUsesInMemoryStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export() error = %v", err)
 	}
-	body, ok := storage.Read(artifact.StorageURI)
-	if !ok || string(body) != string(formatted.Body) {
-		t.Fatalf("stored artifact = %q, found=%v", body, ok)
+	body, err := storage.Read(context.Background(), artifact.StorageURI)
+	if err != nil || string(body) != string(formatted.Body) {
+		t.Fatalf("stored artifact read error=%v body=%q", err, body)
 	}
 	if artifact.FileSizeBytes == nil || *artifact.FileSizeBytes != int64(len(formatted.Body)) {
 		t.Fatalf("artifact size metadata = %#v", artifact.FileSizeBytes)
