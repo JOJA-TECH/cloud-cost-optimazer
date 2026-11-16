@@ -35,6 +35,9 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation"
 	recommendationadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation/adapters"
 	recommendationrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting"
+	reportingadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting/adapters"
+	reportingrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/reporting/repositories"
 	"github.com/google/uuid"
 )
 
@@ -172,6 +175,9 @@ func main() {
 	}
 	if err := iam.SeedAuditPermissions(db); err != nil {
 		log.Fatalf("seed audit permissions: %v", err)
+	}
+	if err := iam.SeedReportPermissions(db); err != nil {
+		log.Fatalf("seed report permissions: %v", err)
 	}
 
 	// ── Logging ───────────────────────────────────────────────────────────
@@ -312,6 +318,37 @@ func main() {
 		})
 		if err != nil {
 			log.Fatalf("initialize recommendation engine: %v", err)
+		}
+	}
+	var reportService *reporting.Service
+	if analyticsRepo != nil && recommendationSvc != nil {
+		reportsDirectory := os.Getenv("CCO_REPORTS_DIR")
+		if reportsDirectory == "" {
+			reportsDirectory = "var/reports"
+		}
+		reportStorage, err := reportingadapters.NewLocalFilesystemObjectStorage(reportsDirectory)
+		if err != nil {
+			log.Fatalf("initialize report artifact storage: %v", err)
+		}
+		reportExporter := reportingadapters.NewObjectStorageExportAdapter(reportStorage)
+		dataProvider := reportingadapters.NewCompositeReportDataProvider(
+			reportingadapters.NewAnalyticsReportReader(analyticsRepo),
+			reportingadapters.NewRecommendationReportReader(recommendationSvc),
+			reportingadapters.NewAuditTraceReader(auditService),
+		)
+		reportService, err = reporting.NewService(reporting.Dependencies{
+			DataProvider:  dataProvider,
+			Repository:    reportingrepos.NewReportRepository(db),
+			ResourceScope: reportingrepos.NewResourceProjectRepository(db),
+			Formatters: []reporting.ReportFormatter{
+				reportingadapters.NewJSONFormatter(),
+				reportingadapters.NewCSVFormatter(),
+			},
+			Exporter: reportExporter,
+			Audit:    reportingadapters.NewAuditSink(auditService),
+		})
+		if err != nil {
+			log.Fatalf("initialize reporting service: %v", err)
 		}
 	}
 	acqTargets := acqrepos.NewTargetRepository(db)
@@ -468,6 +505,7 @@ func main() {
 		permEngine,
 		recommendationadapters.NewAuditTraceReader(auditService, auditService),
 	)
+	reporting.RegisterRoutes(mux, reportService, authMiddleware, permEngine)
 	audit.RegisterRoutes(mux, auditService, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────

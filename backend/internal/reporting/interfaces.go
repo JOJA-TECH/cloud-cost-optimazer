@@ -65,6 +65,14 @@ type ReportRepository interface {
 	GetArtifact(ctx context.Context, artifactUID uuid.UUID) (ReportArtifact, error)
 }
 
+type ReportResourceScope interface {
+	IsResourceInProject(ctx context.Context, projectID, resourceUID uuid.UUID) (bool, error)
+}
+
+type ReportAuditSink interface {
+	RecordReportGenerated(ctx context.Context, job ReportGenerationJob, report Report) error
+}
+
 type GenerateReportInput struct {
 	ProjectID   uuid.UUID
 	ResourceUID *uuid.UUID
@@ -120,6 +128,7 @@ type RecommendationReportData struct {
 	ReportRecommendation
 	ResourceUID uuid.UUID
 	Period      ReportPeriod
+	Evidence    []ReportEvidence
 }
 
 type RecommendationTraceData struct {
