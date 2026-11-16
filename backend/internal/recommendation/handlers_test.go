@@ -76,6 +76,21 @@ func (r handlerRecommendationRepository) GetRecommendation(context.Context, uuid
 	return r.recommendation, r.err
 }
 
+type handlerTraceReader struct {
+	filter RecommendationTraceFilter
+	events []RecommendationTraceEvent
+	err    error
+}
+
+func (r *handlerTraceReader) ListRecommendationTraceEvents(
+	_ context.Context,
+	_ uuid.UUID,
+	filter RecommendationTraceFilter,
+) ([]RecommendationTraceEvent, error) {
+	r.filter = filter
+	return r.events, r.err
+}
+
 func TestRecommendationRoutesRequireAuthenticationAndPermission(t *testing.T) {
 	mux := http.NewServeMux()
 	repo := handlerIdentityRepository{}
@@ -132,6 +147,64 @@ func TestRecommendationHandlersReturnBadRequestAndNotFound(t *testing.T) {
 				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, test.want, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestRecommendationTraceReturnsDecisionAndScopedEvents(t *testing.T) {
+	orgID := uuid.New()
+	recommendation := Recommendation{
+		UID: uuid.New(), ResourceUID: uuid.New(), ScenarioUID: uuid.New(), PolicyUID: uuid.New(),
+		Status:          RecommendationStatusProposed,
+		Risk:            RecommendationRisk{Score: 0.21, Level: RiskLevelLow},
+		Confidence:      RecommendationConfidence{Score: 0.87},
+		EstimatedSaving: EstimatedSaving{MonthlyAmount: 125.5, Currency: "USD"},
+	}
+	service := &Service{repository: handlerRecommendationRepository{recommendation: recommendation}}
+	reader := &handlerTraceReader{events: []RecommendationTraceEvent{
+		{EventID: 101, Action: "recommendation_evaluation_started", OccurredAt: time.Now().UTC()},
+		{EventID: 102, Action: "recommendation_generated", OccurredAt: time.Now().UTC()},
+	}}
+	identity := iam.IdentityContext{UserID: uuid.New(), OrgID: orgID}
+	ctx := iam.WithIdentityContext(context.Background(), identity)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/recommendations/"+recommendation.UID.String()+"/trace", nil).
+		WithContext(ctx)
+	request.SetPathValue("uid", recommendation.UID.String())
+	response := httptest.NewRecorder()
+
+	handleTrace(service, reader).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if reader.filter.OrganizationID == nil || *reader.filter.OrganizationID != orgID {
+		t.Fatalf("trace query organization scope = %v, want %s", reader.filter.OrganizationID, orgID)
+	}
+	var body struct {
+		RecommendationUID uuid.UUID `json:"recommendation_uid"`
+		ResourceUID       uuid.UUID `json:"resource_uid"`
+		Status            string    `json:"status"`
+		Decision          string    `json:"decision"`
+		Risk              struct {
+			Score float64 `json:"score"`
+			Level string  `json:"level"`
+		} `json:"risk"`
+		Confidence struct {
+			Score float64 `json:"score"`
+		} `json:"confidence"`
+		EstimatedSaving struct {
+			MonthlyAmount float64 `json:"monthly_amount"`
+			Currency      string  `json:"currency"`
+		} `json:"estimated_saving"`
+		Events []RecommendationTraceEvent `json:"events"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.RecommendationUID != recommendation.UID || body.ResourceUID != recommendation.ResourceUID ||
+		body.Status != string(RecommendationStatusProposed) || body.Decision != "recommendation_generated" ||
+		body.Risk.Score != 0.21 || body.Risk.Level != string(RiskLevelLow) ||
+		body.Confidence.Score != 0.87 || body.EstimatedSaving.MonthlyAmount != 125.5 ||
+		body.EstimatedSaving.Currency != "USD" || len(body.Events) != 2 {
+		t.Fatalf("trace response shape or values mismatch: %+v", body)
 	}
 }
 

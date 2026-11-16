@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,6 +203,7 @@ func TestServiceRecordRejectsNonJSONMetadata(t *testing.T) {
 			return AuditEvent{}, nil
 		},
 	}
+
 	service, err := NewService(repository, &auditLoggerStub{})
 	if err != nil {
 		t.Fatalf("create audit service: %v", err)
@@ -217,6 +219,37 @@ func TestServiceRecordRejectsNonJSONMetadata(t *testing.T) {
 	}
 	if insertCalls != 0 {
 		t.Fatalf("invalid metadata reached repository %d times", insertCalls)
+	}
+}
+
+func TestServiceRecordRejectsSensitiveMetadataKeys(t *testing.T) {
+	var insertCalls int
+	repository := auditRepositoryStub{
+		insert: func(context.Context, AuditEvent) (AuditEvent, error) {
+			insertCalls++
+			return AuditEvent{}, nil
+		},
+	}
+	service, err := NewService(repository, &auditLoggerStub{})
+	if err != nil {
+		t.Fatalf("create audit service: %v", err)
+	}
+
+	err = service.Record(context.Background(), AuditEvent{
+		Action: "user.login",
+		Actor:  Actor{ActorType: ActorTypeAnonymous},
+		Metadata: map[string]any{
+			"details": map[string]any{"access_token": "must-not-be-persisted"},
+		},
+	})
+	if !errors.Is(err, ErrInvalidAuditEvent) {
+		t.Fatalf("got %v, want ErrInvalidAuditEvent", err)
+	}
+	if strings.Contains(err.Error(), "must-not-be-persisted") {
+		t.Fatalf("validation error leaked a sensitive value: %v", err)
+	}
+	if insertCalls != 0 {
+		t.Fatalf("sensitive metadata reached repository %d times", insertCalls)
 	}
 }
 

@@ -1,6 +1,7 @@
 package recommendation
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +52,43 @@ type RecommendationFilter struct {
 	Status      RecommendationStatus
 	Limit       int
 	Offset      int
+}
+
+type RecommendationTraceFilter struct {
+	OrganizationID *uuid.UUID
+	UserID         *uuid.UUID
+}
+
+type RecommendationTraceEvent struct {
+	EventID    int64     `json:"event_id"`
+	Action     string    `json:"action"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type RecommendationTraceReader interface {
+	ListRecommendationTraceEvents(
+		ctx context.Context,
+		recommendationUID uuid.UUID,
+		filter RecommendationTraceFilter,
+	) ([]RecommendationTraceEvent, error)
+}
+
+type RecommendationAuditEvent struct {
+	Action            string
+	ResourceType      string
+	RecommendationUID uuid.UUID
+	ResourceUID       uuid.UUID
+	ScenarioUID       uuid.UUID
+	PolicyUID         uuid.UUID
+	RequestID         string
+	CorrelationID     string
+	OperationID       string
+	OccurredAt        time.Time
+	Metadata          map[string]any
+}
+
+type RecommendationAuditEventSink interface {
+	RecordEvent(ctx context.Context, event RecommendationAuditEvent) error
 }
 
 type Recommendation struct {

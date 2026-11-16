@@ -126,7 +126,39 @@ func normalizeMetadata(metadata map[string]any) (map[string]any, error) {
 	if normalized == nil {
 		return nil, fmt.Errorf("metadata must be a JSON object")
 	}
+	if err := validateMetadataKeys(normalized); err != nil {
+		return nil, err
+	}
 	return normalized, nil
+}
+
+func validateMetadataKeys(metadata map[string]any) error {
+	for key, value := range metadata {
+		normalizedKey := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+		for _, sensitive := range []string{
+			"secret", "token", "password", "passwd", "credential", "connection",
+			"dsn", "authorization", "private_key", "access_key", "refresh",
+		} {
+			if strings.Contains(normalizedKey, sensitive) {
+				return fmt.Errorf("sensitive metadata fields are not allowed")
+			}
+		}
+		switch nested := value.(type) {
+		case map[string]any:
+			if err := validateMetadataKeys(nested); err != nil {
+				return err
+			}
+		case []any:
+			for _, item := range nested {
+				if child, ok := item.(map[string]any); ok {
+					if err := validateMetadataKeys(child); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validActorID(id *uuid.UUID) bool {

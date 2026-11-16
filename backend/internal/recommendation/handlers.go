@@ -15,7 +15,13 @@ import (
 	"github.com/google/uuid"
 )
 
-func RegisterRoutes(mux *http.ServeMux, svc *Service, authMW *middleware.AuthMiddleware, perm *iam.PermissionEngine) {
+func RegisterRoutes(
+	mux *http.ServeMux,
+	svc *Service,
+	authMW *middleware.AuthMiddleware,
+	perm *iam.PermissionEngine,
+	traceReaders ...RecommendationTraceReader,
+) {
 	mux.Handle("POST /api/v1/recommendations",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "write")(http.HandlerFunc(handleGenerate(svc)))))
 	mux.Handle("POST /api/v1/recommendations/evaluate",
@@ -28,6 +34,11 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, authMW *middleware.AuthMid
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(http.HandlerFunc(handleEvidence(svc)))))
 	mux.Handle("POST /api/v1/recommendations/{uid}/evaluate",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "evaluate")(http.HandlerFunc(handleEvaluateExisting(svc)))))
+	if len(traceReaders) > 0 {
+		mux.Handle("GET /api/v1/recommendations/{uid}/trace",
+			authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(
+				http.HandlerFunc(handleTrace(svc, traceReaders[0])))))
+	}
 }
 
 type generateRequest struct {
@@ -116,6 +127,12 @@ func handleEvaluateExisting(svc *Service) http.HandlerFunc {
 			writeDomainError(w, err)
 			return
 		}
+		svc.recordAuditEvent(r.Context(), RecommendationAuditEvent{
+			Action: "recommendation_re_evaluated", RecommendationUID: existing.UID,
+			ResourceUID: existing.ResourceUID, ScenarioUID: existing.ScenarioUID, PolicyUID: existing.PolicyUID,
+			RequestID: input.RequestID, CorrelationID: input.CorrelationID, OperationID: input.OperationID,
+			OccurredAt: time.Now().UTC(),
+		})
 		writeJSON(w, http.StatusOK, evaluationResponse(result))
 	}
 }
@@ -209,6 +226,72 @@ func handleEvidence(svc *Service) http.HandlerFunc {
 			"count":              len(value.Evidence),
 		})
 	}
+}
+
+func handleTrace(svc *Service, reader RecommendationTraceReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardService(svc, w) {
+			return
+		}
+		if reader == nil {
+			writeError(w, http.StatusServiceUnavailable, "AUDIT_UNAVAILABLE", "recommendation trace is not configured")
+			return
+		}
+		uid, err := uuid.Parse(r.PathValue("uid"))
+		if err != nil || uid == uuid.Nil {
+			writeError(w, http.StatusBadRequest, "INVALID_RECOMMENDATION_UID", "invalid recommendation uid")
+			return
+		}
+		value, err := svc.GetRecommendation(r.Context(), uid)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		identity, _ := iam.IdentityContextFromContext(r.Context())
+		filter := RecommendationTraceFilter{}
+		if !hasSystemRole(identity, "platform_admin") {
+			if identity.OrgID != uuid.Nil {
+				filter.OrganizationID = &identity.OrgID
+			} else if identity.UserID != uuid.Nil {
+				filter.UserID = &identity.UserID
+			} else {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "trace access requires an organization or user scope")
+				return
+			}
+		}
+		events, err := reader.ListRecommendationTraceEvents(r.Context(), value.UID, filter)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "AUDIT_QUERY_FAILED", "recommendation trace query failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"recommendation_uid": value.UID,
+			"resource_uid":       value.ResourceUID,
+			"scenario_uid":       value.ScenarioUID,
+			"policy_uid":         value.PolicyUID,
+			"decision":           "recommendation_generated",
+			"status":             value.Status,
+			"risk": map[string]any{
+				"score": value.Risk.Score,
+				"level": value.Risk.Level,
+			},
+			"confidence": map[string]any{"score": value.Confidence.Score},
+			"estimated_saving": map[string]any{
+				"monthly_amount": value.EstimatedSaving.MonthlyAmount,
+				"currency":       value.EstimatedSaving.Currency,
+			},
+			"events": events,
+		})
+	}
+}
+
+func hasSystemRole(identity iam.IdentityContext, role string) bool {
+	for _, candidate := range identity.SystemRoles {
+		if candidate == role {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeGenerateRequest(w http.ResponseWriter, r *http.Request) (generateRequest, bool) {

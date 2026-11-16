@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,13 +53,43 @@ func NormalizeTraceID(value string) (uuid.UUID, bool) {
 type ctxKey string
 
 const (
-	ctxIdentityKey ctxKey = "iam.identity"
-	ctxRequestID   ctxKey = "iam.request_id"
-	ctxTokenExpiry ctxKey = "iam.token_expiry"
+	ctxIdentityKey        ctxKey = "iam.identity"
+	ctxIdentityCaptureKey ctxKey = "iam.identity_capture"
+	ctxRequestID          ctxKey = "iam.request_id"
+	ctxTokenExpiry        ctxKey = "iam.token_expiry"
 )
+
+type IdentityCapture struct {
+	mu       sync.RWMutex
+	identity IdentityContext
+	present  bool
+}
+
+func NewIdentityCapture() *IdentityCapture {
+	return &IdentityCapture{}
+}
+
+func WithIdentityCapture(ctx context.Context, capture *IdentityCapture) context.Context {
+	return context.WithValue(ctx, ctxIdentityCaptureKey, capture)
+}
+
+func (c *IdentityCapture) Identity() (IdentityContext, bool) {
+	if c == nil {
+		return IdentityContext{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.identity, c.present
+}
 
 // WithIdentityContext returns a new context with the IdentityContext embedded.
 func WithIdentityContext(ctx context.Context, ic IdentityContext) context.Context {
+	if capture, ok := ctx.Value(ctxIdentityCaptureKey).(*IdentityCapture); ok {
+		capture.mu.Lock()
+		capture.identity = ic
+		capture.present = true
+		capture.mu.Unlock()
+	}
 	return context.WithValue(ctx, ctxIdentityKey, ic)
 }
 

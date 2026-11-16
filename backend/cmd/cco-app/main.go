@@ -170,6 +170,9 @@ func main() {
 	if err := iam.SeedRecommendationPermissions(db); err != nil {
 		log.Fatalf("seed recommendation permissions: %v", err)
 	}
+	if err := iam.SeedAuditPermissions(db); err != nil {
+		log.Fatalf("seed audit permissions: %v", err)
+	}
 
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
@@ -225,6 +228,11 @@ func main() {
 
 	// ── Authorization engine ─────────────────────────────────────────────
 	permEngine := iam.NewPermissionEngine(db)
+	auditRepo := auditrepos.NewAuditRepository(db)
+	auditService, err := audit.NewService(auditRepo, auditadapters.NewSlogAuditLogger(slog.Default()))
+	if err != nil {
+		log.Fatalf("initialize audit service: %v", err)
+	}
 
 	// ── Cloud module (Module 2) ──────────────────────────────────────────
 	accountRepo := cloudrepos.NewAccountRepository(db)
@@ -279,11 +287,6 @@ func main() {
 		// Recommendation Engine (Module 7): consumes Module 4/5 contracts and
 		// persists decisions in cco_data. It never executes infrastructure changes.
 		recommendationRepo := recommendationrepos.NewRecommendationRepository(dataDB)
-		auditRepo := auditrepos.NewAuditRepository(db)
-		auditService, err := audit.NewService(auditRepo, auditadapters.NewSlogAuditLogger(slog.Default()))
-		if err != nil {
-			log.Fatalf("initialize audit service: %v", err)
-		}
 		dataReaders := recommendationadapters.NewDataReaders(dataRepo, dataRepo, dataRepo, dataRepo, dataRepo)
 		analyticsReader := recommendationadapters.NewAnalyticsReader(analyticsRepo)
 		var mlReader recommendation.MLPredictionReader = analyticsReader
@@ -456,7 +459,14 @@ func main() {
 
 	// Recommendation routes (Module 7): nil service when CCO_DATA_DSN is not
 	// configured → endpoints return 503.
-	recommendation.RegisterRoutes(mux, recommendationSvc, authMiddleware, permEngine)
+	recommendation.RegisterRoutes(
+		mux,
+		recommendationSvc,
+		authMiddleware,
+		permEngine,
+		recommendationadapters.NewAuditTraceReader(auditService),
+	)
+	audit.RegisterRoutes(mux, auditService, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
@@ -472,7 +482,7 @@ func main() {
 	handler := middleware.CORS(allowedOrigins, mux)
 	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
 	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
-	handler = audit.TraceMiddleware(handler)
+	handler = audit.TraceMiddleware(handler, auditService)
 
 	// ── Server ───────────────────────────────────────────────────────────
 	addr := os.Getenv("CCO_HTTP_ADDR")

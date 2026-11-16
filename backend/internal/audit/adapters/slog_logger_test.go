@@ -36,7 +36,8 @@ func TestSlogAuditLoggerWritesEventsAndPersistenceFailures(t *testing.T) {
 		`"event_id":7`,
 		`"action":"system.maintenance"`,
 		`"msg":"audit event persistence failed"`,
-		`"error":"database unavailable"`,
+		`"error":"audit event persistence failed"`,
+		`"error_type":"*errors.errorString"`,
 	} {
 		if !strings.Contains(logs, expected) {
 			t.Errorf("log output missing %s: %s", expected, logs)

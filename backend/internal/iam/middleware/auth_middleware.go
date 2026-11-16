@@ -183,13 +183,11 @@ func normalizeTraceIDs(r *http.Request) (uuid.UUID, uuid.UUID) {
 
 func logInvalidTraceID(header, value string, replacement uuid.UUID) {
 	const maxLoggedValueLength = 256
-	truncated := len(value) > maxLoggedValueLength
-	if truncated {
-		value = value[:maxLoggedValueLength]
-	}
+	valueLength := len(value)
+	truncated := valueLength > maxLoggedValueLength
 	slog.Warn("invalid trace identifier replaced",
 		"header", header,
-		"invalid_value", value,
+		"invalid_value_length", valueLength,
 		"value_truncated", truncated,
 		"replacement", replacement.String(),
 	)

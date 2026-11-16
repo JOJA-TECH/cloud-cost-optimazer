@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -55,6 +57,38 @@ func (s *Service) Record(ctx context.Context, event AuditEvent) error {
 		return fmt.Errorf("log persisted audit event: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) GetEvent(ctx context.Context, eventID int64) (AuditEvent, error) {
+	if s == nil || s.repository == nil {
+		return AuditEvent{}, ErrAuditRepository
+	}
+	return s.repository.GetEvent(ctx, eventID)
+}
+
+func (s *Service) ListEvents(ctx context.Context, filter AuditFilter) ([]AuditEvent, error) {
+	if s == nil || s.repository == nil {
+		return nil, ErrAuditRepository
+	}
+	return s.repository.ListEvents(ctx, filter)
+}
+
+func (s *Service) GetResourceHistory(
+	ctx context.Context,
+	resource ResourceReference,
+	filter AuditFilter,
+) ([]AuditEvent, error) {
+	if s == nil || s.repository == nil {
+		return nil, ErrAuditRepository
+	}
+	return s.repository.ListByResource(ctx, resource, filter)
+}
+
+func (s *Service) GetCorrelationHistory(ctx context.Context, correlationID uuid.UUID) ([]AuditEvent, error) {
+	if s == nil || s.repository == nil {
+		return nil, ErrAuditRepository
+	}
+	return s.repository.ListByCorrelationID(ctx, correlationID)
 }
 
 func enrichFromContext(ctx context.Context, event AuditEvent) (AuditEvent, error) {

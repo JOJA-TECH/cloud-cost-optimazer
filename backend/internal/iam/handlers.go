@@ -112,6 +112,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("user logged in",
 		"user_id", ic.UserID,
@@ -186,6 +187,7 @@ func (h *M2MTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("m2m token issued",
 		"user_id", ic.UserID,
@@ -293,6 +295,7 @@ func (h *OIDCCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "cco_access",
@@ -379,6 +382,7 @@ func (h *TokenRefreshHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("token refreshed", "user_id", userID, "request_id", ic.RequestID)
 
@@ -457,6 +461,9 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, code, err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), IdentityContext{
+		UserID: created.ID, AuthMethod: "registration",
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

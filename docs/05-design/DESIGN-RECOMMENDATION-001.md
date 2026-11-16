@@ -21,6 +21,7 @@ Componentes principales:
 | `adapters/policy_evaluator.go` | Adapter del evaluador de políticas |
 | `adapters/audit_sink.go` | Emisión operativa de eventos de decisión con `slog` |
 | `adapters/persistent_audit_sink.go` | Conversión de decisiones a `audit.AuditEvent` y delegación en `audit.AuditLogger` |
+| `adapters/audit_trace_reader.go` | Consulta de eventos de recomendación, correlación y operación en `cco_app` |
 | `repositories/recommendation_repository.go` | Lectura y escritura transaccional de políticas y entidades `opt.*` |
 
 ## Responsabilidad
@@ -165,9 +166,13 @@ Los detalles de request/response y errores HTTP se mantienen en `backend/API.md`
 
 ## Auditoría
 
-`PersistentAuditSink` adapta el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; el sink operativo `SlogAuditSink` se conserva para callers que lo necesiten. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y errores en metadata. Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
+`PersistentAuditSink` adapta el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; el sink operativo `SlogAuditSink` se conserva para callers que lo necesiten. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y el conteo de errores en metadata (no el texto crudo de errores). Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
 
 La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, el sink emite un error estructurado con `recommendation_uid`, `correlation_id` y `operation_id`, y la respuesta conserva la recomendación con `audit_status: "audit_pending"` sin alterar `generation_state`. Esta primera versión no reintenta automáticamente: el estado pendiente requiere reconciliación operativa. Un outbox transaccional en `cco_data` queda como mejora futura.
+
+`GET /api/v1/recommendations/{uid}/trace` consulta primero los datos de recomendación en `cco_data` y luego obtiene eventos en `cco_app` mediante el adapter de trazabilidad. Los historiales se combinan en memoria por `recommendation_uid`, `correlation_id` y `operation_id`; no se emite SQL entre bases.
+
+Las rutas de consulta de auditoría aplican el alcance `all`, `organization` o `own` en el handler antes de responder. El middleware transversal registra acciones IAM, cloud y adquisición con actor y trace context, y solo almacena método/estado HTTP; nunca inspecciona el body. Los valores con nombres de campos sensibles se rechazan durante la validación de metadata.
 
 ## Pruebas y estado de validación
 

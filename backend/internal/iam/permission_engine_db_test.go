@@ -116,3 +116,52 @@ func TestSeedRecommendationPermissionsAddsExpectedSystemRoleGrants(t *testing.T)
 		}
 	}
 }
+
+func TestSeedAuditPermissionsAddsScopedReadGrants(t *testing.T) {
+	db, err := database.Open(database.Config{Driver: database.DriverSQLite, DSN: "file::memory:?cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for id, code := range map[int16]string{1: "platform_admin", 2: "auditor", 3: "analyst"} {
+		if err := db.Table("roles").Create(&database.RoleModel{
+			RoleID: id, RoleCode: code, IsSystemRole: true, CreatedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed role %q: %v", code, err)
+		}
+	}
+	if err := iam.SeedAuditPermissions(db); err != nil {
+		t.Fatalf("SeedAuditPermissions() error = %v", err)
+	}
+	if err := iam.SeedAuditPermissions(db); err != nil {
+		t.Fatalf("second SeedAuditPermissions() error = %v", err)
+	}
+
+	engine := iam.NewPermissionEngine(db)
+	for _, test := range []struct {
+		role string
+		want bool
+	}{
+		{role: "platform_admin", want: true},
+		{role: "auditor", want: true},
+		{role: "analyst", want: false},
+	} {
+		allowed, err := engine.Can(context.Background(), iam.IdentityContext{
+			SystemRoles: []string{test.role},
+		}, "audit", "read")
+		if err != nil {
+			t.Fatalf("Can(%q, audit:read) error = %v", test.role, err)
+		}
+		if allowed != test.want {
+			t.Errorf("Can(%q, audit:read) = %v, want %v", test.role, allowed, test.want)
+		}
+	}
+	if ok, err := engine.Can(context.Background(), iam.IdentityContext{
+		SystemRoles: []string{"auditor"},
+	}, "audit:read", "organization"); err != nil || !ok {
+		t.Errorf("auditor should have organization scope (ok=%v, err=%v)", ok, err)
+	}
+}

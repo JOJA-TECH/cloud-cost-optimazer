@@ -73,7 +73,7 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 	if err := sink.RecordDecision(ctx, event); err != nil {
 		t.Fatalf("record decision: %v", err)
 	}
-	if recorded.Action != "recommendation.decision_recorded" ||
+	if recorded.Action != "recommendation_generated" ||
 		recorded.Resource.Type != "recommendation" ||
 		recorded.Resource.ID == nil || *recorded.Resource.ID != recommendationID {
 		t.Fatalf("audit event does not identify the recommendation: %#v", recorded)
@@ -106,6 +106,40 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 	}
 	if !recorded.OccurredAt.Equal(occurredAt) {
 		t.Fatalf("occurred_at = %v, want %v", recorded.OccurredAt, occurredAt)
+	}
+}
+
+func TestPersistentAuditSinkRecordsGenericLifecycleEvent(t *testing.T) {
+	requestID, correlationID, operationID := uuid.New(), uuid.New(), uuid.New()
+	resourceUID := uuid.New()
+	ctx := audit.WithCorrelationContext(context.Background(), audit.CorrelationContext{
+		RequestID: requestID, CorrelationID: correlationID, OperationID: &operationID,
+	})
+	var recorded audit.AuditEvent
+	sink := NewPersistentAuditSink(auditLoggerFunc(func(_ context.Context, event audit.AuditEvent) error {
+		recorded = event
+		return nil
+	}), nil)
+
+	err := sink.RecordEvent(ctx, recommendation.RecommendationAuditEvent{
+		Action: "recommendation_evaluation_started", ResourceUID: resourceUID,
+		RequestID: requestID.String(), CorrelationID: correlationID.String(),
+		OperationID: operationID.String(), Metadata: map[string]any{"phase": "started"},
+	})
+	if err != nil {
+		t.Fatalf("record lifecycle event: %v", err)
+	}
+	if recorded.Action != "recommendation_evaluation_started" ||
+		recorded.Resource.Type != "resource" || recorded.Resource.ID == nil ||
+		*recorded.Resource.ID != resourceUID {
+		t.Fatalf("lifecycle event resource/action mismatch: %#v", recorded)
+	}
+	if recorded.Actor.ActorType != audit.ActorTypeSystem {
+		t.Fatalf("anonymous background event actor = %q, want system", recorded.Actor.ActorType)
+	}
+	if recorded.Trace.RequestID != requestID || recorded.Trace.CorrelationID != correlationID ||
+		recorded.Trace.OperationID == nil || *recorded.Trace.OperationID != operationID {
+		t.Fatalf("lifecycle trace context mismatch: %#v", recorded.Trace)
 	}
 }
 

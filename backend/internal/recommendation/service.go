@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -141,6 +142,11 @@ func (s *Service) validateRequest(input GenerateRecommendationInput) error {
 func (s *Service) GenerateRecommendation(ctx context.Context, input GenerateRecommendationInput) (Recommendation, error) {
 	evaluation, err := s.generate(ctx, input, true)
 	if err != nil {
+		s.recordAuditEvent(ctx, RecommendationAuditEvent{
+			Action: "recommendation_generation_failed", ResourceUID: input.ResourceUID,
+			PolicyUID: input.PolicyUID, RequestID: input.RequestID, CorrelationID: input.CorrelationID,
+			OperationID: input.OperationID, OccurredAt: time.Now().UTC(),
+		})
 		return Recommendation{}, err
 	}
 	return evaluation.recommendation, nil
@@ -152,10 +158,25 @@ type generationOutcome struct {
 }
 
 func (s *Service) EvaluateRecommendation(ctx context.Context, input GenerateRecommendationInput) (RecommendationEvaluation, error) {
+	s.recordAuditEvent(ctx, RecommendationAuditEvent{
+		Action: "recommendation_evaluation_started", ResourceUID: input.ResourceUID,
+		PolicyUID: input.PolicyUID, RequestID: input.RequestID, CorrelationID: input.CorrelationID,
+		OperationID: input.OperationID, OccurredAt: time.Now().UTC(),
+	})
 	outcome, err := s.generate(ctx, input, false)
 	if err != nil {
+		s.recordAuditEvent(ctx, RecommendationAuditEvent{
+			Action: "recommendation_evaluation_failed", ResourceUID: input.ResourceUID,
+			PolicyUID: input.PolicyUID, RequestID: input.RequestID, CorrelationID: input.CorrelationID,
+			OperationID: input.OperationID, OccurredAt: time.Now().UTC(),
+		})
 		return RecommendationEvaluation{}, err
 	}
+	s.recordAuditEvent(ctx, RecommendationAuditEvent{
+		Action: "recommendation_evaluation_completed", ResourceUID: input.ResourceUID,
+		PolicyUID: input.PolicyUID, RequestID: input.RequestID, CorrelationID: input.CorrelationID,
+		OperationID: input.OperationID, OccurredAt: time.Now().UTC(),
+	})
 	return outcome.result, nil
 }
 
@@ -645,14 +666,55 @@ func (s *Service) GetRecommendation(ctx context.Context, recommendationUID uuid.
 	if recommendationUID == uuid.Nil {
 		return Recommendation{}, ErrInvalidRequest
 	}
-	return s.repository.GetRecommendation(ctx, recommendationUID)
+	value, err := s.repository.GetRecommendation(ctx, recommendationUID)
+	if err != nil {
+		return Recommendation{}, err
+	}
+	s.recordAuditEvent(ctx, RecommendationAuditEvent{
+		Action: "recommendation_read", RecommendationUID: value.UID, ResourceUID: value.ResourceUID,
+		ScenarioUID: value.ScenarioUID, PolicyUID: value.PolicyUID, OccurredAt: time.Now().UTC(),
+	})
+	return value, nil
+}
+
+func (s *Service) recordAuditEvent(ctx context.Context, event RecommendationAuditEvent) {
+	if s == nil || event.Action == "" ||
+		(event.RecommendationUID == uuid.Nil && event.ResourceUID == uuid.Nil && event.ResourceType == "") {
+		return
+	}
+	sink, ok := s.audit.(RecommendationAuditEventSink)
+	if !ok {
+		return
+	}
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Now().UTC()
+	}
+	if err := sink.RecordEvent(ctx, event); err != nil {
+		slog.ErrorContext(ctx, "recommendation audit event pending",
+			"action", event.Action,
+			"recommendation_uid", event.RecommendationUID,
+			"resource_uid", event.ResourceUID,
+			"correlation_id", event.CorrelationID,
+			"operation_id", event.OperationID,
+			"error", "recommendation audit event failed",
+			"error_type", fmt.Sprintf("%T", err),
+		)
+	}
 }
 
 func (s *Service) ListRecommendations(ctx context.Context, filter RecommendationFilter) ([]Recommendation, error) {
 	if filter.Limit < 0 || filter.Offset < 0 {
 		return nil, ErrInvalidRequest
 	}
-	return s.repository.ListRecommendations(ctx, filter)
+	values, err := s.repository.ListRecommendations(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	s.recordAuditEvent(ctx, RecommendationAuditEvent{
+		Action: "recommendation_read", ResourceType: "recommendation",
+		OccurredAt: time.Now().UTC(), Metadata: map[string]any{"result_count": len(values)},
+	})
+	return values, nil
 }
 
 // PublishRecommendation is retained for focused callers; new generation

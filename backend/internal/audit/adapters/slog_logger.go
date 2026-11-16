@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
@@ -52,7 +53,8 @@ func (l *SlogAuditLogger) PersistenceFailed(ctx context.Context, event audit.Aud
 		"request_id", event.Trace.RequestID,
 		"correlation_id", event.Trace.CorrelationID,
 		"operation_id", event.Trace.OperationID,
-		"error", err,
+		"error", "audit event persistence failed",
+		"error_type", fmt.Sprintf("%T", err),
 	)
 }
 
