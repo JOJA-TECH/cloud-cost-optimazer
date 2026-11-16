@@ -8,6 +8,12 @@ import (
 
 type ReportType string
 
+const (
+	ReportTypeOptimization ReportType = "optimization"
+	ReportTypeAnalytics    ReportType = "analytics"
+	ReportTypeResource     ReportType = "resource"
+)
+
 type ReportFormat string
 
 const (
@@ -41,6 +47,21 @@ const (
 	ReportSourceAnalytics      ReportSource = "analytics"
 	ReportSourceRecommendation ReportSource = "recommendation"
 	ReportSourceAudit          ReportSource = "audit"
+)
+
+const (
+	ReportSectionExecutiveSummary    = "executive_summary"
+	ReportSectionAnalysisPeriod      = "analysis_period"
+	ReportSectionKeyMetrics          = "key_metrics"
+	ReportSectionCostOverview        = "cost_overview"
+	ReportSectionUtilizationAnalysis = "utilization_analysis"
+	ReportSectionRecommendations     = "recommendations"
+	ReportSectionEstimatedSavings    = "estimated_savings"
+	ReportSectionRiskAssessment      = "risk_assessment"
+	ReportSectionConfidence          = "confidence"
+	ReportSectionEvidence            = "evidence"
+	ReportSectionAuditTrace          = "audit_trace"
+	ReportSectionGenerationMetadata  = "generation_metadata"
 )
 
 type ReportMetadata map[string]any
