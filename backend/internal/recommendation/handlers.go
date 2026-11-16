@@ -109,6 +109,7 @@ func handleEvaluateExisting(svc *Service) http.HandlerFunc {
 			CreatedBy:     actorFromRequest(r),
 			RequestID:     r.Header.Get("X-Request-ID"),
 			CorrelationID: r.Header.Get("X-Correlation-ID"),
+			OperationID:   r.Header.Get("X-Operation-ID"),
 		}
 		result, err := svc.EvaluateRecommendation(r.Context(), input)
 		if err != nil {
@@ -251,6 +252,7 @@ func generateInput(w http.ResponseWriter, r *http.Request, request generateReque
 		HorizonDays: request.HorizonDays, Currency: strings.ToUpper(request.Currency),
 		ForceRefresh: request.ForceRefresh, CreatedBy: actorFromRequest(r),
 		RequestID: r.Header.Get("X-Request-ID"), CorrelationID: r.Header.Get("X-Correlation-ID"),
+		OperationID: r.Header.Get("X-Operation-ID"),
 	}, true
 }
 

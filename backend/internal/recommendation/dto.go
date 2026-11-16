@@ -17,6 +17,7 @@ type GenerateRecommendationInput struct {
 	CreatedBy        string
 	RequestID        string
 	CorrelationID    string
+	OperationID      string
 	ObjectiveWeights map[string]float64
 	Constraints      map[string]any
 }
@@ -571,11 +572,17 @@ type DecisionAuditEvent struct {
 	Details           map[string]any
 	RequestID         string
 	CorrelationID     string
+	OperationID       string
 	PolicyUID         uuid.UUID
 	PolicyVersion     int
 	AlgorithmVersion  string
 	ScenarioUID       uuid.UUID
-	SelectedCandidate string
+	SelectedCandidate *string
+	RiskScore         float64
+	RiskLevel         string
+	ConfidenceScore   float64
+	EstimatedSaving   float64
+	EvidenceCount     int
 	CandidateResults  []map[string]any
 	Duration          time.Duration
 	Errors            []string

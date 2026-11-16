@@ -97,7 +97,7 @@ type RecommendationRepository interface {
 	GetLatestRecommendation(ctx context.Context, resourceUID uuid.UUID) (Recommendation, error)
 }
 
-// AuditSink records the decision independently from recommendation storage.
+// AuditSink records the decision after RecommendationRepository persists it.
 type AuditSink interface {
 	RecordDecision(ctx context.Context, event DecisionAuditEvent) error
 }

@@ -134,6 +134,58 @@ func TestGenerateRecommendationReturnsNoActionWithoutCosts(t *testing.T) {
 	}
 }
 
+func TestGenerateRecommendationAuditsPersistedDecisionFields(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	sink := &engineTestAuditSink{repository: repository}
+	service.audit = sink
+	now := time.Now().UTC()
+	input := testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now)
+	input.RequestID = uuid.NewString()
+	input.CorrelationID = uuid.NewString()
+	input.OperationID = uuid.NewString()
+
+	result, err := service.GenerateRecommendation(context.Background(), input)
+	if err != nil {
+		t.Fatalf("generate recommendation: %v", err)
+	}
+	if repository.persistCalls != 1 || len(sink.events) != 1 {
+		t.Fatalf("persist calls=%d, audit events=%d; want one of each", repository.persistCalls, len(sink.events))
+	}
+	event := sink.events[0]
+	if event.RecommendationUID != result.UID || event.PolicyUID != policy.UID ||
+		event.ResourceUID != resourceUID || event.RequestID != input.RequestID ||
+		event.CorrelationID != input.CorrelationID || event.OperationID != input.OperationID {
+		t.Fatalf("audit event identifiers do not match persisted decision: %+v", event)
+	}
+	if event.RiskScore != repository.persist.Recommendation.Risk.Score ||
+		event.RiskLevel != string(repository.persist.Recommendation.Risk.Level) ||
+		event.ConfidenceScore != repository.persist.Recommendation.Confidence.Score ||
+		event.EstimatedSaving != repository.persist.Recommendation.EstimatedSaving.MonthlyAmount {
+		t.Fatalf("audit scores do not match persisted decision: %+v", event)
+	}
+	if event.EvidenceCount != len(repository.persist.Recommendation.Evidence) {
+		t.Fatalf("evidence count=%d, want %d", event.EvidenceCount, len(repository.persist.Recommendation.Evidence))
+	}
+}
+
+func TestGenerateRecommendationDoesNotAuditFailedPersistence(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	persistErr := errors.New("cco_data unavailable")
+	repository.persistErr = persistErr
+	sink := &engineTestAuditSink{repository: repository}
+	service.audit = sink
+	now := time.Now().UTC()
+
+	_, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if !errors.Is(err, persistErr) {
+		t.Fatalf("got %v, want persistence error", err)
+	}
+	if len(sink.events) != 0 {
+		t.Fatalf("audited %d decisions after persistence failed", len(sink.events))
+	}
+}
+
 func TestGenerateRecommendationReturnsNoActionWithoutAnalyticsEvidence(t *testing.T) {
 	service, _, policy, resourceUID := newTestEngine(t, nil)
 	analyticsReader := service.analytics.(engineTestAnalytics)
@@ -484,6 +536,7 @@ type engineTestRepository struct {
 	latest       Recommendation
 	persist      DecisionPersistence
 	persistCalls int
+	persistErr   error
 }
 
 func (r *engineTestRepository) GetLatestRecommendation(context.Context, uuid.UUID) (Recommendation, error) {
@@ -495,6 +548,9 @@ func (r *engineTestRepository) GetLatestRecommendation(context.Context, uuid.UUI
 func (r *engineTestRepository) PersistDecision(_ context.Context, decision DecisionPersistence) (Recommendation, error) {
 	r.persistCalls++
 	r.persist = decision
+	if r.persistErr != nil {
+		return Recommendation{}, r.persistErr
+	}
 	decision.Recommendation.ScenarioUID = decision.Scenario.UID
 	decision.Recommendation.ScenarioID = 101
 	if decision.SelectedCandidateIndex != nil {
@@ -502,6 +558,20 @@ func (r *engineTestRepository) PersistDecision(_ context.Context, decision Decis
 		decision.Recommendation.ChosenCandidateID = &id
 	}
 	return decision.Recommendation, nil
+}
+
+type engineTestAuditSink struct {
+	repository *engineTestRepository
+	events     []DecisionAuditEvent
+	err        error
+}
+
+func (s *engineTestAuditSink) RecordDecision(_ context.Context, event DecisionAuditEvent) error {
+	if s.repository.persistCalls == 0 {
+		return errors.New("audit called before recommendation persistence")
+	}
+	s.events = append(s.events, event)
+	return s.err
 }
 
 type engineTestAnalytics struct {

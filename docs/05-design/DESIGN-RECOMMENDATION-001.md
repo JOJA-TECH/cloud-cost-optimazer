@@ -19,7 +19,8 @@ Componentes principales:
 | `adapters/analytics_reader.go` | Conversión de resultados de `analytics.AnalyticsResultRepository` y acceso a forecasts a tipos del dominio |
 | `adapters/data_readers.go` | Adaptación de costos, configuración, precios, catálogo SKU y contexto de región/proveedor |
 | `adapters/policy_evaluator.go` | Adapter del evaluador de políticas |
-| `adapters/audit_sink.go` | Emisión de eventos de decisión con `slog` |
+| `adapters/audit_sink.go` | Emisión operativa de eventos de decisión con `slog` |
+| `adapters/persistent_audit_sink.go` | Conversión de decisiones a `audit.AuditEvent` y delegación en `audit.AuditLogger` |
 | `repositories/recommendation_repository.go` | Lectura y escritura transaccional de políticas y entidades `opt.*` |
 
 ## Responsabilidad
@@ -53,7 +54,9 @@ acquisition
 
 - Recommendation depende de interfaces propias y de UUID/tiempo; no importa los modelos GORM de los repositorios.
 - Los adapters de infraestructura conocen los paquetes `analytics` y `data` y traducen sus DTOs.
+- El adapter de auditoría conoce los contratos genéricos de `audit`; `audit` no depende de Recommendation.
 - `main.go` comparte la conexión `CCO_DATA_DSN` entre Data, Analytics y Recommendation.
+- La auditoría usa la conexión de `CCO_DB_DSN` (`cco_app`), separada de `cco_data`.
 - La ausencia de `CCO_DATA_DSN` deja `recommendationSvc` nulo y las rutas registradas; los handlers responden `503 RECOMMENDATION_STORAGE_UNAVAILABLE`.
 
 ## Entidades y persistencia
@@ -98,7 +101,7 @@ La implementación actual usa `adapters.AnalyticsReader` tanto para `AnalyticsRe
 9. Simula utilización/costo, calcula ahorro, riesgo y confianza, evalúa la política y aplica reglas iniciales de oportunidad.
 10. Selecciona entre candidatos aceptables por costo, y en empate por riesgo y confianza.
 11. Si los datos mínimos faltan o no hay candidato aceptable, genera una decisión `no_action`; la salida distingue `insufficient_information` de un `no_action` por ausencia de alternativa aceptable.
-12. Persiste la decisión completa y registra evento en `AuditSink`.
+12. Persiste la decisión completa en `cco_data.opt` y, solo si esa transacción termina correctamente, registra el evento mediante `AuditSink` en `cco_app.audit.events` y `slog`.
 
 La evaluación preliminar (`EvaluateRecommendation`) usa el mismo flujo de cálculo pero no persiste.
 
@@ -162,7 +165,9 @@ Los detalles de request/response y errores HTTP se mantienen en `backend/API.md`
 
 ## Auditoría
 
-`DecisionAuditEvent` y `SlogAuditSink` incluyen request/correlation IDs, recurso, actor, política/versión, algoritmo, escenario, recomendación, decisión, candidato seleccionado, resultados de candidatos, duración y errores parciales. La implementación actual no registra todavía `risk_score` ni `confidence` como atributos superiores explícitos del evento de log; esos scores están en el modelo de dominio y la persistencia.
+`PersistentAuditSink` adapta el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; el sink operativo `SlogAuditSink` se conserva para callers que lo necesiten. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y errores en metadata. Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
+
+La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, la recomendación ya está guardada y el error se devuelve al caller para que la pérdida de trazabilidad no quede silenciosa.
 
 ## Pruebas y estado de validación
 

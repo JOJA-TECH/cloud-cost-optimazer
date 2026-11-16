@@ -19,6 +19,8 @@ import (
 	analyticsadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/adapters"
 	analyticsrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
+	auditadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit/adapters"
+	auditrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
@@ -277,6 +279,11 @@ func main() {
 		// Recommendation Engine (Module 7): consumes Module 4/5 contracts and
 		// persists decisions in cco_data. It never executes infrastructure changes.
 		recommendationRepo := recommendationrepos.NewRecommendationRepository(dataDB)
+		auditRepo := auditrepos.NewAuditRepository(db)
+		auditService, err := audit.NewService(auditRepo, auditadapters.NewSlogAuditLogger(slog.Default()))
+		if err != nil {
+			log.Fatalf("initialize audit service: %v", err)
+		}
 		dataReaders := recommendationadapters.NewDataReaders(dataRepo, dataRepo, dataRepo, dataRepo, dataRepo)
 		analyticsReader := recommendationadapters.NewAnalyticsReader(analyticsRepo)
 		var mlReader recommendation.MLPredictionReader = analyticsReader
@@ -296,7 +303,7 @@ func main() {
 			ResourceContext:  resourceContextReader,
 			Prices:           priceReader,
 			SKUs:             skuReader,
-			Audit:            recommendationadapters.NewSlogAuditSink(slog.Default()),
+			Audit:            recommendationadapters.NewPersistentAuditSink(auditService),
 		})
 		if err != nil {
 			log.Fatalf("initialize recommendation engine: %v", err)

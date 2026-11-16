@@ -474,15 +474,23 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 		return generationOutcome{}, fmt.Errorf("persist recommendation decision: %w", err)
 	}
 	if s.audit != nil {
+		var selectedCandidate *string
+		if chosen != nil {
+			selectedName := skuName(chosen)
+			selectedCandidate = &selectedName
+		}
 		auditEvent := DecisionAuditEvent{
 			RecommendationUID: persisted.UID, ResourceUID: input.ResourceUID,
 			Decision: string(action.Type), Actor: input.CreatedBy, OccurredAt: time.Now().UTC(),
-			RequestID: input.RequestID, CorrelationID: input.CorrelationID,
+			RequestID: input.RequestID, CorrelationID: input.CorrelationID, OperationID: input.OperationID,
 			PolicyUID: policy.UID, PolicyVersion: policy.Version,
 			AlgorithmVersion: defaultAlgorithm, ScenarioUID: scenario.UID,
-			SelectedCandidate: skuName(chosen), CandidateResults: candidateAuditResults(candidateResults),
-			Duration: time.Since(startedAt),
-			Errors:   evidence.PartialErrors,
+			SelectedCandidate: selectedCandidate, CandidateResults: candidateAuditResults(candidateResults),
+			RiskScore: decision.Risk.Score, RiskLevel: string(decision.Risk.Level),
+			ConfidenceScore: decision.Confidence.Score, EstimatedSaving: decision.EstimatedSaving.MonthlyAmount,
+			EvidenceCount: len(decision.Evidence),
+			Duration:      time.Since(startedAt),
+			Errors:        evidence.PartialErrors,
 		}
 		if err := s.audit.RecordDecision(ctx, auditEvent); err != nil {
 			return generationOutcome{recommendation: persisted}, fmt.Errorf("record recommendation decision audit: %w", err)
