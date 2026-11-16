@@ -160,20 +160,9 @@ func (m *AuthMiddleware) validateOrgAccess(ctx context.Context, userID, orgID uu
 	return err == nil && mem.Status == "active"
 }
 
-func normalizeTraceID(value string) (uuid.UUID, bool) {
-	if value == "" {
-		return uuid.New(), false
-	}
-	id, err := uuid.Parse(value)
-	if err != nil {
-		return uuid.New(), true
-	}
-	return id, false
-}
-
 func normalizeTraceIDs(r *http.Request) (uuid.UUID, uuid.UUID) {
 	requestValue := r.Header.Get("X-Request-ID")
-	requestID, invalidRequestID := normalizeTraceID(requestValue)
+	requestID, invalidRequestID := iam.NormalizeTraceID(requestValue)
 	if invalidRequestID {
 		logInvalidTraceID("X-Request-ID", requestValue, requestID)
 	}
@@ -183,7 +172,7 @@ func normalizeTraceIDs(r *http.Request) (uuid.UUID, uuid.UUID) {
 	correlationID := requestID
 	if correlationValue != "" {
 		var invalidCorrelationID bool
-		correlationID, invalidCorrelationID = normalizeTraceID(correlationValue)
+		correlationID, invalidCorrelationID = iam.NormalizeTraceID(correlationValue)
 		if invalidCorrelationID {
 			logInvalidTraceID("X-Correlation-ID", correlationValue, correlationID)
 		}

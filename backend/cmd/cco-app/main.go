@@ -18,6 +18,7 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
 	analyticsadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/adapters"
 	analyticsrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
@@ -464,6 +465,7 @@ func main() {
 	handler := middleware.CORS(allowedOrigins, mux)
 	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
 	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
+	handler = audit.TraceMiddleware(handler)
 
 	// ── Server ───────────────────────────────────────────────────────────
 	addr := os.Getenv("CCO_HTTP_ADDR")

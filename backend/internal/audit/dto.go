@@ -47,6 +47,12 @@ type CorrelationContext struct {
 	OperationID   *uuid.UUID
 }
 
+type AuditIdentityContext struct {
+	Actor          Actor
+	OrganizationID *uuid.UUID
+	Trace          CorrelationContext
+}
+
 // DecisionTrace links the inputs and outcome of a recommendation decision.
 type DecisionTrace struct {
 	TraceID            uuid.UUID

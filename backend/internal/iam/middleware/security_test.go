@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	miniredis "github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	valkey "github.com/valkey-io/valkey-go"
@@ -104,9 +105,20 @@ func TestSecurityHeadersCSP(t *testing.T) {
 	}
 }
 
+func TestCORSExposesTraceHeaders(t *testing.T) {
+	rec := httptest.NewRecorder()
+	CORS(nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(
+		rec,
+		httptest.NewRequest(http.MethodGet, "/", nil),
+	)
+	if got, want := rec.Header().Get("Access-Control-Expose-Headers"), "X-Request-ID, X-Correlation-ID, X-Operation-ID"; got != want {
+		t.Fatalf("exposed headers got %q, want %q", got, want)
+	}
+}
+
 func TestNormalizeTraceID(t *testing.T) {
 	t.Run("canonicalizes valid UUID", func(t *testing.T) {
-		id, invalid := normalizeTraceID("550E8400-E29B-41D4-A716-446655440000")
+		id, invalid := iam.NormalizeTraceID("550E8400-E29B-41D4-A716-446655440000")
 		if invalid {
 			t.Fatal("valid UUID marked invalid")
 		}
@@ -116,7 +128,7 @@ func TestNormalizeTraceID(t *testing.T) {
 	})
 
 	t.Run("replaces invalid value", func(t *testing.T) {
-		id, invalid := normalizeTraceID("not-a-uuid")
+		id, invalid := iam.NormalizeTraceID("not-a-uuid")
 		if !invalid {
 			t.Fatal("invalid UUID not marked invalid")
 		}
@@ -126,7 +138,7 @@ func TestNormalizeTraceID(t *testing.T) {
 	})
 
 	t.Run("generates missing value", func(t *testing.T) {
-		id, invalid := normalizeTraceID("")
+		id, invalid := iam.NormalizeTraceID("")
 		if invalid {
 			t.Fatal("missing UUID marked invalid")
 		}

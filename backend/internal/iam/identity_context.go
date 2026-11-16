@@ -35,6 +35,19 @@ func NewIdentityContext(userID uuid.UUID, email, displayName, authMethod string)
 	}
 }
 
+// NormalizeTraceID parses a supplied trace ID or generates a UUID when it is
+// missing or invalid. The bool reports whether a non-empty value was invalid.
+func NormalizeTraceID(value string) (uuid.UUID, bool) {
+	if value == "" {
+		return uuid.New(), false
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.New(), true
+	}
+	return id, false
+}
+
 // context key types are unexported to prevent collisions.
 type ctxKey string
 
