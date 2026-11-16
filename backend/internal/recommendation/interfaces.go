@@ -18,6 +18,7 @@ type RecommendationEngine interface {
 	ExplainRecommendation(ctx context.Context, recommendationUID uuid.UUID) (RecommendationRationale, error)
 	GetRecommendation(ctx context.Context, recommendationUID uuid.UUID) (Recommendation, error)
 	ListRecommendations(ctx context.Context, filter RecommendationFilter) ([]Recommendation, error)
+	UpdateRecommendationStatus(ctx context.Context, recommendationUID uuid.UUID, status RecommendationStatus, actorID string) (Recommendation, error)
 }
 
 // AnalyticsReader exposes analytical evidence needed to make a decision.
@@ -94,6 +95,14 @@ type RecommendationRepository interface {
 	PersistDecision(ctx context.Context, decision DecisionPersistence) (Recommendation, error)
 	GetRecommendation(ctx context.Context, recommendationUID uuid.UUID) (Recommendation, error)
 	ListRecommendations(ctx context.Context, filter RecommendationFilter) ([]Recommendation, error)
+	UpdateRecommendationStatus(
+		ctx context.Context,
+		recommendationUID uuid.UUID,
+		expectedStatus RecommendationStatus,
+		status RecommendationStatus,
+		actorID string,
+		changedAt time.Time,
+	) (Recommendation, error)
 	GetLatestRecommendation(ctx context.Context, resourceUID uuid.UUID) (Recommendation, error)
 }
 

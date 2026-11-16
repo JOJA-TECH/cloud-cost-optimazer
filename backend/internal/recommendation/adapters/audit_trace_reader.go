@@ -14,13 +14,21 @@ import (
 const recommendationTraceEventLimit = 200
 
 type AuditTraceReader struct {
-	query audit.AuditQueryService
+	query                audit.AuditQueryService
+	decisionTraceService audit.ScopedDecisionTraceService
 }
 
 var _ recommendation.RecommendationTraceReader = (*AuditTraceReader)(nil)
 
-func NewAuditTraceReader(query audit.AuditQueryService) *AuditTraceReader {
-	return &AuditTraceReader{query: query}
+func NewAuditTraceReader(
+	query audit.AuditQueryService,
+	decisionTraceServices ...audit.ScopedDecisionTraceService,
+) *AuditTraceReader {
+	reader := &AuditTraceReader{query: query}
+	if len(decisionTraceServices) > 0 {
+		reader.decisionTraceService = decisionTraceServices[0]
+	}
+	return reader
 }
 
 func (r *AuditTraceReader) ListRecommendationTraceEvents(
@@ -43,9 +51,19 @@ func (r *AuditTraceReader) ListRecommendationTraceEvents(
 	recommendationID := recommendationUID
 	baseFilter.EntityType = "recommendation"
 	baseFilter.EntityID = &recommendationID
-	events, err := r.query.ListEvents(ctx, baseFilter)
-	if err != nil {
-		return nil, fmt.Errorf("list recommendation audit events: %w", err)
+	var events []audit.AuditEvent
+	if r.decisionTraceService != nil {
+		trace, err := r.decisionTraceService.GetRecommendationTraceScoped(ctx, recommendationUID, baseFilter)
+		if err != nil {
+			return nil, fmt.Errorf("get scoped recommendation decision trace: %w", err)
+		}
+		events = trace.Events
+	} else {
+		var err error
+		events, err = r.query.ListEvents(ctx, baseFilter)
+		if err != nil {
+			return nil, fmt.Errorf("list recommendation audit events: %w", err)
+		}
 	}
 
 	combined := make(map[int64]audit.AuditEvent, len(events))

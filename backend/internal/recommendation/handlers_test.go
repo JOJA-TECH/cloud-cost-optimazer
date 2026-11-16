@@ -112,6 +112,63 @@ func TestRecommendationRoutesRequireAuthenticationAndPermission(t *testing.T) {
 	if forbidden.Code != http.StatusForbidden {
 		t.Fatalf("viewer generation status = %d, want %d", forbidden.Code, http.StatusForbidden)
 	}
+
+	for _, action := range []string{"accept", "reject", "dismiss", "apply"} {
+		t.Run(action+" requires write permission", func(t *testing.T) {
+			statusForbidden := httptest.NewRecorder()
+			statusRequest := httptest.NewRequest(http.MethodPost,
+				"/api/v1/recommendations/"+uuid.NewString()+"/"+action, nil)
+			statusRequest.Header.Set("Authorization", "Bearer "+uuid.NewString())
+			mux.ServeHTTP(statusForbidden, statusRequest)
+			if statusForbidden.Code != http.StatusForbidden {
+				t.Fatalf("status update without recommendations:write returned %d, want %d",
+					statusForbidden.Code, http.StatusForbidden)
+			}
+		})
+	}
+}
+
+func TestRecommendationStatusHandlerUpdatesAuthorizedRecommendation(t *testing.T) {
+	uid, resourceUID, actorID := uuid.New(), uuid.New(), uuid.New()
+	repository := &statusRepositoryStub{value: Recommendation{
+		UID: uid, ResourceUID: resourceUID, ScenarioUID: uuid.New(),
+		PolicyUID: uuid.New(), Status: RecommendationStatusProposed,
+	}}
+	sink := &statusAuditSink{}
+	service, err := NewEngine(Dependencies{
+		PolicyEvaluator: policyEvaluatorFunc(func(context.Context, OptimizationPolicy, PolicyEvaluationInput) (PolicyEvaluation, error) {
+			return PolicyEvaluation{}, nil
+		}),
+		Repository: repository,
+		Audit:      sink,
+	})
+	if err != nil {
+		t.Fatalf("create recommendation service: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/recommendations/"+uid.String()+"/accept", nil)
+	request.SetPathValue("uid", uid.String())
+	request = request.WithContext(iam.WithIdentityContext(request.Context(), iam.IdentityContext{UserID: actorID}))
+	recorder := httptest.NewRecorder()
+
+	handleStatusAction(service, RecommendationStatusAccepted).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response struct {
+		Status    RecommendationStatus `json:"status"`
+		DecidedBy *string              `json:"decided_by"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Status != RecommendationStatusAccepted ||
+		response.DecidedBy == nil || *response.DecidedBy != actorID.String() {
+		t.Fatalf("unexpected status response: %+v", response)
+	}
+	if len(sink.events) != 1 || sink.events[0].Action != "recommendation_accepted" {
+		t.Fatalf("status handler did not audit the decision: %#v", sink.events)
+	}
 }
 
 func TestRecommendationHandlersReturnBadRequestAndNotFound(t *testing.T) {

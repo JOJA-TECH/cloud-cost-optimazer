@@ -1439,7 +1439,25 @@ Obtiene la evidencia asociada a una recomendación. Requiere `recommendations:re
 
 Reevalúa una recomendación con la evidencia más reciente, sin cambiar ni persistir la recomendación existente. Requiere `recommendations:evaluate`.
 
-**Errores principales:** `400 RECOMMENDATION_INVALID_REQUEST`, `404 NOT_FOUND`, `409 RECOMMENDATION_CONFLICT`, `422 RECOMMENDATION_CONFIGURATION_UNAVAILABLE`, `422 RECOMMENDATION_INSUFFICIENT_EVIDENCE`, `503 RECOMMENDATION_DEPENDENCY_UNAVAILABLE`.
+### POST /api/v1/recommendations/{uid}/accept
+
+Acepta una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write`. Persiste quién tomó la decisión y cuándo; registra `recommendation_accepted` en `cco_app.audit.events`.
+
+### POST /api/v1/recommendations/{uid}/reject
+
+Rechaza una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write` y registra `recommendation_rejected`.
+
+### POST /api/v1/recommendations/{uid}/dismiss
+
+Descarta una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write` y registra `recommendation_dismissed`.
+
+### POST /api/v1/recommendations/{uid}/apply
+
+Registra como `applied` una recomendación previamente aceptada. Requiere `recommendations:write` y registra `recommendation_applied`. **Este endpoint solo registra el estado informado; no ejecuta cambios en Azure ni en otros recursos.**
+
+Estas transiciones actualizan `cco_data` antes de registrar el evento en `cco_app`. Si falla la auditoría, la respuesta conserva el estado actualizado e incluye `audit_status: "audit_pending"`. Una transición no permitida responde `409 RECOMMENDATION_STATUS_CONFLICT`.
+
+**Errores principales:** `400 RECOMMENDATION_INVALID_REQUEST`, `404 NOT_FOUND`, `409 RECOMMENDATION_CONFLICT` o `RECOMMENDATION_STATUS_CONFLICT`, `422 RECOMMENDATION_CONFIGURATION_UNAVAILABLE`, `422 RECOMMENDATION_INSUFFICIENT_EVIDENCE`, `503 RECOMMENDATION_DEPENDENCY_UNAVAILABLE`.
 
 ### GET /api/v1/recommendations/{uid}/trace
 

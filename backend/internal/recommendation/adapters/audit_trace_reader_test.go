@@ -15,6 +15,28 @@ type auditQueryFake struct {
 	events []audit.AuditEvent
 }
 
+type scopedDecisionTraceFake struct {
+	trace  audit.RecommendationTrace
+	filter audit.AuditFilter
+}
+
+func (f *scopedDecisionTraceFake) RecordDecision(context.Context, audit.DecisionTrace) error {
+	return nil
+}
+
+func (f *scopedDecisionTraceFake) GetRecommendationTrace(context.Context, uuid.UUID) (audit.RecommendationTrace, error) {
+	return f.trace, nil
+}
+
+func (f *scopedDecisionTraceFake) GetRecommendationTraceScoped(
+	_ context.Context,
+	_ uuid.UUID,
+	filter audit.AuditFilter,
+) (audit.RecommendationTrace, error) {
+	f.filter = filter
+	return f.trace, nil
+}
+
 func (f auditQueryFake) GetEvent(context.Context, int64) (audit.AuditEvent, error) {
 	return audit.AuditEvent{}, audit.ErrAuditEventNotFound
 }
@@ -105,6 +127,33 @@ func TestAuditTraceReaderCombinesScopedResourceCorrelationAndOperationEvents(t *
 	}
 	if events[0].EventID != 3 || events[1].EventID != 4 || events[2].EventID != 5 {
 		t.Fatalf("events not sorted chronologically or incorrectly scoped: %+v", events)
+	}
+}
+
+func TestAuditTraceReaderUsesScopedDecisionTraceService(t *testing.T) {
+	organizationID := uuid.New()
+	recommendationUID := uuid.New()
+	service := &scopedDecisionTraceFake{
+		trace: audit.RecommendationTrace{
+			Events: []audit.AuditEvent{{
+				EventID: 8, Action: "recommendation_generated",
+				Resource: audit.ResourceReference{Type: "recommendation", ID: &recommendationUID},
+			}},
+		},
+	}
+	reader := NewAuditTraceReader(auditQueryFake{}, service)
+
+	events, err := reader.ListRecommendationTraceEvents(context.Background(), recommendationUID,
+		recommendation.RecommendationTraceFilter{OrganizationID: &organizationID})
+	if err != nil {
+		t.Fatalf("ListRecommendationTraceEvents() error = %v", err)
+	}
+	if len(events) != 1 || events[0].EventID != 8 {
+		t.Fatalf("unexpected scoped decision trace events: %+v", events)
+	}
+	if service.filter.OrganizationID == nil || *service.filter.OrganizationID != organizationID ||
+		service.filter.Limit != recommendationTraceEventLimit {
+		t.Fatalf("decision trace scope was not forwarded: %#v", service.filter)
 	}
 }
 

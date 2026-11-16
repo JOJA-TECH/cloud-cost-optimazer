@@ -13,22 +13,31 @@ import (
 )
 
 type PersistentAuditSink struct {
-	auditLogger audit.AuditLogger
-	logger      *slog.Logger
+	auditLogger          audit.AuditLogger
+	decisionTraceService audit.DecisionTraceService
+	logger               *slog.Logger
 }
 
-func NewPersistentAuditSink(auditLogger audit.AuditLogger, logger *slog.Logger) *PersistentAuditSink {
+func NewPersistentAuditSink(
+	auditLogger audit.AuditLogger,
+	decisionTraceService audit.DecisionTraceService,
+	logger *slog.Logger,
+) *PersistentAuditSink {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &PersistentAuditSink{auditLogger: auditLogger, logger: logger}
+	return &PersistentAuditSink{
+		auditLogger:          auditLogger,
+		decisionTraceService: decisionTraceService,
+		logger:               logger,
+	}
 }
 
 func (s *PersistentAuditSink) RecordDecision(ctx context.Context, event recommendation.DecisionAuditEvent) error {
 	if s == nil {
 		return logAuditPending(nil, ctx, event, audit.ErrAuditLogger)
 	}
-	if s.auditLogger == nil {
+	if s.decisionTraceService == nil {
 		return s.logAuditPending(ctx, event, audit.ErrAuditLogger)
 	}
 	if event.RecommendationUID == uuid.Nil || event.ResourceUID == uuid.Nil ||
@@ -38,47 +47,61 @@ func (s *PersistentAuditSink) RecordDecision(ctx context.Context, event recommen
 		return s.logAuditPending(ctx, event, err)
 	}
 
-	actor, organizationID, trace, hasIdentity, err := auditContextFromDecision(ctx, event)
+	actor, _, trace, hasIdentity, err := auditContextFromDecision(ctx, event)
 	if err != nil {
 		return s.logAuditPending(ctx, event, err)
 	}
-	metadata := map[string]any{
+	ctx = audit.WithCorrelationContext(ctx, trace)
+	policyVersion := event.PolicyVersion
+	riskScore := event.RiskScore
+	confidenceScore := event.ConfidenceScore
+	estimatedSaving := event.EstimatedSaving
+	inputReferences := map[string]any{
+		"details":      event.Details,
+		"resource_uid": event.ResourceUID.String(),
+		"scenario_uid": event.ScenarioUID.String(),
+		"policy_uid":   event.PolicyUID.String(),
+	}
+	outputReferences := map[string]any{
 		"recommendation_uid": event.RecommendationUID.String(),
-		"scenario_uid":       event.ScenarioUID.String(),
-		"resource_uid":       event.ResourceUID.String(),
-		"policy_uid":         event.PolicyUID.String(),
-		"policy_version":     event.PolicyVersion,
-		"algorithm_version":  event.AlgorithmVersion,
-		"decision":           event.Decision,
-		"risk_score":         event.RiskScore,
-		"risk_level":         event.RiskLevel,
-		"confidence_score":   event.ConfidenceScore,
-		"estimated_saving":   event.EstimatedSaving,
-		"evidence_count":     event.EvidenceCount,
 		"candidate_results":  event.CandidateResults,
 		"duration_ms":        event.Duration.Milliseconds(),
 		"error_count":        len(event.Errors),
 	}
 	if event.SelectedCandidate != nil {
-		metadata["selected_candidate"] = *event.SelectedCandidate
+		outputReferences["selected_candidate"] = *event.SelectedCandidate
 	}
 	if !hasIdentity && strings.TrimSpace(event.Actor) != "" {
-		metadata["actor_reference"] = strings.TrimSpace(event.Actor)
+		inputReferences["actor_reference"] = strings.TrimSpace(event.Actor)
 	}
-
-	auditEvent := audit.AuditEvent{
-		OrganizationID: organizationID,
-		Actor:          actor,
-		Action:         "recommendation_generated",
-		Resource: audit.ResourceReference{
-			Type: "recommendation",
-			ID:   uuidPointer(event.RecommendationUID),
-		},
-		OccurredAt: event.OccurredAt,
-		Trace:      trace,
-		Metadata:   metadata,
+	var riskLevel *string
+	if event.RiskLevel != "" {
+		riskLevel = &event.RiskLevel
 	}
-	if err := s.auditLogger.Record(ctx, auditEvent); err != nil {
+	traceRecord := audit.DecisionTrace{
+		TraceID:            uuid.New(),
+		RecommendationUID:  event.RecommendationUID,
+		ScenarioUID:        uuidPointer(event.ScenarioUID),
+		ResourceUID:        event.ResourceUID,
+		PolicyUID:          uuidPointer(event.PolicyUID),
+		PolicyVersion:      &policyVersion,
+		AlgorithmVersion:   event.AlgorithmVersion,
+		Action:             "recommendation_generated",
+		Status:             event.Status,
+		RiskScore:          &riskScore,
+		RiskLevel:          riskLevel,
+		ConfidenceScore:    &confidenceScore,
+		EstimatedSaving:    &estimatedSaving,
+		EvidenceCount:      event.EvidenceCount,
+		EvidenceReferences: append([]string(nil), event.EvidenceReferences...),
+		Decision:           event.Decision,
+		Rationale:          event.Rationale,
+		InputReferences:    inputReferences,
+		OutputReferences:   outputReferences,
+		Actor:              actor,
+		CreatedAt:          event.OccurredAt,
+	}
+	if err := s.decisionTraceService.RecordDecision(ctx, traceRecord); err != nil {
 		return s.logAuditPending(ctx, event, err)
 	}
 	return nil

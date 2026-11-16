@@ -32,6 +32,14 @@ type DecisionTraceService interface {
 	GetRecommendationTrace(ctx context.Context, recommendationUID uuid.UUID) (RecommendationTrace, error)
 }
 
+type ScopedDecisionTraceService interface {
+	GetRecommendationTraceScoped(
+		ctx context.Context,
+		recommendationUID uuid.UUID,
+		filter AuditFilter,
+	) (RecommendationTrace, error)
+}
+
 // AuditRepository is the domain persistence port; its implementation belongs
 // in the repositories package and depends on this module's entities.
 type AuditRepository interface {

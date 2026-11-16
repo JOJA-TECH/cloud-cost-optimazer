@@ -21,6 +21,16 @@ func (f auditLoggerFunc) Record(ctx context.Context, event audit.AuditEvent) err
 	return f(ctx, event)
 }
 
+type decisionTraceServiceFunc func(context.Context, audit.DecisionTrace) error
+
+func (f decisionTraceServiceFunc) RecordDecision(ctx context.Context, trace audit.DecisionTrace) error {
+	return f(ctx, trace)
+}
+
+func (f decisionTraceServiceFunc) GetRecommendationTrace(context.Context, uuid.UUID) (audit.RecommendationTrace, error) {
+	return audit.RecommendationTrace{}, nil
+}
+
 func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 	userID := uuid.New()
 	organizationID := uuid.New()
@@ -42,9 +52,17 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 		RequestID: requestID.String(), CorrelationID: correlationID.String(),
 	})
 
-	var recorded audit.AuditEvent
-	sink := NewPersistentAuditSink(auditLoggerFunc(func(_ context.Context, event audit.AuditEvent) error {
-		recorded = event
+	var recorded audit.DecisionTrace
+	sink := NewPersistentAuditSink(auditLoggerFunc(func(context.Context, audit.AuditEvent) error {
+		t.Fatal("decision was written through the event logger instead of DecisionTraceService")
+		return nil
+	}), decisionTraceServiceFunc(func(ctx context.Context, trace audit.DecisionTrace) error {
+		recorded = trace
+		gotContext, ok := audit.CorrelationContextFromContext(ctx)
+		if !ok || gotContext.RequestID != requestID || gotContext.CorrelationID != correlationID ||
+			gotContext.OperationID == nil || *gotContext.OperationID != operationID {
+			t.Fatalf("trace context was not forwarded: %#v", gotContext)
+		}
 		return nil
 	}), nil)
 	event := recommendation.DecisionAuditEvent{
@@ -59,6 +77,11 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 		PolicyVersion:     3,
 		AlgorithmVersion:  "rule_v1",
 		ScenarioUID:       scenarioID,
+		Status:            "proposed",
+		Rationale:         "Evidence supports a smaller SKU.",
+		EvidenceReferences: []string{
+			"cpu_p95", "estimated_savings",
+		},
 		SelectedCandidate: &selectedCandidate,
 		RiskScore:         0.21,
 		RiskLevel:         "low",
@@ -73,39 +96,32 @@ func TestPersistentAuditSinkMapsDecisionAndContext(t *testing.T) {
 	if err := sink.RecordDecision(ctx, event); err != nil {
 		t.Fatalf("record decision: %v", err)
 	}
-	if recorded.Action != "recommendation_generated" ||
-		recorded.Resource.Type != "recommendation" ||
-		recorded.Resource.ID == nil || *recorded.Resource.ID != recommendationID {
-		t.Fatalf("audit event does not identify the recommendation: %#v", recorded)
+	if recorded.Action != "recommendation_generated" || recorded.Status != "proposed" ||
+		recorded.RecommendationUID != recommendationID || recorded.ResourceUID != resourceID ||
+		recorded.ScenarioUID == nil || *recorded.ScenarioUID != scenarioID ||
+		recorded.PolicyUID == nil || *recorded.PolicyUID != policyID {
+		t.Fatalf("decision trace does not identify the recommendation: %#v", recorded)
 	}
-	if recorded.OrganizationID == nil || *recorded.OrganizationID != organizationID ||
-		recorded.Actor.UserID == nil || *recorded.Actor.UserID != userID ||
+	if recorded.Actor.UserID == nil || *recorded.Actor.UserID != userID ||
 		recorded.Actor.ActorType != audit.ActorTypeUser {
-		t.Fatalf("identity was not mapped from IAM: %#v", recorded)
+		t.Fatalf("actor was not mapped from IAM: %#v", recorded.Actor)
 	}
-	if recorded.Trace.RequestID != requestID || recorded.Trace.CorrelationID != correlationID ||
-		recorded.Trace.OperationID == nil || *recorded.Trace.OperationID != operationID {
-		t.Fatalf("trace context was not mapped from request context: %#v", recorded.Trace)
+	if recorded.PolicyVersion == nil || *recorded.PolicyVersion != 3 ||
+		recorded.AlgorithmVersion != "rule_v1" ||
+		recorded.RiskScore == nil || *recorded.RiskScore != 0.21 ||
+		recorded.RiskLevel == nil || *recorded.RiskLevel != "low" ||
+		recorded.ConfidenceScore == nil || *recorded.ConfidenceScore != 0.87 ||
+		recorded.EstimatedSaving == nil || *recorded.EstimatedSaving != 250.5 ||
+		recorded.EvidenceCount != 4 || recorded.Decision != "resize_down" ||
+		recorded.Rationale != event.Rationale ||
+		len(recorded.EvidenceReferences) != 2 {
+		t.Fatalf("decision measurements and rationale were not mapped: %#v", recorded)
 	}
-	for key, want := range map[string]any{
-		"recommendation_uid": recommendationID.String(),
-		"scenario_uid":       scenarioID.String(),
-		"resource_uid":       resourceID.String(),
-		"policy_uid":         policyID.String(),
-		"risk_score":         0.21,
-		"risk_level":         "low",
-		"confidence_score":   0.87,
-		"estimated_saving":   250.5,
-		"evidence_count":     4,
-		"selected_candidate": "sku-small",
-		"duration_ms":        int64(1250),
-	} {
-		if recorded.Metadata[key] != want {
-			t.Errorf("metadata[%q] = %#v, want %#v", key, recorded.Metadata[key], want)
-		}
+	if recorded.OutputReferences["selected_candidate"] != "sku-small" {
+		t.Fatalf("selected candidate missing from output references: %#v", recorded.OutputReferences)
 	}
-	if !recorded.OccurredAt.Equal(occurredAt) {
-		t.Fatalf("occurred_at = %v, want %v", recorded.OccurredAt, occurredAt)
+	if !recorded.CreatedAt.Equal(occurredAt) {
+		t.Fatalf("created_at = %v, want %v", recorded.CreatedAt, occurredAt)
 	}
 }
 
@@ -119,7 +135,7 @@ func TestPersistentAuditSinkRecordsGenericLifecycleEvent(t *testing.T) {
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(_ context.Context, event audit.AuditEvent) error {
 		recorded = event
 		return nil
-	}), nil)
+	}), nil, nil)
 
 	err := sink.RecordEvent(ctx, recommendation.RecommendationAuditEvent{
 		Action: "recommendation_evaluation_started", ResourceUID: resourceUID,
@@ -148,6 +164,9 @@ func TestPersistentAuditSinkRejectsInvalidTraceIDsWithoutContext(t *testing.T) {
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(context.Context, audit.AuditEvent) error {
 		called = true
 		return nil
+	}), decisionTraceServiceFunc(func(context.Context, audit.DecisionTrace) error {
+		t.Fatal("invalid event reached decision trace service")
+		return nil
 	}), nil)
 	err := sink.RecordDecision(context.Background(), recommendation.DecisionAuditEvent{
 		RecommendationUID: uuid.New(),
@@ -169,6 +188,8 @@ func TestPersistentAuditSinkPropagatesLoggerFailure(t *testing.T) {
 	var logBuffer bytes.Buffer
 	structuredLogger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
 	sink := NewPersistentAuditSink(auditLoggerFunc(func(context.Context, audit.AuditEvent) error {
+		return wantErr
+	}), decisionTraceServiceFunc(func(context.Context, audit.DecisionTrace) error {
 		return wantErr
 	}), structuredLogger)
 	correlationID := uuid.New()

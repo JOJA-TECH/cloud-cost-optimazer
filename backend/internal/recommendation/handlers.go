@@ -34,10 +34,47 @@ func RegisterRoutes(
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(http.HandlerFunc(handleEvidence(svc)))))
 	mux.Handle("POST /api/v1/recommendations/{uid}/evaluate",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "evaluate")(http.HandlerFunc(handleEvaluateExisting(svc)))))
+	for _, action := range []struct {
+		path   string
+		status RecommendationStatus
+	}{
+		{path: "accept", status: RecommendationStatusAccepted},
+		{path: "reject", status: RecommendationStatusRejected},
+		{path: "dismiss", status: RecommendationStatusDismissed},
+		{path: "apply", status: RecommendationStatusApplied},
+	} {
+		mux.Handle("POST /api/v1/recommendations/{uid}/"+action.path,
+			authMW.Handler(middleware.RequirePermission(perm, "recommendations", "write")(
+				http.HandlerFunc(handleStatusAction(svc, action.status)))))
+	}
 	if len(traceReaders) > 0 {
 		mux.Handle("GET /api/v1/recommendations/{uid}/trace",
 			authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(
 				http.HandlerFunc(handleTrace(svc, traceReaders[0])))))
+	}
+}
+
+func handleStatusAction(svc *Service, status RecommendationStatus) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardService(svc, w) {
+			return
+		}
+		uid, err := uuid.Parse(r.PathValue("uid"))
+		if err != nil || uid == uuid.Nil {
+			writeError(w, http.StatusBadRequest, "INVALID_RECOMMENDATION_UID", "invalid recommendation uid")
+			return
+		}
+		identity, ok := iam.IdentityContextFromContext(r.Context())
+		if !ok || identity.UserID == uuid.Nil {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authenticated user identity is unavailable")
+			return
+		}
+		updated, err := svc.UpdateRecommendationStatus(r.Context(), uid, status, identity.UserID.String())
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, recommendationResponse(updated))
 	}
 }
 
@@ -456,6 +493,8 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		status, code = http.StatusUnprocessableEntity, "RECOMMENDATION_POLICY_REJECTED"
 	case errors.Is(err, ErrDependenciesUnavailable), errors.Is(err, ErrMLUnavailable):
 		status, code = http.StatusServiceUnavailable, "RECOMMENDATION_DEPENDENCY_UNAVAILABLE"
+	case errors.Is(err, ErrInvalidStatusTransition):
+		status, code = http.StatusConflict, "RECOMMENDATION_STATUS_CONFLICT"
 	}
 	writeError(w, status, code, err.Error())
 }

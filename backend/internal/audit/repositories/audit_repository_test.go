@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,174 @@ func TestGormAuditRepositoryFiltersAndPaginates(t *testing.T) {
 	}
 	if len(events) != 0 {
 		t.Fatalf("filter value was not treated as data: %#v", events)
+	}
+}
+
+func TestGormAuditRepositoryPreservesSystemAndUnassociatedActors(t *testing.T) {
+	repository := NewAuditRepository(openSQLiteAuditRepository(t))
+	organizationID := uuid.New()
+	tests := []struct {
+		name           string
+		actorType      string
+		organizationID *uuid.UUID
+	}{
+		{name: "system without user or organization", actorType: audit.ActorTypeSystem},
+		{name: "anonymous without user or organization", actorType: audit.ActorTypeAnonymous},
+		{
+			name:           "service principal without user",
+			actorType:      audit.ActorTypeServicePrincipal,
+			organizationID: &organizationID,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inserted, err := repository.InsertEvent(t.Context(), audit.AuditEvent{
+				OrganizationID: test.organizationID,
+				Actor:          audit.Actor{ActorType: test.actorType},
+				Action:         "audit.test_event",
+				Metadata:       map[string]any{"test_case": test.name},
+			})
+			if err != nil {
+				t.Fatalf("insert event: %v", err)
+			}
+
+			got, err := repository.GetEvent(t.Context(), inserted.EventID)
+			if err != nil {
+				t.Fatalf("get inserted event: %v", err)
+			}
+			if got.Actor.ActorType != test.actorType || got.Actor.UserID != nil {
+				t.Fatalf("actor did not round-trip: %#v", got.Actor)
+			}
+			if (got.OrganizationID == nil) != (test.organizationID == nil) {
+				t.Fatalf("organization presence changed: got %#v, want %#v", got.OrganizationID, test.organizationID)
+			}
+			if test.organizationID != nil && *got.OrganizationID != *test.organizationID {
+				t.Fatalf("organization ID = %s, want %s", *got.OrganizationID, *test.organizationID)
+			}
+		})
+	}
+
+	organizationEvents, err := repository.ListEvents(t.Context(), audit.AuditFilter{
+		OrganizationID: &organizationID,
+		Action:         "audit.test_event",
+	})
+	if err != nil {
+		t.Fatalf("list events by organization: %v", err)
+	}
+	if len(organizationEvents) != 1 || organizationEvents[0].Actor.ActorType != audit.ActorTypeServicePrincipal {
+		t.Fatalf("organization filter returned unexpected events: %#v", organizationEvents)
+	}
+}
+
+func TestGormAuditRepositoryPostgres(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("CCO_TEST_POSTGRES_DSN"))
+	if dsn == "" {
+		t.Skip("set CCO_TEST_POSTGRES_DSN to a dedicated PostgreSQL database with audit.events migrated")
+	}
+
+	db, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dsn})
+	if err != nil {
+		t.Fatalf("open PostgreSQL test database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get PostgreSQL connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+	var tableExists bool
+	if err := db.Raw("SELECT to_regclass('audit.events') IS NOT NULL").Scan(&tableExists).Error; err != nil {
+		t.Fatalf("check PostgreSQL audit.events table: %v", err)
+	}
+	if !tableExists {
+		t.Fatal("PostgreSQL test database is missing audit.events; migrate the dedicated test database before running this test")
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin PostgreSQL test transaction: %v", tx.Error)
+	}
+	defer tx.Rollback()
+	repository := NewAuditRepository(tx)
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	correlationID := uuid.New()
+	resourceID := uuid.New()
+	externalID := "postgres-audit-test-" + uuid.NewString()
+	baseTime := time.Date(2026, 11, 15, 20, 0, 0, 0, time.UTC)
+	events := []audit.AuditEvent{
+		{
+			OrganizationID: &organizationID,
+			Actor: audit.Actor{
+				UserID:    &userID,
+				ActorType: audit.ActorTypeUser,
+			},
+			Action: "audit.postgres_test",
+			Resource: audit.ResourceReference{
+				Type:       "resource",
+				ID:         &resourceID,
+				ExternalID: &externalID,
+			},
+			OccurredAt: baseTime,
+			Trace: audit.CorrelationContext{
+				RequestID:     uuid.New(),
+				CorrelationID: correlationID,
+			},
+			Metadata: map[string]any{"test_run": externalID},
+		},
+		{
+			Actor: audit.Actor{
+				ActorType: audit.ActorTypeSystem,
+			},
+			Action:     "audit.postgres_system_test",
+			OccurredAt: baseTime.Add(time.Second),
+			Trace: audit.CorrelationContext{
+				RequestID:     uuid.New(),
+				CorrelationID: correlationID,
+			},
+			Metadata: map[string]any{"test_run": externalID},
+		},
+	}
+
+	inserted := make([]audit.AuditEvent, 0, len(events))
+	for _, event := range events {
+		persisted, err := repository.InsertEvent(t.Context(), event)
+		if err != nil {
+			t.Fatalf("insert PostgreSQL audit event: %v", err)
+		}
+		inserted = append(inserted, persisted)
+	}
+
+	got, err := repository.GetEvent(t.Context(), inserted[1].EventID)
+	if err != nil {
+		t.Fatalf("get PostgreSQL system event: %v", err)
+	}
+	if got.Actor.ActorType != audit.ActorTypeSystem || got.Actor.UserID != nil || got.OrganizationID != nil {
+		t.Fatalf("system event did not preserve nullable identity fields: %#v", got)
+	}
+
+	byCorrelation, err := repository.ListByCorrelationID(t.Context(), correlationID)
+	if err != nil {
+		t.Fatalf("list PostgreSQL events by correlation: %v", err)
+	}
+	if len(byCorrelation) != 2 ||
+		byCorrelation[0].EventID != inserted[1].EventID ||
+		byCorrelation[1].EventID != inserted[0].EventID {
+		t.Fatalf("unexpected correlation history order: %#v", byCorrelation)
+	}
+
+	byExternalResource, err := repository.ListByResource(t.Context(), audit.ResourceReference{
+		Type:       "resource",
+		ExternalID: &externalID,
+	}, audit.AuditFilter{OrganizationID: &organizationID})
+	if err != nil {
+		t.Fatalf("list PostgreSQL events by external resource ID: %v", err)
+	}
+	if len(byExternalResource) != 1 || byExternalResource[0].EventID != inserted[0].EventID {
+		t.Fatalf("unexpected external resource history: %#v", byExternalResource)
 	}
 }
 

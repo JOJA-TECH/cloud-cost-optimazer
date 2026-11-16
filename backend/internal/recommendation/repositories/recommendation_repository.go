@@ -417,6 +417,88 @@ func (r *RecommendationRepository) GetRecommendation(ctx context.Context, recomm
 	return decodeRecommendation(row)
 }
 
+func (r *RecommendationRepository) UpdateRecommendationStatus(
+	ctx context.Context,
+	recommendationUID uuid.UUID,
+	expectedStatus recommendation.RecommendationStatus,
+	status recommendation.RecommendationStatus,
+	actorID string,
+	changedAt time.Time,
+) (recommendation.Recommendation, error) {
+	if recommendationUID == uuid.Nil || expectedStatus == "" || status == "" || actorID == "" {
+		return recommendation.Recommendation{}, recommendation.ErrInvalidRequest
+	}
+	allowed := false
+	switch expectedStatus {
+	case recommendation.RecommendationStatusProposed, recommendation.RecommendationStatusUnderReview:
+		allowed = status == recommendation.RecommendationStatusAccepted ||
+			status == recommendation.RecommendationStatusRejected ||
+			status == recommendation.RecommendationStatusDismissed
+	case recommendation.RecommendationStatusAccepted:
+		allowed = status == recommendation.RecommendationStatusApplied
+	}
+	if !allowed {
+		return recommendation.Recommendation{}, recommendation.ErrInvalidStatusTransition
+	}
+	if changedAt.IsZero() {
+		changedAt = time.Now().UTC()
+	} else {
+		changedAt = changedAt.UTC()
+	}
+
+	table := database.TableName(r.db, "opt", "recommendation")
+	query := r.db.WithContext(ctx).Table(table)
+	var row recommendationRow
+	if err := query.Where("recommendation_uid = ?", recommendationUID).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return recommendation.Recommendation{}, recommendation.ErrRecommendationNotFound
+		}
+		return recommendation.Recommendation{}, fmt.Errorf("get recommendation for status update: %w", err)
+	}
+	value, err := decodeRecommendation(row)
+	if err != nil {
+		return recommendation.Recommendation{}, err
+	}
+	if value.Status != expectedStatus {
+		return recommendation.Recommendation{}, recommendation.ErrInvalidStatusTransition
+	}
+
+	value.Status = status
+	updates := map[string]any{
+		"status": string(status),
+	}
+	switch status {
+	case recommendation.RecommendationStatusAccepted,
+		recommendation.RecommendationStatusRejected,
+		recommendation.RecommendationStatusDismissed:
+		value.DecidedAt = &changedAt
+		value.DecidedBy = &actorID
+		updates["decided_at"] = changedAt
+		updates["decided_by"] = actorID
+	case recommendation.RecommendationStatusApplied:
+		value.AppliedAt = &changedAt
+		updates["applied_at"] = changedAt
+	default:
+		return recommendation.Recommendation{}, recommendation.ErrInvalidStatusTransition
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return recommendation.Recommendation{}, fmt.Errorf("encode updated recommendation: %w", err)
+	}
+	updates["domain_payload"] = datatypes.JSON(payload)
+
+	result := r.db.WithContext(ctx).Table(table).
+		Where("recommendation_uid = ? AND status = ?", recommendationUID, string(expectedStatus)).
+		Updates(updates)
+	if result.Error != nil {
+		return recommendation.Recommendation{}, fmt.Errorf("update recommendation status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return recommendation.Recommendation{}, recommendation.ErrInvalidStatusTransition
+	}
+	return value, nil
+}
+
 func (r *RecommendationRepository) ListRecommendations(ctx context.Context, filter recommendation.RecommendationFilter) ([]recommendation.Recommendation, error) {
 	query := r.db.WithContext(ctx).
 		Table(database.TableName(r.db, "opt", "recommendation") + " AS rec").

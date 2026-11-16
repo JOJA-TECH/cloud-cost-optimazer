@@ -306,7 +306,9 @@ func main() {
 			ResourceContext:  resourceContextReader,
 			Prices:           priceReader,
 			SKUs:             skuReader,
-			Audit:            recommendationadapters.NewPersistentAuditSink(auditService, slog.Default()),
+			Audit: recommendationadapters.NewPersistentAuditSink(
+				auditService, auditService, slog.Default(),
+			),
 		})
 		if err != nil {
 			log.Fatalf("initialize recommendation engine: %v", err)
@@ -464,7 +466,7 @@ func main() {
 		recommendationSvc,
 		authMiddleware,
 		permEngine,
-		recommendationadapters.NewAuditTraceReader(auditService),
+		recommendationadapters.NewAuditTraceReader(auditService, auditService),
 	)
 	audit.RegisterRoutes(mux, auditService, authMiddleware, permEngine)
 

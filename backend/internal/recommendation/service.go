@@ -503,7 +503,9 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 		auditEvent := DecisionAuditEvent{
 			RecommendationUID: persisted.UID, ResourceUID: input.ResourceUID,
 			Decision: string(action.Type), Actor: input.CreatedBy, OccurredAt: time.Now().UTC(),
-			RequestID: input.RequestID, CorrelationID: input.CorrelationID, OperationID: input.OperationID,
+			Status: string(persisted.Status), Rationale: decision.Rationale.Summary,
+			EvidenceReferences: auditEvidenceReferences(decision.Evidence),
+			RequestID:          input.RequestID, CorrelationID: input.CorrelationID, OperationID: input.OperationID,
 			PolicyUID: policy.UID, PolicyVersion: policy.Version,
 			AlgorithmVersion: defaultAlgorithm, ScenarioUID: scenario.UID,
 			SelectedCandidate: selectedCandidate, CandidateResults: candidateAuditResults(candidateResults),
@@ -677,14 +679,89 @@ func (s *Service) GetRecommendation(ctx context.Context, recommendationUID uuid.
 	return value, nil
 }
 
-func (s *Service) recordAuditEvent(ctx context.Context, event RecommendationAuditEvent) {
+func (s *Service) UpdateRecommendationStatus(
+	ctx context.Context,
+	recommendationUID uuid.UUID,
+	status RecommendationStatus,
+	actorID string,
+) (Recommendation, error) {
+	if s == nil || s.repository == nil {
+		return Recommendation{}, ErrRepository
+	}
+	if recommendationUID == uuid.Nil || strings.TrimSpace(actorID) == "" {
+		return Recommendation{}, ErrInvalidRequest
+	}
+	if status != RecommendationStatusAccepted &&
+		status != RecommendationStatusRejected &&
+		status != RecommendationStatusDismissed &&
+		status != RecommendationStatusApplied {
+		return Recommendation{}, ErrInvalidRequest
+	}
+
+	current, err := s.repository.GetRecommendation(ctx, recommendationUID)
+	if err != nil {
+		return Recommendation{}, err
+	}
+	if !canTransitionRecommendationStatus(current.Status, status) {
+		return Recommendation{}, ErrInvalidStatusTransition
+	}
+	updated, err := s.repository.UpdateRecommendationStatus(
+		ctx, recommendationUID, current.Status, status, actorID, time.Now().UTC(),
+	)
+	if err != nil {
+		return Recommendation{}, err
+	}
+
+	action := map[RecommendationStatus]string{
+		RecommendationStatusAccepted:  "recommendation_accepted",
+		RecommendationStatusRejected:  "recommendation_rejected",
+		RecommendationStatusDismissed: "recommendation_dismissed",
+		RecommendationStatusApplied:   "recommendation_applied",
+	}[status]
+	if err := s.recordAuditEvent(ctx, RecommendationAuditEvent{
+		Action:            action,
+		RecommendationUID: updated.UID,
+		ResourceUID:       updated.ResourceUID,
+		ScenarioUID:       updated.ScenarioUID,
+		PolicyUID:         updated.PolicyUID,
+		OccurredAt:        time.Now().UTC(),
+		Metadata: map[string]any{
+			"previous_status": string(current.Status),
+			"status":          string(status),
+		},
+	}); err != nil {
+		updated.AuditStatus = AuditStatusPending
+	}
+	return updated, nil
+}
+
+func canTransitionRecommendationStatus(from, to RecommendationStatus) bool {
+	switch from {
+	case RecommendationStatusProposed, RecommendationStatusUnderReview:
+		return to == RecommendationStatusAccepted ||
+			to == RecommendationStatusRejected ||
+			to == RecommendationStatusDismissed
+	case RecommendationStatusAccepted:
+		return to == RecommendationStatusApplied
+	default:
+		return false
+	}
+}
+
+func (s *Service) recordAuditEvent(ctx context.Context, event RecommendationAuditEvent) error {
 	if s == nil || event.Action == "" ||
 		(event.RecommendationUID == uuid.Nil && event.ResourceUID == uuid.Nil && event.ResourceType == "") {
-		return
+		return nil
 	}
 	sink, ok := s.audit.(RecommendationAuditEventSink)
 	if !ok {
-		return
+		slog.ErrorContext(ctx, "recommendation audit event pending",
+			"action", event.Action,
+			"recommendation_uid", event.RecommendationUID,
+			"resource_uid", event.ResourceUID,
+			"error", "recommendation audit sink is unavailable",
+		)
+		return ErrAuditUnavailable
 	}
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = time.Now().UTC()
@@ -699,7 +776,9 @@ func (s *Service) recordAuditEvent(ctx context.Context, event RecommendationAudi
 			"error", "recommendation audit event failed",
 			"error_type", fmt.Sprintf("%T", err),
 		)
+		return err
 	}
+	return nil
 }
 
 func (s *Service) ListRecommendations(ctx context.Context, filter RecommendationFilter) ([]Recommendation, error) {
@@ -752,21 +831,24 @@ func (s *Service) PublishRecommendation(ctx context.Context, input PublishRecomm
 			selectedCandidatePointer = &selectedCandidate
 		}
 		auditEvent := DecisionAuditEvent{
-			RecommendationUID: persisted.UID,
-			ResourceUID:       persisted.ResourceUID,
-			Decision:          string(persisted.Action.Type),
-			Actor:             persisted.GeneratedBy,
-			OccurredAt:        persisted.CreatedAt,
-			PolicyUID:         persisted.PolicyUID,
-			PolicyVersion:     persisted.PolicyVersion,
-			AlgorithmVersion:  persisted.GeneratedBy,
-			ScenarioUID:       persisted.ScenarioUID,
-			SelectedCandidate: selectedCandidatePointer,
-			RiskScore:         persisted.Risk.Score,
-			RiskLevel:         string(persisted.Risk.Level),
-			ConfidenceScore:   persisted.Confidence.Score,
-			EstimatedSaving:   persisted.EstimatedSaving.MonthlyAmount,
-			EvidenceCount:     len(persisted.Evidence),
+			RecommendationUID:  persisted.UID,
+			ResourceUID:        persisted.ResourceUID,
+			Decision:           string(persisted.Action.Type),
+			Actor:              persisted.GeneratedBy,
+			OccurredAt:         persisted.CreatedAt,
+			Status:             string(persisted.Status),
+			Rationale:          persisted.Rationale.Summary,
+			EvidenceReferences: auditEvidenceReferences(persisted.Evidence),
+			PolicyUID:          persisted.PolicyUID,
+			PolicyVersion:      persisted.PolicyVersion,
+			AlgorithmVersion:   persisted.GeneratedBy,
+			ScenarioUID:        persisted.ScenarioUID,
+			SelectedCandidate:  selectedCandidatePointer,
+			RiskScore:          persisted.Risk.Score,
+			RiskLevel:          string(persisted.Risk.Level),
+			ConfidenceScore:    persisted.Confidence.Score,
+			EstimatedSaving:    persisted.EstimatedSaving.MonthlyAmount,
+			EvidenceCount:      len(persisted.Evidence),
 			CandidateResults: []map[string]any{{
 				"sku_name": selectedCandidate,
 				"selected": true,
@@ -996,6 +1078,14 @@ func candidateAuditResults(results []CandidateEvaluation) []map[string]any {
 		})
 	}
 	return out
+}
+
+func auditEvidenceReferences(evidence []RecommendationEvidence) []string {
+	references := make([]string, 0, len(evidence))
+	for _, item := range evidence {
+		references = append(references, item.Type)
+	}
+	return references
 }
 
 func maxRisk(policy map[string]any) float64 {

@@ -605,26 +605,29 @@ type PriceRecord struct {
 }
 
 type DecisionAuditEvent struct {
-	RecommendationUID uuid.UUID
-	ResourceUID       uuid.UUID
-	Decision          string
-	Actor             string
-	OccurredAt        time.Time
-	Details           map[string]any
-	RequestID         string
-	CorrelationID     string
-	OperationID       string
-	PolicyUID         uuid.UUID
-	PolicyVersion     int
-	AlgorithmVersion  string
-	ScenarioUID       uuid.UUID
-	SelectedCandidate *string
-	RiskScore         float64
-	RiskLevel         string
-	ConfidenceScore   float64
-	EstimatedSaving   float64
-	EvidenceCount     int
-	CandidateResults  []map[string]any
-	Duration          time.Duration
-	Errors            []string
+	RecommendationUID  uuid.UUID
+	ResourceUID        uuid.UUID
+	Decision           string
+	Status             string
+	Actor              string
+	Rationale          string
+	EvidenceReferences []string
+	OccurredAt         time.Time
+	Details            map[string]any
+	RequestID          string
+	CorrelationID      string
+	OperationID        string
+	PolicyUID          uuid.UUID
+	PolicyVersion      int
+	AlgorithmVersion   string
+	ScenarioUID        uuid.UUID
+	SelectedCandidate  *string
+	RiskScore          float64
+	RiskLevel          string
+	ConfidenceScore    float64
+	EstimatedSaving    float64
+	EvidenceCount      int
+	CandidateResults   []map[string]any
+	Duration           time.Duration
+	Errors             []string
 }
