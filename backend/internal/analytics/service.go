@@ -238,22 +238,30 @@ func (s *Service) computeOneHourSnapshot(ctx context.Context, resourceID int64, 
 		case "cpu_percent":
 			snap.CPUAvg = avg
 			snap.CPUMax = max
+			markMetricAvailable(&snap, "cpu_avg", "cpu_max")
 		case "data_io_percent":
 			snap.DataIOAvg = avg
+			markMetricAvailable(&snap, "data_io_avg")
 		case "log_write_percent":
 			snap.LogWriteAvg = avg
+			markMetricAvailable(&snap, "log_write_avg")
 		case "memory_usage_percent":
 			// no field for memory avg in snapshot row; shortcut
 		case "storage_percent":
 			snap.StorageUsedPct = avg
+			markMetricAvailable(&snap, "storage_used_pct")
 		case "storage_used_bytes":
 			snap.StorageUsedBytes = int64(avg)
+			markMetricAvailable(&snap, "storage_used_bytes")
 		case "sessions_percent":
 			snap.SessionsAvg = avg
+			markMetricAvailable(&snap, "sessions_avg")
 		case "workers_percent":
 			snap.WorkersAvg = avg
+			markMetricAvailable(&snap, "workers_avg")
 		case "deadlock":
 			snap.DeadlockCount = int(sum) // total deadlocks in hour
+			markMetricAvailable(&snap, "deadlock_count")
 		}
 	}
 
@@ -302,12 +310,21 @@ func (s *Service) computeOneHourSnapshot(ctx context.Context, resourceID int64, 
 	if bucketStart.Hour() > 0 {
 		prevBucket := bucketStart.Add(-time.Hour)
 		prevSnaps, _ := s.repo.FeatureSnapshot(ctx, resourceUID, "1h", prevBucket, bucketStart, 1)
-		if len(prevSnaps) > 0 {
+		if snap.HasMetric("storage_used_bytes") && len(prevSnaps) > 0 && prevSnaps[0].HasMetric("storage_used_bytes") {
 			snap.StorageGrowthBytes = float64(snap.StorageUsedBytes - prevSnaps[0].StorageUsedBytes)
+			markMetricAvailable(&snap, "storage_growth_bytes")
 		}
 	}
 
 	return snap, nil
+}
+
+func markMetricAvailable(row *FeatureSnapshotRow, codes ...string) {
+	for _, code := range codes {
+		if !row.HasMetric(code) {
+			row.AvailableMetrics = append(row.AvailableMetrics, code)
+		}
+	}
 }
 
 // ---- ComputeTrends ----
@@ -381,6 +398,9 @@ func (s *Service) ComputeDESComponents(ctx context.Context, resourceUID uuid.UUI
 		if err != nil {
 			slog.Warn("DES cost analysis failed, skipping DES", "resource_uid", resourceUID, "error", err)
 			return DESComponents{}, err
+		}
+		if !cost.Available {
+			return DESComponents{}, NewError(CodeNotFound, "cost data unavailable for DES", ErrNotFound)
 		}
 		if cap.PeakUtilization == 0 {
 			slog.Warn("DES capacity has no utilization data, skipping DES", "resource_uid", resourceUID)

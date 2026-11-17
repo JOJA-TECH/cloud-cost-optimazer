@@ -540,6 +540,7 @@ var rolePermissions = map[string][]string{
 		"recommendations:write",
 		"recommendations:evaluate",
 		"reports:read",
+		"reports:write",
 		"organizations:read",
 		"projects:read",
 		"members:read",
@@ -553,12 +554,14 @@ var rolePermissions = map[string][]string{
 		"recommendations:write",
 		"recommendations:evaluate",
 		"reports:read",
+		"reports:write",
 		"projects:read",
 	},
 	"viewer": {
 		"resources:read",
 		"data:read",
 		"recommendations:read",
+		"reports:read",
 		"dashboards:read",
 	},
 	"collector": {
@@ -578,9 +581,9 @@ var rolePermissions = map[string][]string{
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
 	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "data:read", "analytics:*", "recommendations:*", "reports:*", "audit:read", "audit:read:organization"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "recommendations:write", "recommendations:evaluate", "reports:read", "audit:read", "audit:read:organization"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "recommendations:write", "recommendations:evaluate", "reports:read", "reports:write", "audit:read", "audit:read:organization"},
 	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "reports:read"},
-	"viewer": {"resources:read", "acquisitions:read", "data:read", "recommendations:read", "dashboards:read"},
+	"viewer": {"resources:read", "acquisitions:read", "data:read", "recommendations:read", "reports:read", "dashboards:read"},
 }
 
 // PermissionEngine evaluates permissions for an IdentityContext.

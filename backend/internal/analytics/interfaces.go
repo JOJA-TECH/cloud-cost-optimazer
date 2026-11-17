@@ -110,26 +110,28 @@ type PercentileResult struct {
 
 // TrendResult represents a computed slope/R² over a window.
 type TrendResult struct {
-	ResourceUID uuid.UUID
-	MetricCode  string
-	WindowStart time.Time
-	WindowEnd   time.Time
-	Slope       float64 // per hour
-	RSquared    float64
-	ComputedAt  time.Time
+	ResourceUID       uuid.UUID
+	MetricCode        string
+	WindowStart       time.Time
+	WindowEnd         time.Time
+	Slope             float64 // per hour
+	RSquared          float64
+	RSquaredAvailable bool // false when R² is not backed by a computed result
+	ComputedAt        time.Time
 }
 
 // WorkloadPattern captures peak hours, frequency/duration of peaks, intensity.
 type WorkloadPattern struct {
-	ResourceUID     uuid.UUID
-	WindowStart     time.Time
-	WindowEnd       time.Time
-	PeakHours       []int   // 0-23
-	PeakFrequency   float64 // peaks per day
-	AvgPeakDuration float64 // hours
-	IntensityBand   string  // 'low' | 'medium' | 'high'
-	WorkloadRunID   *int64  // if window falls in a controlled run
-	ComputedAt      time.Time
+	ResourceUID      uuid.UUID
+	WindowStart      time.Time
+	WindowEnd        time.Time
+	PeakHours        []int    // 0-23
+	PeakFrequency    float64  // peaks per day
+	AvgPeakDuration  float64  // hours
+	IntensityBand    string   // 'low' | 'medium' | 'high'
+	WorkloadRunID    *int64   // if window falls in a controlled run
+	AvailableMetrics []string // distinguishes a measured zero from an unavailable metric
+	ComputedAt       time.Time
 }
 
 // CapacityAnalysis is the capacity evidence for Module 7.
@@ -151,11 +153,13 @@ type CostAnalysis struct {
 	ResourceUID       uuid.UUID
 	PeriodStartUTC    time.Time
 	PeriodEndUTC      time.Time
+	Currency          string
 	ActualMonthlyCost float64
 	CostPerVCore      float64
 	ProjectedMonthly  float64
 	SavingsVsCurrent  float64
 	CostE             float64 // 0-1 component for DES
+	Available         bool    // false when cost fields contain placeholders
 	ComputedAt        time.Time
 }
 
@@ -205,7 +209,26 @@ type FeatureSnapshotRow struct {
 	WorkloadRunID      *int64
 	DeadlockCount      int
 	LatencyP95Ms       *float64
+	AvailableMetrics   []string // distinguishes measured zeros from missing values
 	ComputedAt         time.Time
+}
+
+func (r FeatureSnapshotRow) HasMetric(code string) bool {
+	for _, available := range r.AvailableMetrics {
+		if available == code {
+			return true
+		}
+	}
+	return false
+}
+
+func (p WorkloadPattern) HasMetric(code string) bool {
+	for _, available := range p.AvailableMetrics {
+		if available == code {
+			return true
+		}
+	}
+	return false
 }
 
 // TrainingDatasetSpec defines a versioned dataset for ML (ml.training_dataset).

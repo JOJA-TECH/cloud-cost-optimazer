@@ -119,6 +119,27 @@ func TestPermissionEngineCan(t *testing.T) {
 			want:        true,
 		},
 		{
+			name:        "analyst can generate reports",
+			systemRoles: []string{"analyst"},
+			resource:    "reports",
+			action:      "write",
+			want:        true,
+		},
+		{
+			name:        "system viewer can read reports",
+			systemRoles: []string{"viewer"},
+			resource:    "reports",
+			action:      "read",
+			want:        true,
+		},
+		{
+			name:        "system viewer cannot generate reports",
+			systemRoles: []string{"viewer"},
+			resource:    "reports",
+			action:      "write",
+			want:        false,
+		},
+		{
 			name:     "membership viewer can read recommendations",
 			orgRole:  "viewer",
 			resource: "recommendations",
