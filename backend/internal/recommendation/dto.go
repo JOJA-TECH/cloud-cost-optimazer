@@ -1,6 +1,7 @@
 package recommendation
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ type GenerateRecommendationInput struct {
 	CreatedBy        string
 	RequestID        string
 	CorrelationID    string
+	OperationID      string
 	ObjectiveWeights map[string]float64
 	Constraints      map[string]any
 }
@@ -52,6 +54,43 @@ type RecommendationFilter struct {
 	Offset      int
 }
 
+type RecommendationTraceFilter struct {
+	OrganizationID *uuid.UUID
+	UserID         *uuid.UUID
+}
+
+type RecommendationTraceEvent struct {
+	EventID    int64     `json:"event_id"`
+	Action     string    `json:"action"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type RecommendationTraceReader interface {
+	ListRecommendationTraceEvents(
+		ctx context.Context,
+		recommendationUID uuid.UUID,
+		filter RecommendationTraceFilter,
+	) ([]RecommendationTraceEvent, error)
+}
+
+type RecommendationAuditEvent struct {
+	Action            string
+	ResourceType      string
+	RecommendationUID uuid.UUID
+	ResourceUID       uuid.UUID
+	ScenarioUID       uuid.UUID
+	PolicyUID         uuid.UUID
+	RequestID         string
+	CorrelationID     string
+	OperationID       string
+	OccurredAt        time.Time
+	Metadata          map[string]any
+}
+
+type RecommendationAuditEventSink interface {
+	RecordEvent(ctx context.Context, event RecommendationAuditEvent) error
+}
+
 type Recommendation struct {
 	UID                   uuid.UUID
 	ScenarioUID           uuid.UUID
@@ -80,8 +119,11 @@ type Recommendation struct {
 	DecidedBy             *string
 	AppliedAt             *time.Time
 	GenerationState       string
+	AuditStatus           string
 	Errors                []string
 }
+
+const AuditStatusPending = "audit_pending"
 
 type OpportunityEvaluation struct {
 	Candidate CandidateConfiguration
@@ -563,20 +605,29 @@ type PriceRecord struct {
 }
 
 type DecisionAuditEvent struct {
-	RecommendationUID uuid.UUID
-	ResourceUID       uuid.UUID
-	Decision          string
-	Actor             string
-	OccurredAt        time.Time
-	Details           map[string]any
-	RequestID         string
-	CorrelationID     string
-	PolicyUID         uuid.UUID
-	PolicyVersion     int
-	AlgorithmVersion  string
-	ScenarioUID       uuid.UUID
-	SelectedCandidate string
-	CandidateResults  []map[string]any
-	Duration          time.Duration
-	Errors            []string
+	RecommendationUID  uuid.UUID
+	ResourceUID        uuid.UUID
+	Decision           string
+	Status             string
+	Actor              string
+	Rationale          string
+	EvidenceReferences []string
+	OccurredAt         time.Time
+	Details            map[string]any
+	RequestID          string
+	CorrelationID      string
+	OperationID        string
+	PolicyUID          uuid.UUID
+	PolicyVersion      int
+	AlgorithmVersion   string
+	ScenarioUID        uuid.UUID
+	SelectedCandidate  *string
+	RiskScore          float64
+	RiskLevel          string
+	ConfidenceScore    float64
+	EstimatedSaving    float64
+	EvidenceCount      int
+	CandidateResults   []map[string]any
+	Duration           time.Duration
+	Errors             []string
 }

@@ -280,14 +280,18 @@ type AuditEventModel struct {
 	EventID        uint64         `gorm:"column:event_id;primaryKey;autoIncrement"`
 	OrganizationID *uuid.UUID     `gorm:"column:organization_id;type:uuid"`
 	UserID         *uuid.UUID     `gorm:"column:user_id;type:uuid"`
+	ActorType      string         `gorm:"column:actor_type;type:varchar(40);not null;default:user"`
 	Action         string         `gorm:"column:action;not null"`
 	EntityType     *string        `gorm:"column:entity_type"`
 	EntityID       *uuid.UUID     `gorm:"column:entity_id;type:uuid"`
 	OccurredAt     time.Time      `gorm:"column:occurred_at;not null"`
 	RequestID      *uuid.UUID     `gorm:"column:request_id;type:uuid"`
+	CorrelationID  *uuid.UUID     `gorm:"column:correlation_id;type:uuid"`
+	OperationID    *uuid.UUID     `gorm:"column:operation_id;type:uuid"`
 	IPAddress      *string        `gorm:"column:ip_address"`
 	UserAgent      *string        `gorm:"column:user_agent"`
-	Metadata       datatypes.JSON `gorm:"column:metadata;not null"`
+	EventVersion   int16          `gorm:"column:event_version;not null;default:1"`
+	Metadata       datatypes.JSON `gorm:"column:metadata;type:jsonb;not null"`
 }
 
 func (AuditEventModel) TableName() string { return "events" }

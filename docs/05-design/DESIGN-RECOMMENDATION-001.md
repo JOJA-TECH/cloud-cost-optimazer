@@ -19,7 +19,9 @@ Componentes principales:
 | `adapters/analytics_reader.go` | Conversión de resultados de `analytics.AnalyticsResultRepository` y acceso a forecasts a tipos del dominio |
 | `adapters/data_readers.go` | Adaptación de costos, configuración, precios, catálogo SKU y contexto de región/proveedor |
 | `adapters/policy_evaluator.go` | Adapter del evaluador de políticas |
-| `adapters/audit_sink.go` | Emisión de eventos de decisión con `slog` |
+| `adapters/audit_sink.go` | Emisión operativa de eventos de decisión con `slog` |
+| `adapters/persistent_audit_sink.go` | Conversión de decisiones a `audit.AuditEvent` y delegación en `audit.AuditLogger` |
+| `adapters/audit_trace_reader.go` | Consulta de eventos de recomendación, correlación y operación en `cco_app` |
 | `repositories/recommendation_repository.go` | Lectura y escritura transaccional de políticas y entidades `opt.*` |
 
 ## Responsabilidad
@@ -53,7 +55,9 @@ acquisition
 
 - Recommendation depende de interfaces propias y de UUID/tiempo; no importa los modelos GORM de los repositorios.
 - Los adapters de infraestructura conocen los paquetes `analytics` y `data` y traducen sus DTOs.
+- El adapter de auditoría conoce los contratos genéricos de `audit`; `audit` no depende de Recommendation.
 - `main.go` comparte la conexión `CCO_DATA_DSN` entre Data, Analytics y Recommendation.
+- La auditoría usa la conexión de `CCO_DB_DSN` (`cco_app`), separada de `cco_data`.
 - La ausencia de `CCO_DATA_DSN` deja `recommendationSvc` nulo y las rutas registradas; los handlers responden `503 RECOMMENDATION_STORAGE_UNAVAILABLE`.
 
 ## Entidades y persistencia
@@ -98,7 +102,7 @@ La implementación actual usa `adapters.AnalyticsReader` tanto para `AnalyticsRe
 9. Simula utilización/costo, calcula ahorro, riesgo y confianza, evalúa la política y aplica reglas iniciales de oportunidad.
 10. Selecciona entre candidatos aceptables por costo, y en empate por riesgo y confianza.
 11. Si los datos mínimos faltan o no hay candidato aceptable, genera una decisión `no_action`; la salida distingue `insufficient_information` de un `no_action` por ausencia de alternativa aceptable.
-12. Persiste la decisión completa y registra evento en `AuditSink`.
+12. Persiste la decisión completa en `cco_data.opt` y, solo si esa transacción termina correctamente, registra el evento mediante `AuditSink` en `cco_app.audit.events` y `slog`.
 
 La evaluación preliminar (`EvaluateRecommendation`) usa el mismo flujo de cálculo pero no persiste.
 
@@ -157,12 +161,25 @@ El rationale se construye a partir de evidencia computada y asociada a la ventan
 | `GET /api/v1/recommendations/{uid}` | `recommendations:read` | Lee una recomendación |
 | `GET /api/v1/recommendations/{uid}/evidence` | `recommendations:read` | Lee la evidencia |
 | `POST /api/v1/recommendations/{uid}/evaluate` | `recommendations:evaluate` | Reevalúa con datos actuales sin mutar el historial |
+| `GET /api/v1/recommendations/{uid}/trace` | `recommendations:read` | Combina la recomendación de `cco_data` con sus eventos de `cco_app`, dentro del alcance del usuario |
+| `POST /api/v1/recommendations/{uid}/accept` | `recommendations:write` | Acepta una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/reject` | `recommendations:write` | Rechaza una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/dismiss` | `recommendations:write` | Descarta una recomendación propuesta o bajo revisión |
+| `POST /api/v1/recommendations/{uid}/apply` | `recommendations:write` | Registra como aplicada una recomendación aceptada; no modifica recursos cloud |
 
 Los detalles de request/response y errores HTTP se mantienen en `backend/API.md`.
 
+Las transiciones `accepted`, `rejected` y `dismissed` solo se permiten desde `proposed` o `under_review`; `applied` solo se permite desde `accepted`. La actualización de estado se persiste en `cco_data` antes de auditarla. Si falla la auditoría, la respuesta identifica `audit_pending` sin revertir el estado ya confirmado.
+
 ## Auditoría
 
-`DecisionAuditEvent` y `SlogAuditSink` incluyen request/correlation IDs, recurso, actor, política/versión, algoritmo, escenario, recomendación, decisión, candidato seleccionado, resultados de candidatos, duración y errores parciales. La implementación actual no registra todavía `risk_score` ni `confidence` como atributos superiores explícitos del evento de log; esos scores están en el modelo de dominio y la persistencia.
+`PersistentAuditSink` y `DecisionTraceService` adaptan el contrato estable `AuditSink` a `audit.AuditLogger`. El servicio de auditoría persiste en `cco_app.audit.events` y emite el mismo evento a `slog`; `SlogAuditSink` se conserva como adapter operativo alternativo. El evento identifica la recomendación como recurso y conserva `resource_uid`, `scenario_uid`, política/versión, algoritmo, decisión, candidato seleccionado, resultados, `risk_score`, `risk_level`, `confidence_score`, ahorro estimado, cantidad de evidencia, duración y el conteo de errores en metadata (no el texto crudo de errores). Request, correlation y operation IDs se obtienen del contexto de trazabilidad y se guardan en sus columnas UUID.
+
+La auditoría se intenta después del commit en `cco_data`; las dos bases no participan en una transacción distribuida. Si falla la persistencia de auditoría, el sink emite un error estructurado con `recommendation_uid`, `correlation_id` y `operation_id`, y la respuesta conserva la recomendación con `audit_status: "audit_pending"` sin alterar `generation_state`. Esta primera versión no reintenta automáticamente: el estado pendiente requiere reconciliación operativa. Un outbox transaccional en `cco_data` queda como mejora futura.
+
+`GET /api/v1/recommendations/{uid}/trace` consulta primero los datos de recomendación en `cco_data` y luego obtiene eventos en `cco_app` mediante el adapter de trazabilidad. Los historiales se combinan en memoria por `recommendation_uid`, `correlation_id` y `operation_id`; no se emite SQL entre bases.
+
+Las rutas de consulta de auditoría aplican el alcance `all`, `organization` o `own` en el handler antes de responder. El middleware transversal registra acciones IAM, cloud y adquisición con actor y trace context, conserva método/estado HTTP y referencia genérica del recurso, y nunca inspecciona el body. Recommendation registra sus decisiones y transiciones mediante el sink persistente. Los valores con nombres de campos sensibles se rechazan durante la validación de metadata.
 
 ## Pruebas y estado de validación
 
@@ -180,5 +197,8 @@ Pendiente para completar la validación del diseño:
 - `docs/04-architecture/decisions/ADR-013-recommendation-engine.md`
 - `docs/04-architecture/decisions/ADR-011-data-module.md`
 - `docs/04-architecture/decisions/ADR-012-analytics-module.md`
+- `docs/04-architecture/decisions/ADR-014-audit-traceability.md`
+- `docs/05-design/DESIGN-AUDIT-001.md`
+- `docs/04-architecture/MODULES.md`
 - `databases/cco_data/cco_data_schema.sql`
 - `backend/API.md`

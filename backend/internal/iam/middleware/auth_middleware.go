@@ -129,22 +129,13 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 		}
 
 		// Inject request ID for tracing
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = uuid.New().String()
-		}
-		ic.RequestID = requestID
-
-		// Correlation ID for lineage
-		correlationID := r.Header.Get("X-Correlation-ID")
-		if correlationID == "" {
-			correlationID = ic.RequestID
-		}
-		ic.CorrelationID = correlationID
+		requestID, correlationID := normalizeTraceIDs(r)
+		ic.RequestID = requestID.String()
+		ic.CorrelationID = correlationID.String()
 
 		// Add to context
 		ctx := iam.WithIdentityContext(r.Context(), ic)
-		ctx = iam.WithRequestID(ctx, requestID)
+		ctx = iam.WithRequestID(ctx, ic.RequestID)
 
 		slog.Info("authenticated request",
 			"request_id", ic.RequestID,
@@ -167,6 +158,39 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 func (m *AuthMiddleware) validateOrgAccess(ctx context.Context, userID, orgID uuid.UUID) bool {
 	mem, err := m.repo.FindMembership(ctx, orgID, userID)
 	return err == nil && mem.Status == "active"
+}
+
+func normalizeTraceIDs(r *http.Request) (uuid.UUID, uuid.UUID) {
+	requestValue := r.Header.Get("X-Request-ID")
+	requestID, invalidRequestID := iam.NormalizeTraceID(requestValue)
+	if invalidRequestID {
+		logInvalidTraceID("X-Request-ID", requestValue, requestID)
+	}
+	r.Header.Set("X-Request-ID", requestID.String())
+
+	correlationValue := r.Header.Get("X-Correlation-ID")
+	correlationID := requestID
+	if correlationValue != "" {
+		var invalidCorrelationID bool
+		correlationID, invalidCorrelationID = iam.NormalizeTraceID(correlationValue)
+		if invalidCorrelationID {
+			logInvalidTraceID("X-Correlation-ID", correlationValue, correlationID)
+		}
+	}
+	r.Header.Set("X-Correlation-ID", correlationID.String())
+	return requestID, correlationID
+}
+
+func logInvalidTraceID(header, value string, replacement uuid.UUID) {
+	const maxLoggedValueLength = 256
+	valueLength := len(value)
+	truncated := valueLength > maxLoggedValueLength
+	slog.Warn("invalid trace identifier replaced",
+		"header", header,
+		"invalid_value_length", valueLength,
+		"value_truncated", truncated,
+		"replacement", replacement.String(),
+	)
 }
 
 // validateProjectAccess checks if user has access to project via org membership.

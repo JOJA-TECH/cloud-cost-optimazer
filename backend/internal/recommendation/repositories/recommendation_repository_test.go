@@ -198,6 +198,76 @@ func TestPersistDecisionReadsListsAndVersionsRecommendation(t *testing.T) {
 	}
 }
 
+func TestUpdateRecommendationStatusPersistsDecisionAndApplicationTimestamps(t *testing.T) {
+	ctx := context.Background()
+	db, repo, resourceUID := openRecommendationDB(t)
+	policy := createTestPolicy(t, repo)
+	persisted, err := repo.PersistDecision(ctx, testDecision(
+		resourceUID, policy, time.Date(2026, 11, 15, 20, 0, 0, 0, time.UTC), 1, nil,
+	))
+	if err != nil {
+		t.Fatalf("persist recommendation: %v", err)
+	}
+
+	actorID := uuid.NewString()
+	decidedAt := time.Date(2026, 11, 15, 21, 0, 0, 0, time.UTC)
+	accepted, err := repo.UpdateRecommendationStatus(
+		ctx, persisted.UID, recommendation.RecommendationStatusProposed,
+		recommendation.RecommendationStatusAccepted, actorID, decidedAt,
+	)
+	if err != nil {
+		t.Fatalf("accept recommendation: %v", err)
+	}
+	if accepted.Status != recommendation.RecommendationStatusAccepted ||
+		accepted.DecidedAt == nil || !accepted.DecidedAt.Equal(decidedAt) ||
+		accepted.DecidedBy == nil || *accepted.DecidedBy != actorID {
+		t.Fatalf("accepted state was not returned: %#v", accepted)
+	}
+
+	appliedAt := decidedAt.Add(time.Hour)
+	applied, err := repo.UpdateRecommendationStatus(
+		ctx, persisted.UID, recommendation.RecommendationStatusAccepted,
+		recommendation.RecommendationStatusApplied, actorID, appliedAt,
+	)
+	if err != nil {
+		t.Fatalf("mark recommendation applied: %v", err)
+	}
+	if applied.Status != recommendation.RecommendationStatusApplied ||
+		applied.DecidedAt == nil || !applied.DecidedAt.Equal(decidedAt) ||
+		applied.DecidedBy == nil || *applied.DecidedBy != actorID ||
+		applied.AppliedAt == nil || !applied.AppliedAt.Equal(appliedAt) {
+		t.Fatalf("applied state did not preserve decision metadata: %#v", applied)
+	}
+
+	loaded, err := repo.GetRecommendation(ctx, persisted.UID)
+	if err != nil {
+		t.Fatalf("reload updated recommendation: %v", err)
+	}
+	if loaded.Status != applied.Status || loaded.DecidedAt == nil ||
+		!loaded.DecidedAt.Equal(decidedAt) || loaded.AppliedAt == nil ||
+		!loaded.AppliedAt.Equal(appliedAt) {
+		t.Fatalf("updated status was not persisted in the domain payload: %#v", loaded)
+	}
+
+	_, err = repo.UpdateRecommendationStatus(
+		ctx, persisted.UID, recommendation.RecommendationStatusAccepted,
+		recommendation.RecommendationStatusRejected, actorID, appliedAt,
+	)
+	if !errors.Is(err, recommendation.ErrInvalidStatusTransition) {
+		t.Fatalf("got %v, want invalid status transition", err)
+	}
+
+	var row recommendationRow
+	if err := db.Table("recommendation").Where("recommendation_uid = ?", persisted.UID).Take(&row).Error; err != nil {
+		t.Fatalf("read persisted recommendation row: %v", err)
+	}
+	if row.Status != string(recommendation.RecommendationStatusApplied) ||
+		row.DecidedBy == nil || *row.DecidedBy != actorID ||
+		row.AppliedAt == nil || !row.AppliedAt.Equal(appliedAt) {
+		t.Fatalf("status columns are inconsistent with the payload: %#v", row)
+	}
+}
+
 func TestPersistDecisionRollsBackWhenSimulationsOutnumberCandidates(t *testing.T) {
 	db, repo, resourceUID := openRecommendationDB(t)
 	policy := createTestPolicy(t, repo)

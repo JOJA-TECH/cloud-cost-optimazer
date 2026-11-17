@@ -15,6 +15,12 @@ func (f policyEvaluatorFunc) Validate(ctx context.Context, policy OptimizationPo
 	return f(ctx, policy, input)
 }
 
+type auditSinkFunc func(context.Context, DecisionAuditEvent) error
+
+func (f auditSinkFunc) RecordDecision(ctx context.Context, event DecisionAuditEvent) error {
+	return f(ctx, event)
+}
+
 type recommendationRepositoryStub struct {
 	RecommendationRepository
 	created Recommendation
@@ -70,6 +76,52 @@ func TestPublishRecommendationEvaluatesPolicyBeforePersisting(t *testing.T) {
 	}
 	if repository.calls != 0 {
 		t.Fatalf("CreateRecommendation called %d times for rejected policy", repository.calls)
+	}
+}
+
+func TestPublishRecommendationAuditsOnlyAfterPersistence(t *testing.T) {
+	policy := OptimizationPolicy{UID: uuid.New(), Name: "safe", Version: 2, Enabled: true}
+	repository := &recommendationRepositoryStub{}
+	service, err := NewService(policyEvaluatorFunc(func(context.Context, OptimizationPolicy, PolicyEvaluationInput) (PolicyEvaluation, error) {
+		return PolicyEvaluation{Allowed: true}, nil
+	}), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recorded DecisionAuditEvent
+	service.audit = auditSinkFunc(func(_ context.Context, event DecisionAuditEvent) error {
+		if repository.calls != 1 {
+			t.Fatalf("audit called before recommendation persistence: %d calls", repository.calls)
+		}
+		recorded = event
+		return nil
+	})
+	recommendationUID := uuid.New()
+	scenarioUID := uuid.New()
+	resourceUID := uuid.New()
+	saving := EstimatedSaving{MonthlyAmount: 125}
+	input := PublishRecommendationInput{
+		Policy:    policy,
+		Candidate: CandidateConfiguration{SKUName: "sku-small"},
+		Recommendation: Recommendation{
+			UID: recommendationUID, ScenarioUID: scenarioUID, ResourceUID: resourceUID,
+			Action:          RecommendationAction{Type: ActionResizeDown},
+			EstimatedSaving: saving,
+			Risk:            RecommendationRisk{Score: 0.2, Level: RiskLevelLow},
+			Confidence:      RecommendationConfidence{Score: 0.9},
+			CreatedAt:       time.Now().UTC(), GeneratedBy: defaultAlgorithm,
+		},
+	}
+
+	persisted, _, err := service.PublishRecommendation(context.Background(), input)
+	if err != nil {
+		t.Fatalf("publish recommendation: %v", err)
+	}
+	if persisted.UID != recommendationUID || recorded.RecommendationUID != recommendationUID ||
+		recorded.ScenarioUID != scenarioUID || recorded.ResourceUID != resourceUID ||
+		recorded.EstimatedSaving != saving.MonthlyAmount {
+		t.Fatalf("audit event does not match persisted recommendation: recommendation=%+v event=%+v",
+			persisted, recorded)
 	}
 }
 
@@ -131,6 +183,84 @@ func TestGenerateRecommendationReturnsNoActionWithoutCosts(t *testing.T) {
 	if result.Action.Type != ActionNoAction || result.GenerationState != "insufficient_information" {
 		t.Fatalf("without costs got action=%q state=%q, want no_action/insufficient_information",
 			result.Action.Type, result.GenerationState)
+	}
+}
+
+func TestGenerateRecommendationAuditsPersistedDecisionFields(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	sink := &engineTestAuditSink{repository: repository}
+	service.audit = sink
+	now := time.Now().UTC()
+	input := testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now)
+	input.RequestID = uuid.NewString()
+	input.CorrelationID = uuid.NewString()
+	input.OperationID = uuid.NewString()
+
+	result, err := service.GenerateRecommendation(context.Background(), input)
+	if err != nil {
+		t.Fatalf("generate recommendation: %v", err)
+	}
+	if repository.persistCalls != 1 || len(sink.events) != 1 {
+		t.Fatalf("persist calls=%d, audit events=%d; want one of each", repository.persistCalls, len(sink.events))
+	}
+	event := sink.events[0]
+	if event.RecommendationUID != result.UID || event.PolicyUID != policy.UID ||
+		event.ResourceUID != resourceUID || event.RequestID != input.RequestID ||
+		event.CorrelationID != input.CorrelationID || event.OperationID != input.OperationID {
+		t.Fatalf("audit event identifiers do not match persisted decision: %+v", event)
+	}
+	if event.RiskScore != repository.persist.Recommendation.Risk.Score ||
+		event.RiskLevel != string(repository.persist.Recommendation.Risk.Level) ||
+		event.ConfidenceScore != repository.persist.Recommendation.Confidence.Score ||
+		event.EstimatedSaving != repository.persist.Recommendation.EstimatedSaving.MonthlyAmount {
+		t.Fatalf("audit scores do not match persisted decision: %+v", event)
+	}
+	if event.EvidenceCount != len(repository.persist.Recommendation.Evidence) {
+		t.Fatalf("evidence count=%d, want %d", event.EvidenceCount, len(repository.persist.Recommendation.Evidence))
+	}
+}
+
+func TestGenerateRecommendationDoesNotAuditFailedPersistence(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	persistErr := errors.New("cco_data unavailable")
+	repository.persistErr = persistErr
+	sink := &engineTestAuditSink{repository: repository}
+	service.audit = sink
+	now := time.Now().UTC()
+
+	_, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if !errors.Is(err, persistErr) {
+		t.Fatalf("got %v, want persistence error", err)
+	}
+	if len(sink.events) != 0 {
+		t.Fatalf("audited %d decisions after persistence failed", len(sink.events))
+	}
+}
+
+func TestGenerateRecommendationReturnsPersistedDecisionWhenAuditIsPending(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	sink := &engineTestAuditSink{
+		repository: repository,
+		err:        errors.New("cco_app unavailable"),
+	}
+	service.audit = sink
+	now := time.Now().UTC()
+
+	result, err := service.GenerateRecommendation(context.Background(),
+		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatalf("audit failure should be reported as pending: %v", err)
+	}
+	if result.UID == uuid.Nil || result.AuditStatus != AuditStatusPending {
+		t.Fatalf("expected persisted recommendation marked audit_pending, got %+v", result)
+	}
+	if result.GenerationState == AuditStatusPending {
+		t.Fatalf("audit status overwrote recommendation generation state: %q", result.GenerationState)
+	}
+	response := recommendationResponse(result)
+	if response["audit_status"] != AuditStatusPending {
+		t.Fatalf("API response omitted pending audit status: %#v", response)
 	}
 }
 
@@ -484,6 +614,7 @@ type engineTestRepository struct {
 	latest       Recommendation
 	persist      DecisionPersistence
 	persistCalls int
+	persistErr   error
 }
 
 func (r *engineTestRepository) GetLatestRecommendation(context.Context, uuid.UUID) (Recommendation, error) {
@@ -495,6 +626,9 @@ func (r *engineTestRepository) GetLatestRecommendation(context.Context, uuid.UUI
 func (r *engineTestRepository) PersistDecision(_ context.Context, decision DecisionPersistence) (Recommendation, error) {
 	r.persistCalls++
 	r.persist = decision
+	if r.persistErr != nil {
+		return Recommendation{}, r.persistErr
+	}
 	decision.Recommendation.ScenarioUID = decision.Scenario.UID
 	decision.Recommendation.ScenarioID = 101
 	if decision.SelectedCandidateIndex != nil {
@@ -502,6 +636,20 @@ func (r *engineTestRepository) PersistDecision(_ context.Context, decision Decis
 		decision.Recommendation.ChosenCandidateID = &id
 	}
 	return decision.Recommendation, nil
+}
+
+type engineTestAuditSink struct {
+	repository *engineTestRepository
+	events     []DecisionAuditEvent
+	err        error
+}
+
+func (s *engineTestAuditSink) RecordDecision(_ context.Context, event DecisionAuditEvent) error {
+	if s.repository.persistCalls == 0 {
+		return errors.New("audit called before recommendation persistence")
+	}
+	s.events = append(s.events, event)
+	return s.err
 }
 
 type engineTestAnalytics struct {

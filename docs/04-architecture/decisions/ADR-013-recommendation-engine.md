@@ -3,7 +3,7 @@
 - **Estado:** Aceptado e implementado; validación PostgreSQL end-to-end pendiente
 - **Fecha:** 2026-11-14
 - **Decisores:** Equipo del proyecto
-- **Relacionado con:** ADR-001, ADR-002, ADR-003, ADR-011, ADR-012, MODULES.md (módulo 7), DESIGN-RECOMMENDATION-001
+- **Relacionado con:** ADR-001, ADR-002, ADR-003, ADR-011, ADR-012, ADR-014, MODULES.md (módulo 7), DESIGN-RECOMMENDATION-001
 
 ## Contexto
 
@@ -56,6 +56,7 @@ Se decide implementar Recommendation Engine como **Module 7**, bajo `backend/int
    - `main.go` inicializa Data, Analytics y Recommendation Engine cuando existe `CCO_DATA_DSN`.
    - Las rutas de Recommendation se registran aun sin ese DSN. Con servicio no configurado, responden `503 RECOMMENDATION_STORAGE_UNAVAILABLE`; la ausencia del DSN no impide el arranque del proceso.
    - Las rutas requieren `recommendations:write`, `recommendations:evaluate` o `recommendations:read`, según la operación.
+   - El endpoint de traza obtiene la recomendación de `cco_data` y los eventos de `cco_app` mediante consultas independientes. Las transiciones de estado son explícitas; `/apply` registra el estado y no ejecuta cambios cloud.
 
 5. **Políticas**
    - Las políticas son entidades versionadas y reutilizables.
@@ -79,13 +80,15 @@ La separación permite probar decisiones con lectores y repositorios simulados, 
 - La simulación `rule_v1` aproxima utilización de CPU mediante capacidad relativa y no predice latencia o violaciones SLA si no existe un modelo/dato correspondiente. La política puede rechazar esos casos por evidencia no disponible.
 - El cálculo de costo propuesto normaliza precios por hora a un mes promedio de 730 horas y precios mensuales directamente. Debe validarse con tarifas, unidades, tiers y reglas comerciales reales del proveedor antes de usarlo como estimación de producción.
 - El acceso a PostgreSQL y el esquema actualizado no se han validado mediante una prueba end-to-end en esta entrega.
-- La auditoría actual se emite mediante `slog`; el contrato permite sustituirla por persistencia dedicada. Los campos de score de riesgo y confianza deben ampliarse en el evento/log si se requiere que sean atributos explícitos y no solo parte de los resultados de candidatos.
+- La auditoría se registra mediante `audit.AuditLogger` en `cco_app.audit.events` y también se emite a `slog` para observabilidad. La metadata incluye identificadores, score/nivel de riesgo, confianza, ahorro y evidencia. Por la separación de bases no hay transacción ACID entre recomendación y auditoría; ante un fallo posterior al commit, la respuesta conserva la recomendación con `audit_pending`. No existe outbox en esta versión.
 
 ## Evidencia
 
 - `backend/internal/recommendation/` — dominio, orquestación, reglas, scoring, handlers, adapters y repositorio.
 - `backend/internal/data/interfaces.go` y `backend/internal/data/repositories/data_repository.go` — contratos y consultas de costos/configuración/SKU/precios.
 - `backend/cmd/cco-app/main.go` — inicialización condicional y registro de rutas.
+- `backend/internal/audit/decision_trace_service.go` — persistencia y reconstrucción de trazas.
+- `backend/internal/recommendation/adapters/persistent_audit_sink.go` — integración persistente de decisiones.
 - `databases/cco_data/cco_data_schema.sql` — entidades `opt.*` y vista de forecasts.
 - `backend/API.md` — referencia de API del módulo.
 - `backend/internal/recommendation/recommendation_service_test.go` y `handlers_test.go` — pruebas de servicio y disponibilidad sin DSN.
@@ -96,6 +99,7 @@ La separación permite probar decisiones con lectores y repositorios simulados, 
 
 ## Referencias
 
-[1]: docs/MODULES.md — separación de responsabilidades entre módulos.
+[1]: docs/04-architecture/MODULES.md — separación de responsabilidades entre módulos.
 [2]: docs/04-architecture/decisions/ADR-012-analytics-module.md — módulo que produce evidencia analítica.
 [3]: docs/05-design/DESIGN-RECOMMENDATION-001.md — diseño técnico del motor.
+[4]: docs/04-architecture/decisions/ADR-014-audit-traceability.md — auditoría persistente y alcance de trazas.

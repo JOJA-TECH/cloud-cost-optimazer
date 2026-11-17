@@ -73,7 +73,7 @@ Separar el motor analítico del transporte HTTP permite probar la lógica de for
 - `backend/internal/analytics/` — handlers, service, interfaces, adapters (FakeMLClient), repositories.
 - `backend/cmd/cco-app/main.go` — wiring del módulo analytics.
 - `API.md` §15 — referencia de endpoints de analítica.
-- `docs/MODULES.md` — Módulo 5, Analítica y Optimización.
+- `docs/04-architecture/MODULES.md` — Módulo 5, Analítica y Optimización.
 
 ## Revisión
 
@@ -81,4 +81,4 @@ Separar el motor analítico del transporte HTTP permite probar la lógica de for
 
 ## Referencias
 
-[1]: docs/MODULES.md — Módulo 5, Analítica y Optimización.
+[1]: docs/04-architecture/MODULES.md — Módulo 5, Analítica y Optimización.

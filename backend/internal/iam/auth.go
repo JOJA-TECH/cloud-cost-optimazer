@@ -526,7 +526,8 @@ func (a *AccountLockout) RemainingAttempts(email string) int {
 // rolePermissions maps system role_code -> permission_codes.
 // Matches iam.roles + iam.permissions + iam.role_permissions in cco_app.
 var rolePermissions = map[string][]string{
-	"platform_admin": {"*:*"}, // wildcard handled in Can()
+	"platform_admin": {"*:*", "audit:read"}, // wildcard handled in Can()
+	"auditor":        {"audit:read", "audit:read:organization"},
 	"db_admin": {
 		"cloud_accounts:*",
 		"data_sources:*",
@@ -576,8 +577,8 @@ var rolePermissions = map[string][]string{
 
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
-	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "data:read", "analytics:*", "recommendations:*", "reports:*"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "recommendations:write", "recommendations:evaluate", "reports:read"},
+	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "data:read", "analytics:*", "recommendations:*", "reports:*", "audit:read", "audit:read:organization"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "recommendations:write", "recommendations:evaluate", "reports:read", "audit:read", "audit:read:organization"},
 	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "reports:read"},
 	"viewer": {"resources:read", "acquisitions:read", "data:read", "recommendations:read", "dashboards:read"},
 }

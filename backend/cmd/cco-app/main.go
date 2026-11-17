@@ -18,6 +18,9 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
 	analyticsadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/adapters"
 	analyticsrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
+	auditadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit/adapters"
+	auditrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 	cloudadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/adapters"
 	cloudrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud/repositories"
@@ -167,6 +170,9 @@ func main() {
 	if err := iam.SeedRecommendationPermissions(db); err != nil {
 		log.Fatalf("seed recommendation permissions: %v", err)
 	}
+	if err := iam.SeedAuditPermissions(db); err != nil {
+		log.Fatalf("seed audit permissions: %v", err)
+	}
 
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
@@ -222,6 +228,11 @@ func main() {
 
 	// ── Authorization engine ─────────────────────────────────────────────
 	permEngine := iam.NewPermissionEngine(db)
+	auditRepo := auditrepos.NewAuditRepository(db)
+	auditService, err := audit.NewService(auditRepo, auditadapters.NewSlogAuditLogger(slog.Default()))
+	if err != nil {
+		log.Fatalf("initialize audit service: %v", err)
+	}
 
 	// ── Cloud module (Module 2) ──────────────────────────────────────────
 	accountRepo := cloudrepos.NewAccountRepository(db)
@@ -295,7 +306,9 @@ func main() {
 			ResourceContext:  resourceContextReader,
 			Prices:           priceReader,
 			SKUs:             skuReader,
-			Audit:            recommendationadapters.NewSlogAuditSink(slog.Default()),
+			Audit: recommendationadapters.NewPersistentAuditSink(
+				auditService, auditService, slog.Default(),
+			),
 		})
 		if err != nil {
 			log.Fatalf("initialize recommendation engine: %v", err)
@@ -448,7 +461,14 @@ func main() {
 
 	// Recommendation routes (Module 7): nil service when CCO_DATA_DSN is not
 	// configured → endpoints return 503.
-	recommendation.RegisterRoutes(mux, recommendationSvc, authMiddleware, permEngine)
+	recommendation.RegisterRoutes(
+		mux,
+		recommendationSvc,
+		authMiddleware,
+		permEngine,
+		recommendationadapters.NewAuditTraceReader(auditService, auditService),
+	)
+	audit.RegisterRoutes(mux, auditService, authMiddleware, permEngine)
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
@@ -464,6 +484,7 @@ func main() {
 	handler := middleware.CORS(allowedOrigins, mux)
 	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
 	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
+	handler = audit.TraceMiddleware(handler, auditService)
 
 	// ── Server ───────────────────────────────────────────────────────────
 	addr := os.Getenv("CCO_HTTP_ADDR")

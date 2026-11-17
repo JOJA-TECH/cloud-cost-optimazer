@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,17 +36,60 @@ func NewIdentityContext(userID uuid.UUID, email, displayName, authMethod string)
 	}
 }
 
+// NormalizeTraceID parses a supplied trace ID or generates a UUID when it is
+// missing or invalid. The bool reports whether a non-empty value was invalid.
+func NormalizeTraceID(value string) (uuid.UUID, bool) {
+	if value == "" {
+		return uuid.New(), false
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.New(), true
+	}
+	return id, false
+}
+
 // context key types are unexported to prevent collisions.
 type ctxKey string
 
 const (
-	ctxIdentityKey ctxKey = "iam.identity"
-	ctxRequestID   ctxKey = "iam.request_id"
-	ctxTokenExpiry ctxKey = "iam.token_expiry"
+	ctxIdentityKey        ctxKey = "iam.identity"
+	ctxIdentityCaptureKey ctxKey = "iam.identity_capture"
+	ctxRequestID          ctxKey = "iam.request_id"
+	ctxTokenExpiry        ctxKey = "iam.token_expiry"
 )
+
+type IdentityCapture struct {
+	mu       sync.RWMutex
+	identity IdentityContext
+	present  bool
+}
+
+func NewIdentityCapture() *IdentityCapture {
+	return &IdentityCapture{}
+}
+
+func WithIdentityCapture(ctx context.Context, capture *IdentityCapture) context.Context {
+	return context.WithValue(ctx, ctxIdentityCaptureKey, capture)
+}
+
+func (c *IdentityCapture) Identity() (IdentityContext, bool) {
+	if c == nil {
+		return IdentityContext{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.identity, c.present
+}
 
 // WithIdentityContext returns a new context with the IdentityContext embedded.
 func WithIdentityContext(ctx context.Context, ic IdentityContext) context.Context {
+	if capture, ok := ctx.Value(ctxIdentityCaptureKey).(*IdentityCapture); ok {
+		capture.mu.Lock()
+		capture.identity = ic
+		capture.present = true
+		capture.mu.Unlock()
+	}
 	return context.WithValue(ctx, ctxIdentityKey, ic)
 }
 

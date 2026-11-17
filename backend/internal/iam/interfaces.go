@@ -16,7 +16,7 @@ type IdentityContext struct {
 	AuthMethod  string // "oidc" | "password" | "service_principal" | "managed_identity"
 
 	// Effective RBAC
-	SystemRoles []string   // platform_admin, db_admin, analyst, viewer
+	SystemRoles []string   // platform_admin, db_admin, analyst, auditor, viewer
 	OrgID       uuid.UUID  // active organization (validated membership)
 	OrgRole     string     // owner | admin | member | viewer
 	ProjectID   *uuid.UUID // active project (validated membership)
@@ -132,7 +132,7 @@ type UserDTO struct {
 	UpdatedAt     int64
 }
 
-// RoleRepository manages system roles (platform_admin, db_admin, analyst, viewer).
+// RoleRepository manages system roles (platform_admin, db_admin, analyst, auditor, viewer).
 type RoleRepository interface {
 	FindRoleByCode(ctx context.Context, code string) (RoleDTO, error)
 	FindRoleByID(ctx context.Context, id int16) (RoleDTO, error)

@@ -1411,7 +1411,7 @@ Genera y persiste una recomendación versionada. Requiere `recommendations:write
 }
 ```
 
-**Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia.
+**Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia. Si la recomendación se guardó en `cco_data` pero falló su auditoría síncrona en `cco_app`, también incluye `audit_status: "audit_pending"`; la recomendación se devuelve y el fallo queda registrado en un error estructurado de `slog`. La auditoría pendiente requiere reconciliación manual en esta versión; no hay reintento automático.
 
 `force_refresh: false` reutiliza una recomendación previa solo si coinciden recurso, política, ventana temporal, horizonte y moneda. Si los parámetros difieren, crea una nueva versión.
 
@@ -1439,7 +1439,42 @@ Obtiene la evidencia asociada a una recomendación. Requiere `recommendations:re
 
 Reevalúa una recomendación con la evidencia más reciente, sin cambiar ni persistir la recomendación existente. Requiere `recommendations:evaluate`.
 
-**Errores principales:** `400 RECOMMENDATION_INVALID_REQUEST`, `404 NOT_FOUND`, `409 RECOMMENDATION_CONFLICT`, `422 RECOMMENDATION_CONFIGURATION_UNAVAILABLE`, `422 RECOMMENDATION_INSUFFICIENT_EVIDENCE`, `503 RECOMMENDATION_DEPENDENCY_UNAVAILABLE`.
+### POST /api/v1/recommendations/{uid}/accept
+
+Acepta una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write`. Persiste quién tomó la decisión y cuándo; registra `recommendation_accepted` en `cco_app.audit.events`.
+
+### POST /api/v1/recommendations/{uid}/reject
+
+Rechaza una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write` y registra `recommendation_rejected`.
+
+### POST /api/v1/recommendations/{uid}/dismiss
+
+Descarta una recomendación en estado `proposed` o `under_review`. Requiere `recommendations:write` y registra `recommendation_dismissed`.
+
+### POST /api/v1/recommendations/{uid}/apply
+
+Registra como `applied` una recomendación previamente aceptada. Requiere `recommendations:write` y registra `recommendation_applied`. **Este endpoint solo registra el estado informado; no ejecuta cambios en Azure ni en otros recursos.**
+
+Estas transiciones actualizan `cco_data` antes de registrar el evento en `cco_app`. Si falla la auditoría, la respuesta conserva el estado actualizado e incluye `audit_status: "audit_pending"`. Una transición no permitida responde `409 RECOMMENDATION_STATUS_CONFLICT`.
+
+**Errores principales:** `400 RECOMMENDATION_INVALID_REQUEST`, `404 NOT_FOUND`, `409 RECOMMENDATION_CONFLICT` o `RECOMMENDATION_STATUS_CONFLICT`, `422 RECOMMENDATION_CONFIGURATION_UNAVAILABLE`, `422 RECOMMENDATION_INSUFFICIENT_EVIDENCE`, `503 RECOMMENDATION_DEPENDENCY_UNAVAILABLE`.
+
+### GET /api/v1/recommendations/{uid}/trace
+
+Combina la recomendación de `cco_data.opt` con sus eventos de `cco_app.audit.events`; las consultas se realizan por separado y nunca cruzan bases de datos. Incluye eventos vinculados por recomendación, `correlation_id` y `operation_id`. Requiere `recommendations:read`; los eventos se limitan a la organización activa (o al usuario si no hay organización activa).
+
+**Response (200 OK):** incluye los identificadores y métricas de la decisión y una lista cronológica de eventos con `event_id`, `action` y `occurred_at`.
+
+### Consultas de auditoría
+
+Las rutas de auditoría requieren autenticación y permiso `audit:read` o un permiso de alcance `audit:read:own` / `audit:read:organization`. `platform_admin` puede consultar todos los eventos; `auditor`, `owner` y `admin` quedan restringidos a la organización activa; el alcance `own` limita la consulta a eventos del usuario actual. Los roles `analyst` y `viewer` no reciben acceso general a estas rutas; pueden consultar trazas mediante el permiso `recommendations:read`.
+
+- `GET /api/v1/audit/events`: lista eventos; filtros opcionales `organization_id`, `user_id`, `action`, `entity_type`, `entity_id`, `correlation_id`, `operation_id`, `from`, `to`, `limit` (1–200, predeterminado 50) y `offset` (0 o mayor).
+- `GET /api/v1/audit/events/{event_id}`: obtiene un evento por ID; eventos fuera del alcance autorizado responden como no encontrados.
+- `GET /api/v1/audit/correlations/{correlation_id}`: lista el historial de la correlación.
+- `GET /api/v1/audit/resources/{entity_type}/{entity_id}/history`: lista el historial de un recurso.
+
+Los límites temporales usan RFC3339 y el rango es `[from, to)`. No se registran cuerpos HTTP, tokens, contraseñas, cadenas de conexión ni credenciales en los eventos de middleware.
 
 ---
 

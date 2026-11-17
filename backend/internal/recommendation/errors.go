@@ -17,4 +17,6 @@ var (
 	ErrMLUnavailable            = errors.New("ML forecasts unavailable")
 	ErrConcurrentOperation      = errors.New("incompatible recommendation operation is already in progress")
 	ErrDependenciesUnavailable  = errors.New("recommendation dependencies are unavailable")
+	ErrInvalidStatusTransition  = errors.New("invalid recommendation status transition")
+	ErrAuditUnavailable         = errors.New("recommendation audit sink is unavailable")
 )

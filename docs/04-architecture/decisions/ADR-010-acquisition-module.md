@@ -91,4 +91,4 @@ Los contratos de `data` mantienen a `acquisition` desacoplado del esquema de tel
 
 ## Referencias
 
-[1]: docs/MODULES.md — Módulo 3, Adquisición y Monitoreo de Datos.
+[1]: docs/04-architecture/MODULES.md — Módulo 3, Adquisición y Monitoreo de Datos.
