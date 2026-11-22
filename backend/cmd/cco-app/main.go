@@ -304,6 +304,16 @@ func main() {
 		case "not_available":
 			// Explicitly not available: never present a fake forecast as productive.
 			mlClient = analyticsadapters.NewNotAvailableMLClient()
+		case "grpc":
+			// Productive gRPC client to the external Python ML service (Module 6).
+			mlEndpoint := os.Getenv("CCO_ML_ENDPOINT")
+			mlTimeout := envSeconds("CCO_ML_REQUEST_TIMEOUT_SECONDS", 10*time.Second)
+			grpcClient, err := analyticsadapters.NewGRPCMLClient(mlEndpoint, mlTimeout)
+			if err != nil {
+				log.Fatalf("connect ML endpoint: %v", err)
+			}
+			defer grpcClient.Close()
+			mlClient = grpcClient
 		default:
 			// Default (dev/unset): fake client.
 			mlClient = analyticsadapters.NewFakeMLClient()

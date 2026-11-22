@@ -250,12 +250,15 @@ type TrainingDatasetSpec struct {
 
 // ForecastRequest is sent to MLPort to trigger forecasting.
 type ForecastRequest struct {
-	ResourceUID    uuid.UUID
-	TargetMetric   string    // 'cpu_avg' | 'workload_intensity' | 'storage_used_bytes'
-	HorizonSteps   int       // 1..H
-	StepUnit       string    // '15m' | '1h' | '1d'
-	PeriodStartUTC time.Time // first future period to forecast
-	ModelVersionID *int64    // specific model_version_id, or nil for champion
+	ResourceUID    uuid.UUID `json:"resource_uid"`
+	TargetMetric   string    `json:"target_metric"`              // 'cpu_avg' | 'workload_intensity' | 'storage_used_bytes'
+	HorizonSteps   int       `json:"horizon_steps"`              // 1..H
+	StepUnit       string    `json:"step_unit"`                  // '15m' | '1h' | '1d'
+	PeriodStartUTC time.Time `json:"period_start_utc"`           // first future period to forecast
+	ModelVersionID *int64    `json:"model_version_id,omitempty"` // specific model_version_id, or nil for champion
+	// Correlation/tracing ids propagated to the ML service, Jobs and audit logs.
+	RequestID     string `json:"request_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 // ForecastResponse mirrors ml.forecast (read via contract.v_forecast).

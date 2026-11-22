@@ -43,7 +43,7 @@ Se decide **Alternativa B**:
 2. **Endpoints de API (17 REST, todos protegidos):**
    - Escritura (`analytics:write`): `POST /analytics/{snapshots,percentiles,trends,patterns,capacity,costs,des,datasets,forecasts}`.
    - Lectura (`analytics:read`): `GET /analytics/{snapshots,percentiles,trends,patterns,capacity,costs,des,datasets,forecasts}`.
-3. **Integración ML:** `RequestForecast` valida el contrato (`ml.inference.v1`) y pide predicción al ML service; el ML escribe `ml.forecast` y devuelve `forecast_uid`.
+3. **Integración ML:** `RequestForecast` valida el contrato (`ml.inference.v1`) y pide predicción al ML service mediante `MLPort`. En desarrollo el cliente es `FakeMLClient`; con `CCO_ML_MODE=grpc` y `CCO_ML_ENDPOINT` se usa `grpcMLClient` (`backend/internal/analytics/adapters/grpc_ml_client.go`), adaptador gRPC real al servicio Python de Module 6 (`forecast.v1.ForecastService.Predict`). El ML escribe `ml.forecast` y devuelve `forecast_uid`; la persistencia idempotente en `ml.forecast` se completa en el siguiente slice (rol `app_mlservice`).
 4. **DES (Database Efficiency Score):** `capacity_e`, `cost_e`, `performance_e`; pesos `v1_equal` (1/3 cada uno) en Release 1.0; Module 7 aplica los pesos para la recomendación final.
 5. **Portabilidad:** mismos contratos y repositorios en SQLite y PostgreSQL.
 
@@ -56,17 +56,20 @@ Separar el motor analítico del transporte HTTP permite probar la lógica de for
 ### Positivas
 
 - 17 endpoints REST documentados en `API.md` §15.
-- Motor analítico testeable sin depender del servicio ML (cliente fake).
+- Motor analítico testeable sin depender del servicio ML (cliente fake por defecto).
+- Cliente gRPC productivo disponible vía `CCO_ML_MODE=grpc` (Slice 1: puente de transporte Go → Python).
 - Contrato estable hacia Module 6 (ML) y Module 7 (recomendaciones).
 
 ### Negativas
 
 - Sin `CCO_DATA_DSN` no hay datos de entrada; los endpoints responden `503`.
 - El servicio ML es opcional (fake en dev); sin él, los forecasts no están disponibles.
+- El cliente gRPC usa canal insegura por defecto (loopback); TLS/mTLS se configura en un slice posterior.
 
 ### Riesgos
 
 - La lógica de DES y percentiles usa shortcuts (peso igual, computación on-the-fil) documentados como tales; Module 7 debería refinarlos antes de producción.
+- El `forecast_uid` devuelto por el cliente gRPC no es consultable vía `contract.v_forecast` hasta que se implemente la escritura idempotente en `ml.forecast` (Slice 2).
 
 ## Evidencia
 
