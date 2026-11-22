@@ -153,7 +153,39 @@ class InferenceEngine:
         if modeling.empty:
             return None, "insufficient_data"
 
+        # Name-mapping + missing-flag derivation: ensure every feature the
+        # model expects is present in the modeling frame. This bridges
+        # training (training.py) and serving (features.py) which use slightly
+        # different derived-column names.
+        alias_map = {
+            "storage_growth_lag_1h": "storage_growth_bytes_lag_1h",
+        }
+        for column in artifact.feature_list:
+            # 1. Already available as a feature.
+            if column in feature_columns(modeling, self.spec):
+                continue
+            # 2. Try alias mapping (different derived-column names).
+            alias = alias_map.get(column)
+            if alias and alias in modeling.columns:
+                modeling[column] = modeling[alias]
+                continue
+            # 3. Column exists in modeling frame but feature_columns() skipped
+            #    it (not in spec.required/spec.optional). Keep it; the final
+            #    X = last[artifact.feature_list] can still select it.
+            if column in modeling.columns:
+                continue
+            # 4. Derive missing flags for optional columns that exist but lack
+            #    their flag counterpart.
+            if column.startswith("feature_missing_"):
+                base = column[len("feature_missing_"):]
+                if base in modeling.columns and column not in modeling.columns:
+                    modeling[column] = modeling[base].isna().astype(int)
+                    continue
+            return None, "insufficient_data"
+
+        # Recompute the last row AFTER all columns have been materialised.
         last = modeling.tail(1)
+
         required_nan = [
             c
             for c in ("cpu_avg", "workload_intensity")
@@ -162,17 +194,9 @@ class InferenceEngine:
         if required_nan:
             return None, "insufficient_data"
 
-        available = feature_columns(modeling, self.spec)
-        for column in artifact.feature_list:
-            if column not in available:
-                return None, "insufficient_data"
-
         X = last[artifact.feature_list].copy()
         return X, "ok"
 
-    # ------------------------------------------------------------------ #
-    # predict
-    # ------------------------------------------------------------------ #
     def predict(
         self,
         resource_uid: str,

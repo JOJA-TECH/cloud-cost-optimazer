@@ -187,6 +187,13 @@ class ForecastWriter:
         been registered through training yet (Slice 2 bridge; Slice 3
         replaces this with proper training-run registration).
         """
+        # model_version is a semver string like "5.0.0"; the DB column is an
+        # integer. Use the major component for the lookup/insert.
+        try:
+            version_int = int(str(model_version).split(".")[0])
+        except (ValueError, AttributeError):
+            version_int = 0
+
         with self.connect() as conn:
             rows = query(
                 conn,
@@ -196,7 +203,7 @@ class ForecastWriter:
                 where model_name = %s and version = %s
                 limit 1
                 """,
-                (model_name, model_version),
+                (model_name, version_int),
             )
             if rows:
                 return int(rows[0]["model_version_id"])
@@ -210,7 +217,7 @@ class ForecastWriter:
                 values (%s, %s, 'serving_artifact', 'candidate', '{}'::jsonb, '{}'::jsonb)
                 returning model_version_id
                 """,
-                (model_name, model_version),
+                (model_name, version_int),
             )
             row = cur.fetchone()
             model_version_id = int(row[0])
