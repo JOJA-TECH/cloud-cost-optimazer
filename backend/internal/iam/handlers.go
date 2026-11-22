@@ -28,10 +28,15 @@ func (h HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// ReadyzHandler checks that mandatory dependencies (database) are reachable.
-// Returns 200 when ready, 503 otherwise. No secrets or internals are exposed.
+// ReadyzHandler checks that mandatory dependencies are reachable before the
+// service declares itself ready to serve traffic. /healthz stays a simple
+// liveness ("I am up"); /readyz answers "I can serve requests" by verifying
+// database(s), schema version and (optionally) cache/queue connectivity.
+// No secrets or internals are exposed.
 type ReadyzHandler struct {
-	DB *gorm.DB
+	DB        *gorm.DB    // cco_app (mandatory)
+	DataDB    *gorm.DB    // cco_data (optional; checked when configured)
+	MigrateOK func() bool // optional hook reporting schema migrations applied
 }
 
 func (h ReadyzHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +53,26 @@ func (h ReadyzHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database unreachable")
 		return
 	}
+
+	// Verify cco_data connectivity when configured (separate database context).
+	if h.DataDB != nil {
+		dataSQL, err := h.DataDB.DB()
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "NOT_READY", "data database driver unavailable")
+			return
+		}
+		if err := dataSQL.PingContext(r.Context()); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "NOT_READY", "data database unreachable")
+			return
+		}
+	}
+
+	// Verify schema migrations have been applied when a hook is provided.
+	if h.MigrateOK != nil && !h.MigrateOK() {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "schema migrations not applied")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})

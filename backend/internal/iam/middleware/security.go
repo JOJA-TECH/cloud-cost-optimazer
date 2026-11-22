@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
 	"net"
@@ -217,6 +218,48 @@ func CORS(allowedOrigins []string, next http.Handler) http.Handler {
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// CSRFMiddleware provides minimal double-submit cookie CSRF protection for
+// state-changing requests. It is intentionally permissive by default: it only
+// blocks when a cco_csrf cookie is present and the request lacks a matching
+// X-CSRF-Token header on non-safe methods. Enable strict mode with
+// CCO_CSRF_STRICT=true or CCO_ENV=prod so clients are required to send the
+// token. Safe methods (GET/HEAD/OPTIONS) are never blocked and may set the
+// cookie.
+func CSRFMiddleware(strict bool, next http.Handler) http.Handler {
+	safe := map[string]bool{
+		http.MethodGet:     true,
+		http.MethodHead:    true,
+		http.MethodOptions: true,
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if safe[r.Method] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie("cco_csrf")
+		if err != nil || cookie.Value == "" {
+			// No CSRF cookie yet: not blocking (allows gradual rollout).
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := r.Header.Get("X-CSRF-Token")
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(cookie.Value)) != 1 {
+			if strict {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"code":    "CSRF_INVALID",
+					"message": "CSRF token missing or invalid",
+				})
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)

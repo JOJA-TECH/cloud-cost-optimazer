@@ -3,6 +3,7 @@ package acquisition
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,7 +39,10 @@ func (s *stubTargets) ResolveCredentials(ctx context.Context, accountID uuid.UUI
 
 // memStore implements data.DataWriter and data.RunReader in memory: the
 // acquisition service must only ever reach cco_data through those contracts.
+// All mutable state is guarded by mu so the store is safe for concurrent use
+// by multiple acquisition jobs (RunCycle launches per-target goroutines).
 type memStore struct {
+	mu           sync.Mutex
 	nextRunID    int64
 	runs         []data.RunRecord
 	resources    map[string]int64
@@ -59,6 +63,8 @@ func newMemStore() *memStore {
 }
 
 func (m *memStore) EnsureResource(ctx context.Context, ref data.ResourceRef) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if id, ok := m.resources[ref.AzureResourceID]; ok {
 		return id, nil
 	}
@@ -68,6 +74,8 @@ func (m *memStore) EnsureResource(ctx context.Context, ref data.ResourceRef) (in
 }
 
 func (m *memStore) StartRun(ctx context.Context, source string, resourceID int64, scope string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.nextRunID++
 	scopeCopy := scope
 	m.runs = append(m.runs, data.RunRecord{
@@ -78,40 +86,62 @@ func (m *memStore) StartRun(ctx context.Context, source string, resourceID int64
 }
 
 func (m *memStore) FinishRun(ctx context.Context, runID int64, status string, rowsIngested int, errMsg string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.finishStatus[runID] = status
 	m.finishRows[runID] = rowsIngested
 	return nil
 }
 
 func (m *memStore) WriteMetricReadings(ctx context.Context, resourceID int64, metrics []data.Metric) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.metrics = append(m.metrics, metrics...)
 	return len(metrics), nil
 }
 
 func (m *memStore) WriteResourceStats(ctx context.Context, resourceID int64, stats []data.ResourceStat) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.stats = append(m.stats, stats...)
 	return len(stats), nil
 }
 
 func (m *memStore) WriteQueryStore(ctx context.Context, resourceID int64, queries []data.QueryStoreQueryRecord, stats []data.QueryStoreRuntimeRecord) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.qsQueries = append(m.qsQueries, queries...)
 	m.qsStats = append(m.qsStats, stats...)
 	return len(queries) + len(stats), nil
 }
 
 func (m *memStore) UpsertCostDaily(ctx context.Context, records []data.CostRecord) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return len(records), nil
 }
 
 func (m *memStore) UpsertConfigSnapshot(ctx context.Context, snap data.ConfigurationSnapshot) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return 1, nil
 }
 
 func (m *memStore) WriteMetricSamples(ctx context.Context, resourceID int64, samples []data.RawSample) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return len(samples), nil
 }
 
+func (m *memStore) RunsCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.runs)
+}
+
 func (m *memStore) ListRuns(ctx context.Context, uids []uuid.UUID, filter data.RunFilter) ([]data.RunRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	out := []data.RunRecord{}
 	for _, r := range m.runs {
 		if filter.Source != "" && r.Source != filter.Source {
@@ -126,6 +156,8 @@ func (m *memStore) ListRuns(ctx context.Context, uids []uuid.UUID, filter data.R
 }
 
 func (m *memStore) GetRun(ctx context.Context, id int64) (data.RunRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, r := range m.runs {
 		if r.CollectorRunID == id {
 			return r, nil

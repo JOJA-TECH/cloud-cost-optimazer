@@ -19,7 +19,7 @@ func TestSchedulerRunsAndStops(t *testing.T) {
 	}()
 
 	deadline := time.After(2 * time.Second)
-	for len(store.runs) == 0 {
+	for store.RunsCount() == 0 {
 		select {
 		case <-deadline:
 			t.Fatalf("scheduler did not run a cycle within 2s")

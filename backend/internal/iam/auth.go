@@ -217,9 +217,9 @@ func (m *TokenManager) validateDBRefreshToken(token string) (uuid.UUID, bool) {
 	if err != nil {
 		return uuid.Nil, false
 	}
-	// GORM Scan with DELETE RETURNING: RowsAffected is on the underlying
-	// statement; check via the result's rows affected if available.
-	if m.db.Statement.RowsAffected == 0 {
+	// row.UserID is populated by RETURNING user_id; if no row matched, it stays
+	// the zero value. This works reliably on both PostgreSQL and SQLite.
+	if row.UserID == uuid.Nil {
 		return uuid.Nil, false
 	}
 	return row.UserID, true
