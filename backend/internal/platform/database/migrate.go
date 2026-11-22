@@ -43,6 +43,47 @@ func Migrate(db *gorm.DB) error {
 		if err := migratePermissionIndexes(db); err != nil {
 			return err
 		}
+		if err := migrateJobsTable(db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateJobsTable crea la tabla duradera de jobs (Fase 3 del roadmap) en el
+// schema app de cco_app. Es idempotente: seguro reejecutar sobre bases
+// desplegadas. La PK uuid se genera en el lado de la aplicación (Go), por lo
+// que no depende de la extensión pgcrypto.
+func migrateJobsTable(db *gorm.DB) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS app.jobs (
+			id uuid PRIMARY KEY,
+			job_type text NOT NULL,
+			organization_id uuid,
+			project_id uuid,
+			status text NOT NULL DEFAULT 'queued',
+			attempts int NOT NULL DEFAULT 0,
+			max_attempts int NOT NULL DEFAULT 5,
+			payload text,
+			idempotency_key text UNIQUE,
+			scheduled_at timestamptz,
+			started_at timestamptz,
+			finished_at timestamptz,
+			last_error text,
+			duration_ms bigint,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			updated_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS ix_app_jobs_status_scheduled
+			ON app.jobs (status, scheduled_at) WHERE status = 'queued'`,
+		`CREATE INDEX IF NOT EXISTS ix_app_jobs_type ON app.jobs (type)`,
+		`CREATE INDEX IF NOT EXISTS ix_app_jobs_org
+			ON app.jobs (organization_id) WHERE organization_id IS NOT NULL`,
+	}
+	for _, sql := range statements {
+		if err := db.Exec(sql).Error; err != nil {
+			return fmt.Errorf("migrate jobs table: %w", err)
+		}
 	}
 	return nil
 }
