@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
 	"github.com/google/uuid"
@@ -23,4 +24,21 @@ func (f *FakeMLClient) Forecast(ctx context.Context, req analytics.ForecastReque
 func (f *FakeMLClient) ValidateContract(ctx context.Context) error {
 	// Always valid in fake mode
 	return nil
+}
+
+// notAvailableMLClient implements MLPort but always returns an error,
+// used when CCO_ML_MODE=not_available so the system never presents a fake
+// forecast as productive in Azure mode.
+type notAvailableMLClient struct{}
+
+func NewNotAvailableMLClient() *notAvailableMLClient {
+	return &notAvailableMLClient{}
+}
+
+func (n *notAvailableMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
+	return uuid.Nil, errors.New("ML service not available")
+}
+
+func (n *notAvailableMLClient) ValidateContract(ctx context.Context) error {
+	return errors.New("ML service not available")
 }

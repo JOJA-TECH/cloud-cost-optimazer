@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -58,7 +59,7 @@ func (r *compositeRepo) CreateUser(ctx context.Context, input iam.CreateUserInpu
 	return r.userRepo.CreateUser(ctx, input)
 }
 func (r *compositeRepo) FindUserByID(ctx context.Context, id uuid.UUID) (iam.UserDTO, error) {
-	return iam.UserDTO{}, nil
+	return r.userRepo.FindUserByID(ctx, id)
 }
 func (r *compositeRepo) FindUserByEmail(ctx context.Context, email string) (iam.UserDTO, error) {
 	return r.userRepo.FindUserByEmail(ctx, email)
@@ -67,11 +68,13 @@ func (r *compositeRepo) FindPasswordHash(ctx context.Context, userID uuid.UUID) 
 	return r.userRepo.FindPasswordHash(ctx, userID)
 }
 func (r *compositeRepo) UpdateUser(ctx context.Context, id uuid.UUID, input iam.UpdateUserInput) (iam.UserDTO, error) {
-	return iam.UserDTO{}, nil
+	return r.userRepo.UpdateUser(ctx, id, input)
 }
-func (r *compositeRepo) DeleteUser(ctx context.Context, id uuid.UUID) error { return nil }
+func (r *compositeRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	return r.userRepo.DeleteUser(ctx, id)
+}
 func (r *compositeRepo) ListUsers(ctx context.Context, filter iam.UserListFilter) ([]iam.UserDTO, error) {
-	return nil, nil
+	return r.userRepo.ListUsers(ctx, filter)
 }
 func (r *compositeRepo) FindRoleByCode(ctx context.Context, code string) (iam.RoleDTO, error) {
 	return r.roleRepo.FindRoleByCode(ctx, code)
@@ -282,10 +285,16 @@ func main() {
 		// Analytics module (Module 5)
 		analyticsRepo = analyticsrepos.NewAnalyticsRepository(dataDB)
 		var mlClient analytics.MLPort
-		if mode == "azure" {
-			// Real ML client would go here; for now fake
+		mlMode := os.Getenv("CCO_ML_MODE")
+		switch mlMode {
+		case "baseline":
+			// Deterministic baseline (fake client) for local/dev validation.
 			mlClient = analyticsadapters.NewFakeMLClient()
-		} else {
+		case "not_available":
+			// Explicitly not available: never present a fake forecast as productive.
+			mlClient = analyticsadapters.NewNotAvailableMLClient()
+		default:
+			// Default (dev/unset): fake client.
 			mlClient = analyticsadapters.NewFakeMLClient()
 		}
 		analyticsSvc = analytics.NewService(analyticsRepo, dataRepo, dataRepo, dataRepo, mlClient, 4)
@@ -385,8 +394,13 @@ func main() {
 		SQLUser:          os.Getenv("CCO_ACQ_SQL_USER"),
 		SQLPassword:      os.Getenv("CCO_ACQ_SQL_PASSWORD"),
 	})
+	// Shutdown context: cancelled on SIGINT/SIGTERM; shared by the
+	// acquisition/cost schedulers and the HTTP server for orderly shutdown.
+	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	if acqWriter != nil {
-		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(context.Background())
+		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(shutdownCtx)
 
 		// Cost scheduler (T5): separate ticker, runs per-subscription.
 		go func() {
@@ -395,11 +409,11 @@ func main() {
 			slog.Info("cost scheduler started", "interval", envSeconds("CCO_ACQ_COST_INTERVAL_SECONDS", 6*time.Hour))
 			for {
 				select {
-				case <-ctx.Done():
+				case <-shutdownCtx.Done():
 					slog.Info("cost scheduler stopped")
 					return
 				case <-ticker.C:
-					_, err := acqSvc.RunCostCycle(ctx, nil)
+					_, err := acqSvc.RunCostCycle(shutdownCtx, nil)
 					if err != nil {
 						if err == acquisition.ErrStorageUnavailable {
 							slog.Warn("cost cycle skipped: cco_data storage not configured")
@@ -432,11 +446,24 @@ func main() {
 		}
 	}
 
+	// M2M clients are loaded from CCO_M2M_CLIENTS:
+	//   client_id:argon2id_hash:scope1,scope2|client_id2:hash2:scope3
+	// Empty in production means the /auth/m2m/token endpoint fails closed
+	// (no client can authenticate).
+	spClients, spScopes := parseM2MClients(os.Getenv("CCO_M2M_CLIENTS"))
+	if os.Getenv("CCO_ENV") == "prod" && len(spClients) == 0 {
+		log.Fatalf("CCO_M2M_CLIENTS is required when CCO_ENV=prod")
+	}
+	// Production hardening: require secure cookies in prod.
+	if os.Getenv("CCO_ENV") == "prod" && os.Getenv("CCO_COOKIE_SECURE") != "true" {
+		log.Fatalf("CCO_COOKIE_SECURE=true is required when CCO_ENV=prod")
+	}
+
 	spCfg := adapters.SPConfig{
 		TokenManager:  tokenMgr,
 		Repo:          repo,
-		Clients:       map[string]string{}, // populated from env in production
-		AllowedScopes: map[string][]string{},
+		Clients:       spClients,
+		AllowedScopes: spScopes,
 	}
 	spAdapter := adapters.NewServicePrincipalAdapter(spCfg)
 
@@ -450,6 +477,7 @@ func main() {
 	// Public
 	mux.Handle("GET /", iam.RootHandler{})
 	mux.Handle("GET /healthz", iam.HealthHandler{})
+	mux.Handle("GET /readyz", iam.ReadyzHandler{DB: db})
 
 	// Auth (password dev, OIDC, M2M)
 	mux.Handle("POST /auth/register", iam.NewRegisterHandler(userRepo, tokenMgr))
@@ -520,6 +548,19 @@ func main() {
 			}
 		}
 	}
+	// Production hardening: refuse to start with an open CORS policy or without
+	// fail-closed security, and never default to "*".
+	hasStar := false
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			hasStar = true
+		}
+	}
+	if os.Getenv("CCO_ENV") == "prod" {
+		if len(allowedOrigins) == 0 || hasStar {
+			log.Fatalf("CCO_ALLOWED_ORIGINS must be set to an explicit allowlist (no '*') when CCO_ENV=prod")
+		}
+	}
 	handler := middleware.CORS(allowedOrigins, mux)
 	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
 	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
@@ -538,10 +579,56 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	go func() {
+		<-shutdownCtx.Done()
+		slog.Info("shutdown signal received, stopping server")
+		shutdownTimeout := envSeconds("CCO_SHUTDOWN_TIMEOUT_SEC", 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
 	log.Printf("cco-app listening on %s (driver=%s)", addr, driver)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// parseM2MClients parses CCO_M2M_CLIENTS into client maps.
+// Format: client_id:argon2id_hash:scope1,scope2|client_id2:hash2:scope3
+// Hashes must be Argon2id (base64(salt).base64(hash)) per the repo standard.
+func parseM2MClients(value string) (map[string]string, map[string][]string) {
+	clients := make(map[string]string)
+	scopes := make(map[string][]string)
+	if value == "" {
+		return clients, scopes
+	}
+	for _, entry := range strings.Split(value, "|") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, ":", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		clientID := strings.TrimSpace(parts[0])
+		secretHash := strings.TrimSpace(parts[1])
+		var clientScopes []string
+		if len(parts) == 3 {
+			for _, s := range strings.Split(parts[2], ",") {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					clientScopes = append(clientScopes, s)
+				}
+			}
+		}
+		if clientID != "" && secretHash != "" {
+			clients[clientID] = secretHash
+			scopes[clientID] = clientScopes
+		}
+	}
+	return clients, scopes
 }
 
 func listUsers(repo iam.UserRepository) http.HandlerFunc {
