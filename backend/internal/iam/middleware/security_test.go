@@ -29,10 +29,11 @@ func newTestValkey(t *testing.T) valkey.Client {
 	return vc
 }
 
-// send sends a GET as the given X-Forwarded-For IP and returns the status code.
+// send sends a GET as the given IP and returns the status code.
 func send(h http.Handler, ip string) int {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	if ip != "" {
+		req.RemoteAddr = ip + ":12345"
 		req.Header.Set("X-Forwarded-For", ip)
 	}
 	rec := httptest.NewRecorder()

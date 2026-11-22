@@ -126,9 +126,11 @@ func TestSeedAuditPermissionsAddsScopedReadGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	for id, code := range map[int16]string{1: "platform_admin", 2: "auditor", 3: "analyst"} {
+	for _, code := range []string{"platform_admin", "auditor", "analyst"} {
 		if err := db.Table("roles").Create(&database.RoleModel{
-			RoleID: id, RoleCode: code, IsSystemRole: true, CreatedAt: now,
+			RoleCode:     code,
+			IsSystemRole: true,
+			CreatedAt:    now,
 		}).Error; err != nil {
 			t.Fatalf("seed role %q: %v", code, err)
 		}
