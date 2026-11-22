@@ -506,15 +506,6 @@ CREATE TABLE cloud.resources (
 
 ALTER TABLE cloud.resources OWNER TO postgres;
 
-ALTER TABLE ONLY cloud.resources
-    ADD CONSTRAINT resources_pkey PRIMARY KEY (resource_uid);
-
-ALTER TABLE ONLY cloud.resources
-    ADD CONSTRAINT resources_cloud_account_id_fkey FOREIGN KEY (cloud_account_id) REFERENCES cloud.accounts(cloud_account_id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY cloud.resources
-    ADD CONSTRAINT resources_azure_resource_id_key UNIQUE (azure_resource_id);
-
 CREATE INDEX ix_resources_account_server ON cloud.resources USING btree (cloud_account_id, server_name);
 
 CREATE INDEX ix_resources_account_lifecycle ON cloud.resources USING btree (cloud_account_id, lifecycle_status);
@@ -891,6 +882,16 @@ ALTER TABLE ONLY cloud.resource_bindings
 
 ALTER TABLE ONLY cloud.accounts
     ADD CONSTRAINT uq_cloud_account_subscription UNIQUE (provider_code, subscription_id);
+
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_pkey PRIMARY KEY (resource_uid);
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_cloud_account_id_fkey FOREIGN KEY (cloud_account_id) REFERENCES cloud.accounts(cloud_account_id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_azure_resource_id_key UNIQUE (azure_resource_id);
 
 
 --
