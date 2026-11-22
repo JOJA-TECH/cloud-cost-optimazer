@@ -1,5 +1,8 @@
 # DESIGN-XXX — Diseño técnico
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear documentos de diseño (DESIGN-XXX). No contiene diseño real. Los diseños implementados viven en `docs/05-design/DESIGN-*-001.md`.
+
+
 ## Componente
 
 ## Responsabilidad

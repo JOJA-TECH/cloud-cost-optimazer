@@ -8,9 +8,10 @@ información necesaria para la gestión de usuarios, organizaciones,
 proyectos, cuentas de servicios cloud, estado de la aplicación y
 auditoría.
 
-La base de datos está diseñada para trabajar con autenticación externa
-mediante un proveedor de identidad **OIDC/OAuth2**. Por lo tanto, la
-base de datos no se encarga directamente de almacenar contraseñas.
+La base de datos soporta autenticación externa mediante un proveedor de
+identidad **OIDC/OAuth2** y, en modo desarrollo/local, autenticación por
+contraseña con hash Argon2id almacenado en `iam.users` (columna
+`password_hash`, requiere `ALTER TABLE` en producción).
 
 El script utiliza las extensiones `pgcrypto` y `citext`, crea cinco
 esquemas y aplica mecanismos de seguridad mediante **Row-Level Security
@@ -44,7 +45,7 @@ Almacena los usuarios de la aplicación.
 Campos principales:
 
 -   `user_id`: identificador UUID y clave primaria.
--   `email`: correo electrónico del usuario.
+-   `email`: correo electrónico del usuario (tipo `CITEXT`, único).
 -   `display_name`: nombre mostrado en la aplicación.
 -   `status`: estado del usuario: `pending`, `active`, `suspended` o
     `deleted`.
@@ -52,6 +53,8 @@ Campos principales:
 -   `last_login_at`: fecha y hora del último inicio de sesión.
 -   `created_at`: fecha de creación.
 -   `updated_at`: fecha de última actualización.
+
+> **Nota:** La tabla `iam.users` **no tiene columna `password_hash`** en el dump SQL de producción (`cco_app.sql`). El login por contraseña con Argon2id requiere `ALTER TABLE iam.users ADD COLUMN password_hash` antes de habilitarlo fuera de desarrollo (ver ADR-004).
 
 El correo es único y se utiliza el tipo `CITEXT`, que permite manejar el
 texto sin distinguir mayúsculas y minúsculas.
@@ -90,6 +93,8 @@ El script inicializa cuatro roles:
 -   `analyst`
 -   `viewer`
 
+> **Nota:** El dump SQL (`cco_app.sql`) **no contiene `INSERT` de roles ni de permisos**; las tablas `iam.roles`, `iam.permissions` y `iam.role_permissions` quedan vacías hasta que se ejecuten los seeds del backend (`iam.Seed*Permissions` en `cmd/cco-app/main.go`).
+
 ## 3.4 `iam.permissions`
 
 Contiene los permisos disponibles para las diferentes operaciones de la
@@ -101,15 +106,24 @@ Algunos ejemplos son:
 -   `organization:manage`
 -   `project:read`
 -   `project:manage`
--   `cloud_account:read`
--   `cloud_account:manage`
--   `resource:read`
--   `resource:manage`
--   `forecast:read`
--   `recommendation:read`
+-   `cloud_accounts:read`
+-   `cloud_accounts:write`
+-   `resources:read`
+-   `data_sources:read`
+-   `data_sources:write`
+-   `acquisitions:read`
+-   `acquisitions:run`
+-   `analytics:read`
+-   `analytics:write`
+-   `data:read`
+-   `recommendations:read`
+-   `recommendations:write`
+-   `recommendations:evaluate`
 -   `recommendation:review`
--   `report:read`
--   `report:create`
+-   `reports:read`
+-   `reports:write`
+-   `jobs:read`
+-   `jobs:cancel`
 -   `notification:read`
 -   `notification:manage`
 -   `audit:read`
@@ -456,8 +470,11 @@ Las acciones permitidas son:
 -   `viewed`
 -   `accepted`
 -   `rejected`
--   `deferred`
+-   `applied`
 -   `dismissed`
+-   `deferred`
+-   `restored`
+-   `deferred`
 -   `restored`
 
 Esto permite conservar el historial de interacción con las

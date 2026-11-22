@@ -2,6 +2,7 @@
 
 | ID | Riesgo | Prob. (1-5) | Impacto (1-5) | Score | Mitigación | Responsable | Estado |
 |---|---|---:|---:|---:|---|---|---|
+| RSK-001 | Credenciales o secretos expuestos en documentación o repositorio | 4 | 5 | 20 | Eliminar secretos de .md, añadir .gitignore, secret scanning en CI | Equipo del proyecto | Abierto |
 | RSK-002 | Histórico insuficiente para forecasting y percentiles confiables | 5 | 5 | 25 | Definir ventana mínima, recolectar datos continuamente y documentar cobertura | Equipo del proyecto | Abierto |
 | RSK-003 | Costo facturado de SQL igual a cero por nivel gratuito o crédito | 5 | 5 | 25 | Separar costo facturado, precio de lista y costo contrafactual | Equipo del proyecto | Abierto |
 | RSK-004 | Catálogo de precios mezcla modalidades, tiers, reservas y componentes | 4 | 5 | 20 | Implementar contrato de precios por región, modalidad, tier, unidad, tipo y vigencia | Equipo del proyecto | Abierto |

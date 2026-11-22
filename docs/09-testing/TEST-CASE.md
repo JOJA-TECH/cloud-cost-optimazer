@@ -1,5 +1,8 @@
 # TEST-XXX — Caso de prueba
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear casos de prueba (TEST-XXX). No contiene casos de prueba reales.
+
+
 - **Tipo:** Funcional / Integración / Rendimiento / Seguridad / Usabilidad
 - **Prioridad:**
 - **Requisito:** REQ-XXX

@@ -1,5 +1,8 @@
 # ADR-XXX — [Título de la decisión]
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear ADRs (ADR-XXX). No contiene decisión real. Los ADR implementados viven en `docs/04-architecture/decisions/`.
+
+
 - **Estado:** Propuesta / Aceptada / Rechazada / Reemplazada
 - **Fecha:**
 - **Decisores:**

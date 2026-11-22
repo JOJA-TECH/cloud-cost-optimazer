@@ -119,7 +119,7 @@ Todas las ADR viven en `docs/04-architecture/decisions/`.
 | Auditoría y Trazabilidad | `backend/internal/audit` | ADR-014 | Implementado | `/api/v1/audit/events`, correlaciones e historial por recurso |
 | Jobs (cola duradera y worker) | `backend/internal/jobs` | ADR-015 | Implementado | `POST/GET/DELETE /api/v1/jobs`, `GET /api/v1/jobs`, `POST /api/v1/jobs/acquisition`, `POST /api/v1/jobs/report`, `POST /api/v1/jobs/analytics`, `POST /api/v1/jobs/recommendation` |
 | Simulación y Laboratorio | — | — | Pendiente | — |
-| Reportes | — | — | Pendiente | — |
+| Reportes (generación y exportación) | `backend/internal/reporting` | — | Implementado | `POST /api/v1/jobs/report`, `GET /api/v1/jobs/{id}` |
 
 Referencia completa de la API: [`backend/API.md`](../../backend/API.md). Guía de ejecución y portabilidad: [`backend/README.md`](../../backend/README.md). Catálogo de módulos: [`MODULES.md`](MODULES.md).
 

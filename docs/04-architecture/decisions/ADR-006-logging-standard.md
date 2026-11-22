@@ -50,7 +50,7 @@ Definir cómo emite el backend los logs de las operaciones de autenticación y a
 - `request_id` y `correlation_id` viajan como atributos consistentes en cada entrada.
 
 **Desventajas**
-- Requiere Go 1.21+ (el proyecto usa Go 1.22, por lo tanto compatible).
+- Requiere Go 1.21+ (el proyecto usa Go 1.25, por lo tanto compatible).
 
 ## Criterios de evaluación
 

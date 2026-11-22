@@ -22,14 +22,19 @@ Base URL (desarrollo local): `http://localhost:8080`
 4. [Endpoints protegidos](#endpoints-protegidos)
    - [GET /api/v1/users](#get-apiv1users)
    - [POST /api/v1/can](#post-apiv1can)
+   - [Jobs (cola duradera)](#jobs-cola-duradera)
    - [Recommendation Engine (Module 7)](#recommendation-engine-module-7)
-5. [Observabilidad y logging](#observabilidad-y-logging)
-6. [Seguridad de la API](#seguridad-de-la-api)
-7. [Códigos de error](#códigos-de-error)
-8. [Headers de trazabilidad](#headers-de-trazabilidad)
-9. [Ejemplos completos (PowerShell)](#ejemplos-completos-powershell)
-10. [Endpoints pendientes (futuro)](#endpoints-pendientes-futuro)
-11. [Estructura del repositorio](#estructura-del-repositorio)
+5. [Cloud (Gestión de Nube y Fuentes de Datos)](#cloud-gestion-de-nube-y-fuentes-de-datos)
+6. [Adquisición y Monitoreo de Datos](#adquisicion-y-monitoreo-de-datos)
+7. [Gestión de Datos](#gestion-de-datos)
+8. [Analítica y Optimización](#analitica-y-optimizacion)
+9. [Observabilidad y logging](#observabilidad-y-logging)
+10. [Seguridad de la API](#seguridad-de-la-api)
+11. [Códigos de error](#codigos-de-error)
+12. [Headers de trazabilidad](#headers-de-trazabilidad)
+13. [Ejemplos completos (PowerShell)](#ejemplos-completos-powershell)
+14. [Endpoints pendientes (futuro)](#endpoints-pendientes-futuro)
+15. [Estructura del repositorio](#estructura-del-repositorio)
 
 ---
 
@@ -48,6 +53,20 @@ Base URL (desarrollo local): `http://localhost:8080`
 | `CCO_OIDC_REDIRECT_URL` | (vacío) | URL de redirect de OIDC |
 | `CCO_COOKIE_DOMAIN` | (vacío) | Dominio para cookies de auth |
 | `CCO_COOKIE_SECURE` | `false` | Cookies solo sobre HTTPS (`true` en producción) |
+| `CCO_ALLOWED_ORIGINS` | `*` | Orígenes CORS permitidos (rechazar `*` en producción) |
+| `CCO_CSP` | — | Cabecera `Content-Security-Policy` |
+| `CCO_ENV` | — | `prod` exige `CCO_JWT_SIGNING_KEY` y configuración segura |
+| `CCO_VALKEY_ADDR` | — | Dirección de Valkey (vacío = modo dev, fallback en memoria) |
+| `CCO_VALKEY_PASSWORD` | — | Contraseña de Valkey |
+| `CCO_VALKEY_DB` | — | Número de base de datos de Valkey |
+| `CCO_CLOUD_PROVIDER_MODE` | — | `azure` activa adaptadores reales; otro valor usa adaptadores falsos |
+| `CCO_ACQ_INTERVAL_SECONDS` | `60` | Intervalo del scheduler de adquisición (segundos) |
+| `CCO_ACQ_COST_INTERVAL_SECONDS` | `21600` | Intervalo del ciclo de costos (segundos, 6 h) |
+| `CCO_ACQ_MONITOR_DELAY_SECONDS` | `90` | Retraso de ventana de métricas (segundos) |
+| `CCO_ACQ_MONITOR_LOOKBACK_SECONDS` | `300` | Ventana de lookback de métricas (segundos) |
+| `CCO_ACQ_COST_LOOKBACK_DAYS` | `3` | Lookback de costos (días) |
+| `CCO_ACQ_SQL_USER` | — | Credencial SQL para DMVs/Query Store |
+| `CCO_ACQ_SQL_PASSWORD` | — | Contraseña SQL para DMVs/Query Store |
 
 ---
 
@@ -213,7 +232,7 @@ curl -X POST http://localhost:8080/auth/login -H "Content-Type: application/json
 
 Redirige al proveedor OIDC (Entra ID / Keycloak / Google).
 
-**Estado:** No disponible en Report 1.0. El adapter existe en código pero no está conectado al flujo de autenticación por limitaciones de tiempo. Se activará en una versión futura.
+**Estado:** Registrado solo si `CCO_OIDC_ISSUER_URL` y `CCO_OIDC_CLIENT_ID` están definidos; de lo contrario responde `404 Not Found`.
 
 ---
 
@@ -221,7 +240,7 @@ Redirige al proveedor OIDC (Entra ID / Keycloak / Google).
 
 Endpoint de devolución de llamada de OIDC tras la autenticación federada.
 
-**Estado:** No disponible en Report 1.0. Devuelve `501 Not Implemented`.
+**Estado:** Registrado solo si `CCO_OIDC_ISSUER_URL` y `CCO_OIDC_CLIENT_ID` están definidos; de lo contrario responde `404 Not Found`.
 
 ---
 
@@ -366,7 +385,41 @@ curl -X POST http://localhost:8080/api/v1/can -H "Authorization: Bearer $token" 
 
 ---
 
-## 6. Observabilidad y logging
+## 4.5. Jobs (cola duradera)
+
+Todos los endpoints requieren `Authorization: Bearer <access_token>` y pasan por `AuthMiddleware`.
+
+### POST /api/v1/jobs/acquisition
+
+Encola un job de tipo `acquisition:run` que ejecuta `acquisition.Service.RunCycle` para la organización del caller. Responde `202 Accepted` con `job_id` sin bloquear la API. Requiere permiso `acquisitions:run`.
+
+### POST /api/v1/jobs/report
+
+Encola un job de tipo `report:optimization`. Responde `202 Accepted` con `job_id`. Requiere permiso `reports:write`.
+
+### POST /api/v1/jobs/analytics
+
+Encola un job de tipo `analytics:compute` que ejecuta computaciones analíticas según el payload. Responde `202 Accepted` con `job_id`. Requiere permiso `analytics:compute`.
+
+### POST /api/v1/jobs/recommendation
+
+Encola un job de tipo `recommendation:generate` que ejecuta `GenerateRecommendation` y persiste la decisión en `cco_data`. Responde `202 Accepted` con `job_id`. Requiere permiso `recommendations:write`.
+
+### GET /api/v1/jobs
+
+Lista jobs. Requiere permiso `jobs:read`.
+
+### GET /api/v1/jobs/{id}
+
+Consulta el estado de un job. Requiere permiso `jobs:read`.
+
+### DELETE /api/v1/jobs/{id}
+
+Cancela un job. Requiere permiso `jobs:write`.
+
+---
+
+## 5. Cloud (Gestión de Nube y Fuentes de Datos)
 
 El backend emite logs estructurados a `stdout` mediante `log/slog` (estándar de Go 1.22). No hay dependencias externas ni un servicio de logs separado: stdout es la interfaz hacia cualquier colector (Loki, ELK, Fluentd, CloudWatch).
 
@@ -426,7 +479,7 @@ $env:CCO_LOG_FORMAT = "json"
 
 ---
 
-## 6. Seguridad de la API
+## 10. Seguridad de la API
 
 ### Resumen de medidas de seguridad
 
@@ -504,7 +557,7 @@ Las contraseñas se hashean con **Argon2id** (ganador del Password Hashing Compe
 
 ---
 
-## 7. Códigos de error
+## 11. Códigos de error
 
 Todos los errores devuelven JSON con formato:
 ```json
@@ -546,7 +599,7 @@ Todos los errores devuelven JSON con formato:
 
 ---
 
-## 8. Headers de trazabilidad
+## 12. Headers de trazabilidad
 
 El middleware inyecta y respeta los siguientes headers para trazabilidad transversal (RNF-13):
 
@@ -560,7 +613,7 @@ El middleware inyecta y respeta los siguientes headers para trazabilidad transve
 
 ---
 
-## 9. Ejemplos completos (PowerShell)
+## 13. Ejemplos completos (PowerShell)
 
 ### Flujo completo: registrar → login → verificar permiso
 
@@ -606,17 +659,18 @@ curl -X POST http://localhost:8080/auth/m2m/token -H "Content-Type: application/
 
 ---
 
-## 10. Endpoints pendientes (futuro)
+## 14. Endpoints pendientes (futuro)
 
-Estos endpoints existen en el código pero devuelven `501 Not Implemented` hasta completar su implementación:
+Estos endpoints existen en el código pero solo están registrados cuando se configuran las variables de entorno de OIDC (`CCO_OIDC_ISSUER_URL`, `CCO_OIDC_CLIENT_ID`). Si no están configuradas, responden `404 Not Found` (la ruta no está montada):
 
+- `GET /auth/oidc/login` — intercambio de código de autorización OIDC
 - `GET /auth/oidc/callback` — intercambio de código de autorización OIDC
 
 Ver `docs/04-architecture/decisions/ADR-004-iam-authentication.md` para detalles de los shortcuts y caminos de upgrade.
 
 ---
 
-## 11. Estructura del repositorio
+## 15. Estructura del repositorio
 
 ```
 cloud-cost-optimazer/
@@ -646,7 +700,7 @@ cloud-cost-optimazer/
 
 ---
 
-## 12. Endpoints del módulo Cloud (Gestión de Nube y Fuentes de Datos)
+## 15. Estructura del repositorio
 
 Todos los endpoints de esta sección requieren header `Authorization: Bearer <access_token>` y pasan por `AuthMiddleware` + `RequirePermission(recurso, acción)`. Están definidos en `backend/internal/cloud/handlers.go` y resueltos contra `internal/cloud/interfaces.go`.
 

@@ -34,21 +34,16 @@ El catálogo de módulos y sus límites está en [`docs/04-architecture/MODULES.
 | Módulo | Paquete | Estado | Responsabilidad |
 |--------|---------|--------|-----------------|
 | Identidad y Acceso | `internal/iam` | Implementado | Auth (JWT/Argon2id), OIDC, M2M, refresh tokens, roles, permisos, rate limiting, lockout |
-| Gestión de Nube y Fuentes de Datos | `internal/cloud` | Implementado | Cuentas cloud, validación de conexión, sincronización de recursos, bindings (fuentes de datos) |
+| Gestión de Nube y Fuentes de Datos | `internal/cloud` | Implementado | Cuentas cloud, validación de conexión, sincronización de recursos, bindings |
 | Adquisición y Monitoreo de Datos | `internal/acquisition` | Implementado | Ciclos de adquisición, Azure Monitor, DMVs SQL, Query Store, costos diarios |
-| Gestión de Datos | `internal/data` | Implementado | Lectura de métricas/costos/configuración y contratos de escritura para adquisición en `cco_data` |
+| Gestión de Datos | `internal/data` | Implementado | Lectura de métricas/costos/configuración y contratos de escritura en `cco_data` |
 | Analítica y Optimización | `internal/analytics` | Implementado | Snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts |
-| Integración con ML | `internal/analytics` (contrato) | Parcial | Contrato `MLPort`; proveedor productivo pendiente (Module 6) |
-| Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación, persistencia versionada, trazas y transiciones explícitas (Module 7) |
-| Auditoría y Trazabilidad | `internal/audit` | Implementado | Eventos append-only, consultas protegidas y propagación de trazas (Module 8) |
-| Jobs (cola duradera y worker) | `internal/jobs` | Implementado | Tabla `app.jobs`, reclamación con `FOR UPDATE SKIP LOCKED`, reintentos con backoff+jitter, idempotencia, cancelación; endpoints `/api/v1/jobs/*` y encolado asíncrono de adquisición (`/api/v1/jobs/acquisition`), reportes (`/api/v1/jobs/report`), analítica (`/api/v1/jobs/analytics`) y recomendaciones pesadas (`/api/v1/jobs/recommendation`) (Module 9) |
-| Gestión de Datos | `internal/data` | Implementado | API de solo lectura sobre `cco_data`: métricas, costos, snapshots, cobertura |
-| Analítica y Optimización | `internal/analytics` | Implementado | Evidencia: snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets y forecasts |
-| Integración con ML | `internal/recommendation` | Integrado por contrato | Forecasts consumidos mediante `MLPredictionReader`; el dominio no depende de la implementación ML |
-| Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación y evaluación de recomendaciones versionadas, explicables y auditables, con políticas, simulación y candidatos del catálogo |
-| Auditoría y Trazabilidad | — | Pendiente | Trazabilidad transversal vía logs (`request_id`/`correlation_id`) |
+| Integración con ML | `internal/analytics` (contrato) | Parcial | Contrato `MLPort`; proveedor productivo pendiente |
+| Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación, persistencia versionada, trazas y transiciones explícitas |
+| Auditoría y Trazabilidad | `internal/audit` | Implementado | Eventos append-only, consultas protegidas y propagación de trazas |
+| Jobs (cola duradera y worker) | `internal/jobs` | Implementado | Tabla `app.jobs`, reclamación con `FOR UPDATE SKIP LOCKED`, reintentos con backoff+jitter, idempotencia, cancelación; endpoints `/api/v1/jobs/*` y encolado asíncrono de adquisición, reportes, analítica y recomendaciones pesadas |
 | Simulación y Laboratorio | — | Pendiente | Escenarios controlados y datos sintéticos |
-| Reportes | — | Pendiente | Consolidación y exportación de reportes |
+| Reportes (generación y exportación) | `internal/reporting` | Implementado | `app.report_requests`, `app.report_artifacts`, endpoints `/api/v1/jobs/report` (202 Accepted), formatos JSON/CSV/HTML, almacenamiento local con límites de tamaño y retención |
 
 ## Principio de dependencia entre módulos
 
@@ -123,7 +118,7 @@ go build -o cco-app.exe ./cmd/cco-app/
 # Ejecutar (desarrollo, SQLite en memoria)
 $env:CCO_DB_DSN = "file::memory:?cache=shared"
 $env:CCO_DB_DRIVER = "sqlite"
-$env:CCO_JWT_SIGNING_KEY = "clave-secreta-dev"
+$env:CCO_JWT_SIGNING_KEY = "<cambiar-en-produccion>"
 $env:CCO_HTTP_ADDR = ":8080"
 .\cco-app.exe
 ```

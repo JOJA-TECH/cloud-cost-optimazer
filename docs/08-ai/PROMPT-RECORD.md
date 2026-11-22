@@ -1,5 +1,8 @@
 # PROMPT-XXX — Registro de prompt / configuración
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para registrar prompts o configuraciones de IA (PROMPT-XXX). No contiene datos reales de ningún prompt del proyecto.
+
+
 - **Fecha:**
 - **Responsable:**
 - **Modelo:**

@@ -3,7 +3,7 @@
 - **Tipo:** Proceso / Restricción
 - **Prioridad:** Alta
 - **Fuente:** Stakeholder / Reunión MTG-002
-- **Estado:** Propuesto
+- **Estado:** Aprobado / Implementado
 - **Fecha:** 2026-09-12
 
 ## Descripción

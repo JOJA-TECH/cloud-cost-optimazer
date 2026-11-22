@@ -1,5 +1,8 @@
 # PROJECT — Ficha maestra del proyecto
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para la ficha maestra del proyecto. Todos los campos están vacíos. Completar cuando se defina el proyecto formalmente.
+
+
 ## Identificación
 
 - **Título:**

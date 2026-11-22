@@ -16,7 +16,7 @@ El backend es un monolito modular Go. Los módulos de negocio exponen contratos 
 | 8. Auditoría y Trazabilidad | `backend/internal/audit` | `cco_app.audit.events` | Implementado: captura, persistencia append-only, consulta y correlación |
 | 9. Jobs (cola duradera y worker) | `backend/internal/jobs` | `cco_app.app.jobs` | Implementado: creación, reclamación, estados, reintentos con backoff+jitter, idempotencia, cancelación, endpoints de consulta y ejecución asíncrona de adquisición (`acquisition:run`), reportes (`report:optimization`), analítica (`analytics:compute`) y recomendaciones pesadas (`recommendation:generate`) |
 | Simulación y Laboratorio | — | — | Pendiente |
-| Reportes | — | — | Pendiente |
+| Reportes (generación y exportación) | `backend/internal/reporting` | `cco_app.app` | Implementado: `app.report_requests`, `app.report_artifacts`, endpoints `/api/v1/jobs/report` (202 Accepted), formatos JSON/CSV/HTML, almacenamiento local con límites de tamaño y retención |
 
 La API actual está documentada en [backend/API.md](../../backend/API.md). El diseño detallado se encuentra en [DESIGN-AUDIT-001](../05-design/DESIGN-AUDIT-001.md) y [DESIGN-RECOMMENDATION-001](../05-design/DESIGN-RECOMMENDATION-001.md).
 

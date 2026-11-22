@@ -1,5 +1,8 @@
 # MOD-XXX — Model Card
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear fichas de modelo (MOD-XXX). No contiene datos reales de ningún modelo de IA del proyecto.
+
+
 ## Identificación
 
 - **Modelo:**

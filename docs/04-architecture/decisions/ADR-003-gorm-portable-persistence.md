@@ -1,6 +1,6 @@
 # ADR-003 — Persistencia GORM portable para `cco_app`
 
-- **Estado:** Propuesto para revisión del equipo
+- **Estado:** Aceptada e implementada
 - **Rama de implementación:** `feature/gorm-cco-app`
 - **Base:** `origin/database`
 - **Fecha:** 2026-10-26

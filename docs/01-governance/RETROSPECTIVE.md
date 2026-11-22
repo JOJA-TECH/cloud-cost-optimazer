@@ -1,5 +1,8 @@
 # RETRO-XXX — Retrospectiva
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear retrospectivas (RETRO-XXX). No contiene retrospectiva real.
+
+
 - **Periodo:**
 - **Participantes:**
 

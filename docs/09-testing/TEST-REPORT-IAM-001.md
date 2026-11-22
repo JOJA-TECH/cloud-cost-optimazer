@@ -6,7 +6,7 @@ Módulo Identidad y Acceso (`backend/internal/iam`): contratos, dominio (JWT, Ar
 
 ## Entorno
 
-- Lenguaje: Go 1.22
+- Lenguaje: Go 1.25
 - Motor de prueba: SQLite en memoria (`file::memory:?cache=shared`)
 - Sistema operativo: Windows (desarrollo local)
 - Fecha de ejecución: 2026-10-29
