@@ -16,7 +16,7 @@ Variables de entorno requeridas:
 
 Ejemplo:
     SOURCE_DSN="postgresql://..." CCO_DATA_DSN="postgresql://..." \
-        python scripts/ml/migrate_supabase_to_cco_data.py
+        python e2e/scripts/migrate_supabase_to_cco_data.py
 """
 from __future__ import annotations
 
