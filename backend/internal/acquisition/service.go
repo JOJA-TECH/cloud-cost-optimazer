@@ -55,9 +55,12 @@ type Service struct {
 	// cycleMu guarantees one cycle at a time (scheduler tick or manual
 	// trigger); overlapping requests get ErrCycleInProgress.
 	cycleMu sync.Mutex
+	// credsMu guards credsByAccount, which is shared across the goroutines
+	// launched within a single RunCycle cycle.
+	credsMu sync.Mutex
 	// dmvLastSeen is the incremental cursor for sys.dm_db_resource_stats per
 	// resource; only advanced after a successful persist. Safe because cycles
-	// are serialized.
+	// are serialized by cycleMu.
 	dmvLastSeen map[uuid.UUID]time.Time
 }
 
@@ -199,8 +202,11 @@ func (s *Service) cycleJobs(t Target) []func(ctx context.Context, t Target, star
 }
 
 // credentialsFor resolves (and caches per cycle) the ARM credentials of the
-// account that owns a target.
+// account that owns a target. The cache is shared across goroutines within a
+// cycle, so access is guarded by credsMu.
 func (s *Service) credentialsFor(ctx context.Context, t Target, cache map[uuid.UUID]cloud.ConnectionCredentials) (cloud.ConnectionCredentials, error) {
+	s.credsMu.Lock()
+	defer s.credsMu.Unlock()
 	if creds, ok := cache[t.CloudAccountID]; ok {
 		return creds, nil
 	}
@@ -479,6 +485,8 @@ func (s *Service) runConfigJob(ctx context.Context, t Target, start, end time.Ti
 // by subscription. It is invoked by a separate scheduler (T5: Cost Management).
 // Returns one RunOutcome per subscription. Errors are recorded per subscription
 // but do not fail the whole call.
+// It is serialized with RunCycle via cycleMu so concurrent cycles cannot race
+// on shared state (dmvLastSeen, DataWriter).
 func (s *Service) RunCostCycle(ctx context.Context, orgID *uuid.UUID) ([]RunOutcome, error) {
 	if s.writer == nil {
 		return nil, ErrStorageUnavailable
@@ -486,6 +494,11 @@ func (s *Service) RunCostCycle(ctx context.Context, orgID *uuid.UUID) ([]RunOutc
 	if s.cost == nil {
 		return nil, errors.New("cost provider not configured")
 	}
+
+	if !s.cycleMu.TryLock() {
+		return nil, ErrCycleInProgress
+	}
+	defer s.cycleMu.Unlock()
 
 	targets, err := s.targets.ListMonitoredTargets(ctx, orgID)
 	if err != nil {
