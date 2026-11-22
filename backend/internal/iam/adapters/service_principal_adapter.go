@@ -18,15 +18,21 @@ import (
 // temporarily rejecting further attempts (simple in-memory brute-force guard).
 const m2mMaxAttempts = 5
 
+// m2mLockoutDuration is how long a client_id is blocked after exceeding
+// m2mMaxAttempts failures.
+const m2mLockoutDuration = 15 * time.Minute
+
 // ServicePrincipalAdapter implements AuthenticationProvider for client_credentials flow.
 // Used by collectors, ML service, and other machine-to-machine callers.
 type ServicePrincipalAdapter struct {
-	tokenManager  *iam.TokenManager
-	repo          iam.IdentityRepository
-	validClients  map[string]string   // client_id -> client_secret_hash (argon2id)
-	allowedScopes map[string][]string // client_id -> allowed scopes
-	m2mAttempts   map[string]int      // client_id -> failed attempt count (brute-force guard)
-	m2mAttemptsMu sync.Mutex
+	tokenManager       *iam.TokenManager
+	repo               iam.IdentityRepository
+	validClients       map[string]string    // client_id -> client_secret_hash (argon2id)
+	allowedScopes      map[string][]string  // client_id -> allowed scopes
+	m2mAttempts        map[string]int       // client_id -> failed attempt count (brute-force guard)
+	m2mLockedUntil     map[string]time.Time // client_id -> lockout expiry
+	m2mAttemptsMu      sync.Mutex
+	m2mLockoutDuration time.Duration
 }
 
 // spArgon2Params mirrors the Argon2id parameters used for password hashing in
@@ -68,11 +74,13 @@ func NewServicePrincipalAdapter(cfg SPConfig) *ServicePrincipalAdapter {
 		panic("identity repository required")
 	}
 	return &ServicePrincipalAdapter{
-		tokenManager:  cfg.TokenManager,
-		repo:          cfg.Repo,
-		validClients:  cfg.Clients,
-		allowedScopes: cfg.AllowedScopes,
-		m2mAttempts:   make(map[string]int),
+		tokenManager:       cfg.TokenManager,
+		repo:               cfg.Repo,
+		validClients:       cfg.Clients,
+		allowedScopes:      cfg.AllowedScopes,
+		m2mAttempts:        make(map[string]int),
+		m2mLockedUntil:     make(map[string]time.Time),
+		m2mLockoutDuration: m2mLockoutDuration,
 	}
 }
 
@@ -115,9 +123,17 @@ func (a *ServicePrincipalAdapter) Authenticate(ctx context.Context, cred iam.Cre
 		return iam.IdentityContext{}, iam.ErrInvalidCredentials
 	}
 
-	// Per-client_id brute-force guard: reject if too many recent failures.
+	// Per-client_id brute-force guard: reject if currently locked out, or if
+	// too many recent failures (then lock out for m2mLockoutDuration).
+	now := time.Now()
 	a.m2mAttemptsMu.Lock()
+	if until, ok := a.m2mLockedUntil[cred.ClientID]; ok && now.Before(until) {
+		a.m2mAttemptsMu.Unlock()
+		return iam.IdentityContext{}, iam.ErrSPValidationFailed
+	}
 	if a.m2mAttempts[cred.ClientID] >= m2mMaxAttempts {
+		a.m2mLockedUntil[cred.ClientID] = now.Add(a.m2mLockoutDuration)
+		delete(a.m2mAttempts, cred.ClientID)
 		a.m2mAttemptsMu.Unlock()
 		return iam.IdentityContext{}, iam.ErrSPValidationFailed
 	}
@@ -126,21 +142,18 @@ func (a *ServicePrincipalAdapter) Authenticate(ctx context.Context, cred iam.Cre
 	// Verify client secret against its Argon2id hash (repo standard).
 	expectedHash, ok := a.validClients[cred.ClientID]
 	if !ok {
-		a.m2mAttemptsMu.Lock()
-		a.m2mAttempts[cred.ClientID]++
-		a.m2mAttemptsMu.Unlock()
+		a.recordM2MFailure(cred.ClientID)
 		return iam.IdentityContext{}, iam.ErrSPValidationFailed
 	}
 	if !verifyClientSecret(expectedHash, cred.ClientSecret) {
-		a.m2mAttemptsMu.Lock()
-		a.m2mAttempts[cred.ClientID]++
-		a.m2mAttemptsMu.Unlock()
+		a.recordM2MFailure(cred.ClientID)
 		return iam.IdentityContext{}, iam.ErrSPValidationFailed
 	}
 
-	// Successful authentication clears the failure counter for this client.
+	// Successful authentication clears the failure counter and lockout for this client.
 	a.m2mAttemptsMu.Lock()
 	delete(a.m2mAttempts, cred.ClientID)
+	delete(a.m2mLockedUntil, cred.ClientID)
 	a.m2mAttemptsMu.Unlock()
 
 	// Validate scope
@@ -225,6 +238,18 @@ func permissionsForRoles(roles []string) []string {
 		}
 	}
 	return perms
+}
+
+// recordM2MFailure increments the failure counter for a client_id and locks it
+// out when the threshold is reached. Callers must not hold m2mAttemptsMu.
+func (a *ServicePrincipalAdapter) recordM2MFailure(clientID string) {
+	a.m2mAttemptsMu.Lock()
+	defer a.m2mAttemptsMu.Unlock()
+	a.m2mAttempts[clientID]++
+	if a.m2mAttempts[clientID] >= m2mMaxAttempts {
+		a.m2mLockedUntil[clientID] = time.Now().Add(a.m2mLockoutDuration)
+		delete(a.m2mAttempts, clientID)
+	}
 }
 
 func (a *ServicePrincipalAdapter) getOrCreateServiceUser(ctx context.Context, clientID string, roles []string) (*serviceUser, error) {
