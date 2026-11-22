@@ -101,6 +101,7 @@ La separación de bases permite evolucionar de forma independiente la persistenc
 | ADR-012 | Módulo Analítica y Optimización (Module 5) | Aceptado e implementado |
 | ADR-013 | Motor de Recomendaciones (Module 7) | Aceptado e implementado; validación PostgreSQL pendiente |
 | ADR-014 | Auditoría y Trazabilidad persistente | Aceptado e implementado; validación PostgreSQL pendiente |
+| ADR-015 | Módulo de jobs duraderos y worker (Fase 3 del roadmap) | Aceptado e implementado; validación PostgreSQL pendiente |
 
 Todas las ADR viven en `docs/04-architecture/decisions/`.
 
@@ -116,6 +117,7 @@ Todas las ADR viven en `docs/04-architecture/decisions/`.
 | Integración con ML | `backend/internal/analytics/adapters` | ADR-012 | Pendiente (contrato `MLPort`) | `/api/v1/analytics/forecasts` (requiere ML service) |
 | Motor de Recomendaciones | `backend/internal/recommendation` | ADR-013 | Implementado | `/api/v1/recommendations/*`, incluida `/trace` |
 | Auditoría y Trazabilidad | `backend/internal/audit` | ADR-014 | Implementado | `/api/v1/audit/events`, correlaciones e historial por recurso |
+| Jobs (cola duradera y worker) | `backend/internal/jobs` | ADR-015 | Implementado | `POST/GET/DELETE /api/v1/jobs`, `GET /api/v1/jobs`, `POST /api/v1/jobs/acquisition`, `POST /api/v1/jobs/report`, `POST /api/v1/jobs/analytics`, `POST /api/v1/jobs/recommendation` |
 | Simulación y Laboratorio | — | — | Pendiente | — |
 | Reportes | — | — | Pendiente | — |
 

@@ -42,6 +42,7 @@ Los módulos `data`, `analytics`, `acquisition` y `recommendation` requieren `CC
 | Integración con ML | `backend/internal/analytics` | Parcial | Contrato `MLPort`; proveedor productivo pendiente |
 | **Motor de Recomendaciones** | `backend/internal/recommendation` | Implementado | Generación persistente, estados explícitos y consulta de trazas |
 | **Auditoría y Trazabilidad** | `backend/internal/audit` | Implementado | Eventos append-only en `cco_app`, consultas protegidas y correlación |
+| **Jobs (cola duradera y worker)** | `backend/internal/jobs` | Implementado | Cola duradera `app.jobs`, reintentos con backoff+jitter, idempotencia, cancelación y endpoints `/api/v1/jobs/*`; `POST /api/v1/jobs/acquisition`, `POST /api/v1/jobs/report`, `POST /api/v1/jobs/analytics` y `POST /api/v1/jobs/recommendation` devuelven `202` y encolan trabajo asíncrono sin bloquear la API |
 | Simulación y Laboratorio | — | Pendiente | |
 | Reportes | — | Pendiente | |
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -31,6 +32,7 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/adapters"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/middleware"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/jobs"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/valkey"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/recommendation"
@@ -182,6 +184,14 @@ func main() {
 	if err := iam.SeedReportPermissions(db); err != nil {
 		log.Fatalf("seed report permissions: %v", err)
 	}
+	if err := iam.SeedJobsPermissions(db); err != nil {
+		log.Fatalf("seed jobs permissions: %v", err)
+	}
+
+	// ── Jobs (durable queue, Fase 3 del roadmap) ─────────────────────────
+	jobRepo := jobs.NewRepository(db)
+	jsvc := jobs.NewService(jobRepo)
+	jw := jobs.NewWorker(jobRepo, 5*time.Second)
 
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
@@ -394,10 +404,162 @@ func main() {
 		SQLUser:          os.Getenv("CCO_ACQ_SQL_USER"),
 		SQLPassword:      os.Getenv("CCO_ACQ_SQL_PASSWORD"),
 	})
+	// Handler del worker para jobs de adquisición (tipo "acquisition:run").
+	// Ejecuta RunCycle para la organización (y recurso opcional) del payload.
+	jw.RegisterHandler("acquisition:run", func(ctx context.Context, payload []byte) error {
+		if acqSvc == nil {
+			return errors.New("acquisition service not configured (CCO_DATA_DSN missing)")
+		}
+		var parsed struct {
+			OrgID       *string `json:"org_id"`
+			ResourceUID *string `json:"resource_uid"`
+		}
+		if err := json.Unmarshal(payload, &parsed); err != nil {
+			return err
+		}
+		var orgID *uuid.UUID
+		if parsed.OrgID != nil && *parsed.OrgID != "" {
+			id, err := uuid.Parse(*parsed.OrgID)
+			if err != nil {
+				return err
+			}
+			orgID = &id
+		}
+		var resourceUID *uuid.UUID
+		if parsed.ResourceUID != nil && *parsed.ResourceUID != "" {
+			id, err := uuid.Parse(*parsed.ResourceUID)
+			if err != nil {
+				return err
+			}
+			resourceUID = &id
+		}
+		_, err := acqSvc.RunCycle(ctx, orgID, resourceUID)
+		return err
+	})
+
+	// report:optimization ejecuta la generación de reporte ya encolada en
+	// app.report_requests (vía QueueOptimizationReport) usando el worker
+	// duradero de jobs.
+	jw.RegisterHandler("report:optimization", func(ctx context.Context, payload []byte) error {
+		if reportService == nil {
+			return errors.New("reporting service not configured (CCO_DATA_DSN missing)")
+		}
+		var parsed struct {
+			ReportJobUID string `json:"report_job_uid"`
+		}
+		if err := json.Unmarshal(payload, &parsed); err != nil {
+			return err
+		}
+		uid, err := uuid.Parse(parsed.ReportJobUID)
+		if err != nil {
+			return err
+		}
+		return reportService.ProcessJob(ctx, uid)
+	})
+
+	// analytics:compute ejecuta una operación analítica pesada de forma
+	// asíncrona sin bloquear la API HTTP.
+	jw.RegisterHandler("analytics:compute", func(ctx context.Context, payload []byte) error {
+		if analyticsSvc == nil {
+			return errors.New("analytics service not configured (CCO_DATA_DSN missing)")
+		}
+		var parsed struct {
+			Operation    string `json:"operation"`
+			ResourceUID  string `json:"resource_uid"`
+			From         string `json:"from"`
+			To           string `json:"to"`
+			MetricCode   string `json:"metric_code,omitempty"`
+			PeriodType   string `json:"period_type,omitempty"`
+			HorizonSteps int    `json:"horizon_steps,omitempty"`
+		}
+		if err := json.Unmarshal(payload, &parsed); err != nil {
+			return err
+		}
+		resourceUID, err := uuid.Parse(parsed.ResourceUID)
+		if err != nil {
+			return err
+		}
+		from, err := time.Parse(time.RFC3339, parsed.From)
+		if err != nil {
+			return err
+		}
+		to, err := time.Parse(time.RFC3339, parsed.To)
+		if err != nil {
+			return err
+		}
+		switch parsed.Operation {
+		case "percentiles":
+			if parsed.MetricCode == "" {
+				return errors.New("metric_code is required for percentiles")
+			}
+			_, err = analyticsSvc.ComputePercentiles(ctx, resourceUID, parsed.MetricCode, from, to, parsed.PeriodType)
+		case "feature_snapshot":
+			_, err = analyticsSvc.ComputeFeatureSnapshot(ctx, resourceUID, from, to)
+		case "trends":
+			_, err = analyticsSvc.ComputeTrends(ctx, resourceUID, from, to)
+		case "patterns":
+			_, err = analyticsSvc.DetectWorkloadPatterns(ctx, resourceUID, from, to)
+		case "capacity":
+			_, err = analyticsSvc.AnalyzeCapacity(ctx, resourceUID, parsed.PeriodType, from)
+		case "costs":
+			_, err = analyticsSvc.AnalyzeCosts(ctx, resourceUID, from, to)
+		case "forecast":
+			_, err = analyticsSvc.RequestForecast(ctx, analytics.ForecastRequest{
+				ResourceUID:    resourceUID,
+				TargetMetric:   parsed.MetricCode,
+				HorizonSteps:   parsed.HorizonSteps,
+				StepUnit:       "1h",
+				PeriodStartUTC: from,
+			})
+		default:
+			return errors.New("unknown analytics operation: " + parsed.Operation)
+		}
+		return err
+	})
+
+	// recommendation:generate genera una recomendación pesada de forma
+	// asíncrona y la persiste en cco_data.
+	jw.RegisterHandler("recommendation:generate", func(ctx context.Context, payload []byte) error {
+		if recommendationSvc == nil {
+			return errors.New("recommendation service not configured (CCO_DATA_DSN missing)")
+		}
+		var parsed struct {
+			ResourceUID string `json:"resource_uid"`
+			From        string `json:"from"`
+			To          string `json:"to"`
+			HorizonDays int    `json:"horizon_days,omitempty"`
+		}
+		if err := json.Unmarshal(payload, &parsed); err != nil {
+			return err
+		}
+		resourceUID, err := uuid.Parse(parsed.ResourceUID)
+		if err != nil {
+			return err
+		}
+		from, err := time.Parse(time.RFC3339, parsed.From)
+		if err != nil {
+			return err
+		}
+		to, err := time.Parse(time.RFC3339, parsed.To)
+		if err != nil {
+			return err
+		}
+		_, err = recommendationSvc.GenerateRecommendation(ctx, recommendation.GenerateRecommendationInput{
+			ResourceUID: resourceUID,
+			From:        from,
+			To:          to,
+			HorizonDays: parsed.HorizonDays,
+			CreatedBy:   "jobs-worker",
+		})
+		return err
+	})
+
 	// Shutdown context: cancelled on SIGINT/SIGTERM; shared by the
-	// acquisition/cost schedulers and the HTTP server for orderly shutdown.
+	// acquisition/cost schedulers, the jobs worker and the HTTP server for
+	// orderly shutdown.
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	go jw.Run(shutdownCtx)
 
 	if acqWriter != nil {
 		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(shutdownCtx)
@@ -536,6 +698,267 @@ func main() {
 	)
 	reporting.RegisterRoutes(mux, reportService, authMiddleware, permEngine)
 	audit.RegisterRoutes(mux, auditService, authMiddleware, permEngine)
+
+	// Jobs (durable queue)
+	jobs.RegisterRoutes(mux, jsvc, authMiddleware, permEngine)
+
+	// Endpoint asíncrono de adquisición: encola un job y devuelve 202 con
+	// job_id. El worker ejecuta el ciclo sin bloquear la respuesta HTTP.
+	mux.Handle("POST /api/v1/jobs/acquisition",
+		authMiddleware.Handler(middleware.RequirePermission(permEngine, "acquisitions", "run")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ic, ok := iam.IdentityContextFromContext(r.Context())
+			if !ok || ic.OrgID == uuid.Nil {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no org context")
+				return
+			}
+			const maxBody = 1 << 20 // 1 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+			var req struct {
+				ResourceUID string `json:"resource_uid"`
+			}
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
+				return
+			}
+			var resourceUID *uuid.UUID
+			if req.ResourceUID != "" {
+				uid, err := uuid.Parse(req.ResourceUID)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
+					return
+				}
+				resourceUID = &uid
+			}
+			payload := map[string]any{"org_id": ic.OrgID.String()}
+			if resourceUID != nil {
+				payload["resource_uid"] = resourceUID.String()
+			}
+			b, err := json.Marshal(payload)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "ENQUEUE_FAILED", err.Error())
+				return
+			}
+			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
+				Type:           "acquisition:run",
+				Payload:        b,
+				OrganizationID: &ic.OrgID,
+				MaxAttempts:    5,
+			})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "ENQUEUE_FAILED", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusAccepted, job.ToDTO())
+		}))))
+
+	// POST /api/v1/jobs/report encola una generación de reporte: primero crea
+	// el ReportGenerationJob en app.report_requests (vía QueueOptimizationReport)
+	// y luego encola un job de tipo report:optimization en app.jobs para que el
+	// worker lo procese de forma asíncrona.
+	mux.Handle("POST /api/v1/jobs/report",
+		authMiddleware.Handler(middleware.RequirePermission(permEngine, "reports", "write")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if reportService == nil {
+				writeError(w, http.StatusServiceUnavailable, "REPORTING_UNAVAILABLE", "reporting service not configured (CCO_DATA_DSN missing)")
+				return
+			}
+			ic, ok := iam.IdentityContextFromContext(r.Context())
+			if !ok || ic.ProjectID == nil || *ic.ProjectID == uuid.Nil {
+				writeError(w, http.StatusBadRequest, "PROJECT_REQUIRED", "select an authorized project using X-Project-ID")
+				return
+			}
+			const maxBody = 1 << 20 // 1 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+			var req struct {
+				ResourceUID        string   `json:"resource_uid"`
+				From               string   `json:"from"`
+				To                 string   `json:"to"`
+				Format             string   `json:"format"`
+				IncludeAudit       bool     `json:"include_audit"`
+				IncludeEvidence    bool     `json:"include_evidence"`
+				IncludeRisks       bool     `json:"include_risks"`
+				IncludeMetrics     bool     `json:"include_metrics"`
+				Title              string   `json:"title"`
+				RecommendationUIDs []uuid.UUID `json:"recommendation_uids,omitempty"`
+			}
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
+				return
+			}
+			resourceUID, err := uuid.Parse(req.ResourceUID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
+				return
+			}
+			from, err := time.Parse(time.RFC3339, req.From)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid from")
+				return
+			}
+			to, err := time.Parse(time.RFC3339, req.To)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid to")
+				return
+			}
+			reportJob, err := reportService.QueueOptimizationReport(r.Context(), reporting.OptimizationReportInput{
+				ProjectID:          *ic.ProjectID,
+				ResourceUID:        resourceUID,
+				From:               from.UTC(),
+				To:                 to.UTC(),
+				Format:             reporting.ReportFormat(req.Format),
+				IncludeAudit:       req.IncludeAudit,
+				IncludeEvidence:    req.IncludeEvidence,
+				IncludeRisks:       req.IncludeRisks,
+				IncludeMetrics:     req.IncludeMetrics,
+				Title:              req.Title,
+				RequestedBy:        ic.UserID,
+				RecommendationUIDs: req.RecommendationUIDs,
+			})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "REPORT_QUEUE_FAILED", err.Error())
+				return
+			}
+			payload, _ := json.Marshal(map[string]string{"report_job_uid": reportJob.UID.String()})
+			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
+				Type:           "report:optimization",
+				Payload:        payload,
+				OrganizationID: &ic.OrgID,
+				MaxAttempts:    5,
+			})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "ENQUEUE_FAILED", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusAccepted, job.ToDTO())
+		}))))
+
+	// POST /api/v1/jobs/analytics encola una operación analítica pesada
+	// (percentiles, feature_snapshot, trends, patterns, capacity, costs,
+	// forecast) para ejecución asíncrona por el worker de jobs.
+	mux.Handle("POST /api/v1/jobs/analytics",
+		authMiddleware.Handler(middleware.RequirePermission(permEngine, "analytics", "compute")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			const maxBody = 1 << 20 // 1 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+			var req struct {
+				Operation   string `json:"operation"`
+				ResourceUID string `json:"resource_uid"`
+				From        string `json:"from"`
+				To          string `json:"to"`
+				MetricCode  string `json:"metric_code,omitempty"`
+				PeriodType  string `json:"period_type,omitempty"`
+				HorizonSteps int   `json:"horizon_steps,omitempty"`
+			}
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
+				return
+			}
+			if req.Operation == "" || req.ResourceUID == "" || req.From == "" || req.To == "" {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "operation, resource_uid, from and to are required")
+				return
+			}
+			_, err := uuid.Parse(req.ResourceUID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
+				return
+			}
+			from, err := time.Parse(time.RFC3339, req.From)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid from")
+				return
+			}
+			to, err := time.Parse(time.RFC3339, req.To)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid to")
+				return
+			}
+			ic, ok := iam.IdentityContextFromContext(r.Context())
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no identity context")
+				return
+			}
+			payload, _ := json.Marshal(map[string]any{
+				"operation":   req.Operation,
+				"resource_uid": req.ResourceUID,
+				"from":        from.UTC().Format(time.RFC3339),
+				"to":          to.UTC().Format(time.RFC3339),
+				"metric_code": req.MetricCode,
+				"period_type": req.PeriodType,
+				"horizon_steps": req.HorizonSteps,
+			})
+			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
+				Type:           "analytics:compute",
+				Payload:        payload,
+				OrganizationID: &ic.OrgID,
+				MaxAttempts:    5,
+			})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "ENQUEUE_FAILED", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusAccepted, job.ToDTO())
+		}))))
+
+	// POST /api/v1/jobs/recommendation encola una generación de recomendación
+	// pesada para ejecución asíncrona por el worker de jobs.
+	mux.Handle("POST /api/v1/jobs/recommendation",
+		authMiddleware.Handler(middleware.RequirePermission(permEngine, "recommendations", "write")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			const maxBody = 1 << 20 // 1 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+			var req struct {
+				ResourceUID string `json:"resource_uid"`
+				From        string `json:"from"`
+				To          string `json:"to"`
+				HorizonDays int    `json:"horizon_days,omitempty"`
+			}
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
+				return
+			}
+			_, err := uuid.Parse(req.ResourceUID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
+				return
+			}
+			from, err := time.Parse(time.RFC3339, req.From)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid from")
+				return
+			}
+			to, err := time.Parse(time.RFC3339, req.To)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid to")
+				return
+			}
+			ic, ok := iam.IdentityContextFromContext(r.Context())
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no identity context")
+				return
+			}
+			payload, _ := json.Marshal(map[string]any{
+				"resource_uid": req.ResourceUID,
+				"from":         from.UTC().Format(time.RFC3339),
+				"to":           to.UTC().Format(time.RFC3339),
+				"horizon_days": req.HorizonDays,
+			})
+			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
+				Type:           "recommendation:generate",
+				Payload:        payload,
+				OrganizationID: &ic.OrgID,
+				MaxAttempts:    5,
+			})
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "ENQUEUE_FAILED", err.Error())
+				return
+			}
+			writeJSON(w, http.StatusAccepted, job.ToDTO())
+		}))))
 
 	// ── Security middleware ────────────────────────────────────────────────
 	// CORS wraps all routes; rate limiting and lockout share the Valkey client
@@ -682,6 +1105,10 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, map[string]string{"code": code, "message": message})
 }
 
 // envDays parses a positive integer of days from the environment falling
