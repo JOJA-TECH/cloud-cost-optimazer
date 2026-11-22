@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ForecastService_Predict_FullMethodName      = "/forecast.v1.ForecastService/Predict"
 	ForecastService_GetModelInfo_FullMethodName = "/forecast.v1.ForecastService/GetModelInfo"
+	ForecastService_Train_FullMethodName        = "/forecast.v1.ForecastService/Train"
 )
 
 // ForecastServiceClient is the client API for ForecastService service.
@@ -38,6 +39,9 @@ type ForecastServiceClient interface {
 	// Returns static information about the loaded model artifact (readiness)
 	// and the list of available model versions.
 	GetModelInfo(ctx context.Context, in *GetModelInfoRequest, opts ...grpc.CallOption) (*GetModelInfoResponse, error)
+	// Trains a new candidate model for a resource/target and registers it in
+	// ml.training_run / ml.model_version. Invoked by the Go Jobs worker.
+	Train(ctx context.Context, in *TrainRequest, opts ...grpc.CallOption) (*TrainResponse, error)
 }
 
 type forecastServiceClient struct {
@@ -68,6 +72,16 @@ func (c *forecastServiceClient) GetModelInfo(ctx context.Context, in *GetModelIn
 	return out, nil
 }
 
+func (c *forecastServiceClient) Train(ctx context.Context, in *TrainRequest, opts ...grpc.CallOption) (*TrainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TrainResponse)
+	err := c.cc.Invoke(ctx, ForecastService_Train_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ForecastServiceServer is the server API for ForecastService service.
 // All implementations must embed UnimplementedForecastServiceServer
 // for forward compatibility.
@@ -83,6 +97,9 @@ type ForecastServiceServer interface {
 	// Returns static information about the loaded model artifact (readiness)
 	// and the list of available model versions.
 	GetModelInfo(context.Context, *GetModelInfoRequest) (*GetModelInfoResponse, error)
+	// Trains a new candidate model for a resource/target and registers it in
+	// ml.training_run / ml.model_version. Invoked by the Go Jobs worker.
+	Train(context.Context, *TrainRequest) (*TrainResponse, error)
 	mustEmbedUnimplementedForecastServiceServer()
 }
 
@@ -98,6 +115,9 @@ func (UnimplementedForecastServiceServer) Predict(context.Context, *PredictReque
 }
 func (UnimplementedForecastServiceServer) GetModelInfo(context.Context, *GetModelInfoRequest) (*GetModelInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetModelInfo not implemented")
+}
+func (UnimplementedForecastServiceServer) Train(context.Context, *TrainRequest) (*TrainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Train not implemented")
 }
 func (UnimplementedForecastServiceServer) mustEmbedUnimplementedForecastServiceServer() {}
 func (UnimplementedForecastServiceServer) testEmbeddedByValue()                         {}
@@ -156,6 +176,24 @@ func _ForecastService_GetModelInfo_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ForecastService_Train_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TrainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForecastServiceServer).Train(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ForecastService_Train_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForecastServiceServer).Train(ctx, req.(*TrainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ForecastService_ServiceDesc is the grpc.ServiceDesc for ForecastService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -170,6 +208,10 @@ var ForecastService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetModelInfo",
 			Handler:    _ForecastService_GetModelInfo_Handler,
+		},
+		{
+			MethodName: "Train",
+			Handler:    _ForecastService_Train_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

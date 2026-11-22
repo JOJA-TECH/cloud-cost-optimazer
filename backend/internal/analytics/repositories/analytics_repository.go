@@ -789,3 +789,38 @@ func (r *AnalyticsRepository) Forecasts(ctx context.Context, resourceUID uuid.UU
 	}
 	return out, nil
 }
+
+// ---- Model versions (ML management) ----
+
+type modelVersionRow struct {
+	ModelVersionID  int64
+	TrainingRunID   *int64
+	ModelName       string
+	Version         int
+	Framework       *string
+	Stage           string
+	Params          *string
+	MetricsSummary  *string
+	PromotedAt      *time.Time
+	CreatedAt       time.Time
+	Algorithm       *string
+}
+
+// ListModels returns model versions from ml.model_version (leaderboard).
+func (r *AnalyticsRepository) ListModels(ctx context.Context) ([]modelVersionRow, error) {
+	var rows []modelVersionRow
+	err := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "ml", "model_version")).
+		Select(`
+			mv.model_version_id, mv.training_run_id, mv.model_name, mv.version,
+			mv.framework, mv.stage, mv.params, mv.metrics_summary,
+			mv.promoted_at, mv.created_at, tr.algorithm
+		`).
+		Joins("left join ml.training_run tr on tr.training_run_id = mv.training_run_id").
+		Order("mv.model_name, mv.version").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}

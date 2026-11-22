@@ -29,6 +29,7 @@ from forecasting.serving.config import load_settings
 from forecasting.serving.data import FeatureStoreReader, ForecastWriter
 from forecasting.serving.engine import InferenceEngine, InferenceError
 from forecasting.serving.model import ModelArtifactError, load_registry
+from forecasting.training import train_model
 
 try:  # grpc.health.v1 ships with grpcio
     from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -172,6 +173,45 @@ class ForecastServicer(forecast_pb2_grpc.ForecastServiceServicer):
         resp.available_versions.extend(self.engine.versions(default_target))
         resp.default_version = self.engine.default_version(default_target) or ""
         return resp
+
+    def Train(self, request, context):
+        log.info(
+            "Train resource_uid=%s target=%s model=%s version=%s algorithm=%s hours=%d",
+            request.resource_uid,
+            request.target,
+            request.model_name,
+            request.model_version,
+            request.algorithm,
+            request.hours,
+        )
+        try:
+            result = train_model(
+                resource_uid=request.resource_uid,
+                target=request.target,
+                model_name=request.model_name,
+                model_version=request.model_version,
+                algorithm=request.algorithm or "random_forest",
+                hours=request.hours or 720,
+            )
+            resp = forecast_pb2.TrainResponse()
+            resp.status = "ok"
+            resp.training_run_id = result["training_run_id"]
+            resp.model_version_id = result["model_version_id"]
+            resp.model_name = result["model_name"]
+            resp.model_version = result["model_version"]
+            resp.mae = result["mae"]
+            resp.training_rows = result["training_rows"]
+            resp.artefact_path = result["artefact_path"]
+            return resp
+        except ValueError as exc:
+            log.error("training failed: %s", exc)
+            resp = forecast_pb2.TrainResponse()
+            resp.status = "insufficient_data"
+            resp.error_message = str(exc)
+            return resp
+        except Exception as exc:  # noqa: BLE001
+            log.error("training failed: %s", exc)
+            context.abort(grpc.StatusCode.INTERNAL, str(exc))
 
 
 def context_default_target(engine: InferenceEngine) -> str:

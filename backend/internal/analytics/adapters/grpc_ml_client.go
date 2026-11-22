@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// grpcMLClient implements analytics.MLPort over gRPC against the external
+// GrpcMLClient implements analytics.MLPort over gRPC against the external
 // Python ML service (Module 6). It translates the Go forecast contract into
 // the server's PredictRequest and returns the forecast_uid that the Python
 // service persists in ml.forecast. The returned forecast_uid is the shared
@@ -26,7 +26,7 @@ import (
 // The Python service owns ml.forecast persistence (Slice 2). The adapter only
 // bridges transport and translates errors; it never generates a local UID
 // when the server did not persist a forecast.
-type grpcMLClient struct {
+type GrpcMLClient struct {
 	conn   *grpc.ClientConn
 	client forecastv1.ForecastServiceClient
 	timeout time.Duration
@@ -35,7 +35,7 @@ type grpcMLClient struct {
 // NewGRPCMLClient connects to the Python ML service endpoint (loopback by
 // default, suitable for co-located dev). Non-local endpoints should use TLS,
 // which is not yet configured in this slice.
-func NewGRPCMLClient(endpoint string, timeout time.Duration) (*grpcMLClient, error) {
+func NewGRPCMLClient(endpoint string, timeout time.Duration) (*GrpcMLClient, error) {
 	if endpoint == "" {
 		endpoint = "127.0.0.1:50051"
 	}
@@ -44,7 +44,7 @@ func NewGRPCMLClient(endpoint string, timeout time.Duration) (*grpcMLClient, err
 	if err != nil {
 		return nil, fmt.Errorf("connect ML endpoint %s: %w", endpoint, err)
 	}
-	return &grpcMLClient{
+	return &GrpcMLClient{
 		conn:    conn,
 		client:  forecastv1.NewForecastServiceClient(conn),
 		timeout: timeout,
@@ -52,12 +52,12 @@ func NewGRPCMLClient(endpoint string, timeout time.Duration) (*grpcMLClient, err
 }
 
 // Close releases the gRPC connection.
-func (c *grpcMLClient) Close() error {
+func (c *GrpcMLClient) Close() error {
 	return c.conn.Close()
 }
 
 // ValidateContract confirms the ML service is reachable and serving a model.
-func (c *grpcMLClient) ValidateContract(ctx context.Context) error {
+func (c *GrpcMLClient) ValidateContract(ctx context.Context) error {
 	if _, err := c.client.GetModelInfo(ctx, &forecastv1.GetModelInfoRequest{}); err != nil {
 		return analytics.NewError(analytics.CodeMLUnavailable, "ML contract not ready: "+err.Error(), analytics.ErrMLUnavailable)
 	}
@@ -68,7 +68,7 @@ func (c *grpcMLClient) ValidateContract(ctx context.Context) error {
 // forecast_uid. The server validates target/horizon/model itself; this adapter
 // maps canonical Go names to the server's target names and translates gRPC
 // status codes into typed analytics errors.
-func (c *grpcMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
+func (c *GrpcMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
 	if req.ResourceUID == uuid.Nil {
 		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, "resource_uid required", analytics.ErrInvalidQuery)
 	}
@@ -142,6 +142,37 @@ func (c *grpcMLClient) Forecast(ctx context.Context, req analytics.ForecastReque
 	return forecastUID, nil
 }
 
+// Train requests the ML service to train a new candidate model for a
+// resource/target and register it in ml.training_run / ml.model_version.
+// This is a management operation, not part of MLPort (inference-only).
+func (c *GrpcMLClient) Train(
+	ctx context.Context,
+	resourceUID uuid.UUID,
+	target, modelName, modelVersion, algorithm string,
+	hours int32,
+) (*forecastv1.TrainResponse, error) {
+	targetServer, err := targetToServer(target)
+	if err != nil {
+		return nil, analytics.NewError(analytics.CodeInvalidQuery, err.Error(), analytics.ErrInvalidQuery)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	resp, err := c.client.Train(ctx, &forecastv1.TrainRequest{
+		ResourceUid: resourceUID.String(),
+		Target:      targetServer,
+		ModelName:   modelName,
+		ModelVersion: modelVersion,
+		Algorithm:   algorithm,
+		Hours:       hours,
+	})
+	if err != nil {
+		return nil, c.mapGrpcError(err)
+	}
+	return resp, nil
+}
+
 // targetToServer maps the canonical target names used by the Go contract to the
 // target names served by the Python model artifact.
 func targetToServer(target string) (string, error) {
@@ -166,7 +197,7 @@ func horizonToServer(steps int, unit string) (int32, error) {
 	return 60, nil
 }
 
-func (c *grpcMLClient) mapGrpcError(err error) error {
+func (c *GrpcMLClient) mapGrpcError(err error) error {
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
 		case codes.InvalidArgument:

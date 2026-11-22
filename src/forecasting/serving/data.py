@@ -19,7 +19,10 @@ import pandas as pd
 from forecasting.db import connect, query, read_frame
 
 # Columns read from feat.feature_snapshot. Observed features only: no
-# target_* columns (no future labels) are ever selected.
+# target_* columns (no future labels) are ever selected. Only columns that
+# exist in the base cco_data schema are listed here; columns added by the
+# forecasting migration (sessions_count, memory_percent, ...) are optional
+# and not required for the Release 1.0 model.
 FEATURE_SNAPSHOT_COLUMNS = (
     "period_start_utc",
     "period_end_utc",
@@ -27,9 +30,7 @@ FEATURE_SNAPSHOT_COLUMNS = (
     "cpu_max",
     "data_io_avg",
     "log_write_avg",
-    "sessions_count",
-    "sessions_percent",
-    "memory_percent",
+    "sessions_avg",
     "workers_avg",
     "storage_used_pct",
     "storage_used_bytes",
@@ -67,7 +68,9 @@ class FeatureStoreReader:
         try:
             with conn.cursor() as cur:
                 cur.execute("set default_transaction_read_only = on")
-                cur.execute("set statement_timeout = %s", (f"{self.timeout_seconds}s",))
+                cur.execute(
+                    f"set statement_timeout = '{self.timeout_seconds}s'"
+                )
             yield conn
         finally:
             conn.close()
@@ -148,7 +151,9 @@ class ForecastWriter:
         conn = connect(self.dsn, read_only=False, autocommit=False)
         try:
             with conn.cursor() as cur:
-                cur.execute("set statement_timeout = %s", (f"{self.timeout_seconds}s",))
+                cur.execute(
+                    f"set statement_timeout = '{self.timeout_seconds}s'"
+                )
             yield conn
         except Exception:
             conn.rollback()

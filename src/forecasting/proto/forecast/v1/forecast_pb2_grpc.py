@@ -48,6 +48,11 @@ class ForecastServiceStub:
                 request_serializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoRequest.SerializeToString,
                 response_deserializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoResponse.FromString,
                 _registered_method=True)
+        self.Train = channel.unary_unary(
+                '/forecast.v1.ForecastService/Train',
+                request_serializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainRequest.SerializeToString,
+                response_deserializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainResponse.FromString,
+                _registered_method=True)
 
 
 class ForecastServiceServicer:
@@ -73,6 +78,14 @@ class ForecastServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Train(self, request, context):
+        """Trains a new candidate model for a resource/target and registers it in
+        ml.training_run / ml.model_version. Invoked by the Go Jobs worker.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ForecastServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -85,6 +98,11 @@ def add_ForecastServiceServicer_to_server(servicer, server):
                     servicer.GetModelInfo,
                     request_deserializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoRequest.FromString,
                     response_serializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoResponse.SerializeToString,
+            ),
+            'Train': grpc.unary_unary_rpc_method_handler(
+                    servicer.Train,
+                    request_deserializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainRequest.FromString,
+                    response_serializer=forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -145,6 +163,33 @@ class ForecastService:
             '/forecast.v1.ForecastService/GetModelInfo',
             forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoRequest.SerializeToString,
             forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.GetModelInfoResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Train(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/forecast.v1.ForecastService/Train',
+            forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainRequest.SerializeToString,
+            forecasting_dot_proto_dot_forecast_dot_v1_dot_forecast__pb2.TrainResponse.FromString,
             options,
             channel_credentials,
             insecure,

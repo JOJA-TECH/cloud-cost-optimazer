@@ -524,6 +524,208 @@ func (x *GetModelInfoResponse) GetDefaultVersion() string {
 	return ""
 }
 
+type TrainRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Public resource identifier.
+	ResourceUid string `protobuf:"bytes,1,opt,name=resource_uid,json=resourceUid,proto3" json:"resource_uid,omitempty"`
+	// Target to train for. Must match a supported target.
+	Target string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	// Model name for the artefact.
+	ModelName string `protobuf:"bytes,3,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	// Model version string (semver).
+	ModelVersion string `protobuf:"bytes,4,opt,name=model_version,json=modelVersion,proto3" json:"model_version,omitempty"`
+	// Algorithm: 'random_forest' or 'linear'.
+	Algorithm string `protobuf:"bytes,5,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	// Hours of history to use for training.
+	Hours         int32 `protobuf:"varint,6,opt,name=hours,proto3" json:"hours,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrainRequest) Reset() {
+	*x = TrainRequest{}
+	mi := &file_forecast_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrainRequest) ProtoMessage() {}
+
+func (x *TrainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_forecast_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrainRequest.ProtoReflect.Descriptor instead.
+func (*TrainRequest) Descriptor() ([]byte, []int) {
+	return file_forecast_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TrainRequest) GetResourceUid() string {
+	if x != nil {
+		return x.ResourceUid
+	}
+	return ""
+}
+
+func (x *TrainRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *TrainRequest) GetModelName() string {
+	if x != nil {
+		return x.ModelName
+	}
+	return ""
+}
+
+func (x *TrainRequest) GetModelVersion() string {
+	if x != nil {
+		return x.ModelVersion
+	}
+	return ""
+}
+
+func (x *TrainRequest) GetAlgorithm() string {
+	if x != nil {
+		return x.Algorithm
+	}
+	return ""
+}
+
+func (x *TrainRequest) GetHours() int32 {
+	if x != nil {
+		return x.Hours
+	}
+	return 0
+}
+
+type TrainResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ok | insufficient_data | error.
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Internal training run id.
+	TrainingRunId int64 `protobuf:"varint,2,opt,name=training_run_id,json=trainingRunId,proto3" json:"training_run_id,omitempty"`
+	// Internal model version id.
+	ModelVersionId int64  `protobuf:"varint,3,opt,name=model_version_id,json=modelVersionId,proto3" json:"model_version_id,omitempty"`
+	ModelName      string `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	ModelVersion   string `protobuf:"bytes,5,opt,name=model_version,json=modelVersion,proto3" json:"model_version,omitempty"`
+	// Evaluation MAE on the temporal hold-out.
+	Mae           float64 `protobuf:"fixed64,6,opt,name=mae,proto3" json:"mae,omitempty"`
+	TrainingRows  int32   `protobuf:"varint,7,opt,name=training_rows,json=trainingRows,proto3" json:"training_rows,omitempty"`
+	ArtefactPath  string  `protobuf:"bytes,8,opt,name=artefact_path,json=artefactPath,proto3" json:"artefact_path,omitempty"`
+	ErrorMessage  string  `protobuf:"bytes,9,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrainResponse) Reset() {
+	*x = TrainResponse{}
+	mi := &file_forecast_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrainResponse) ProtoMessage() {}
+
+func (x *TrainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_forecast_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrainResponse.ProtoReflect.Descriptor instead.
+func (*TrainResponse) Descriptor() ([]byte, []int) {
+	return file_forecast_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TrainResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *TrainResponse) GetTrainingRunId() int64 {
+	if x != nil {
+		return x.TrainingRunId
+	}
+	return 0
+}
+
+func (x *TrainResponse) GetModelVersionId() int64 {
+	if x != nil {
+		return x.ModelVersionId
+	}
+	return 0
+}
+
+func (x *TrainResponse) GetModelName() string {
+	if x != nil {
+		return x.ModelName
+	}
+	return ""
+}
+
+func (x *TrainResponse) GetModelVersion() string {
+	if x != nil {
+		return x.ModelVersion
+	}
+	return ""
+}
+
+func (x *TrainResponse) GetMae() float64 {
+	if x != nil {
+		return x.Mae
+	}
+	return 0
+}
+
+func (x *TrainResponse) GetTrainingRows() int32 {
+	if x != nil {
+		return x.TrainingRows
+	}
+	return 0
+}
+
+func (x *TrainResponse) GetArtefactPath() string {
+	if x != nil {
+		return x.ArtefactPath
+	}
+	return ""
+}
+
+func (x *TrainResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_forecast_proto protoreflect.FileDescriptor
 
 const file_forecast_proto_rawDesc = "" +
@@ -576,10 +778,30 @@ const file_forecast_proto_rawDesc = "" +
 	"\x1aprediction_interval_method\x18\t \x01(\tR\x18predictionIntervalMethod\x12-\n" +
 	"\x12available_versions\x18\n" +
 	" \x03(\tR\x11availableVersions\x12'\n" +
-	"\x0fdefault_version\x18\v \x01(\tR\x0edefaultVersion2\xac\x01\n" +
+	"\x0fdefault_version\x18\v \x01(\tR\x0edefaultVersion\"\xc1\x01\n" +
+	"\fTrainRequest\x12!\n" +
+	"\fresource_uid\x18\x01 \x01(\tR\vresourceUid\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1d\n" +
+	"\n" +
+	"model_name\x18\x03 \x01(\tR\tmodelName\x12#\n" +
+	"\rmodel_version\x18\x04 \x01(\tR\fmodelVersion\x12\x1c\n" +
+	"\talgorithm\x18\x05 \x01(\tR\talgorithm\x12\x14\n" +
+	"\x05hours\x18\x06 \x01(\x05R\x05hours\"\xbe\x02\n" +
+	"\rTrainResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12&\n" +
+	"\x0ftraining_run_id\x18\x02 \x01(\x03R\rtrainingRunId\x12(\n" +
+	"\x10model_version_id\x18\x03 \x01(\x03R\x0emodelVersionId\x12\x1d\n" +
+	"\n" +
+	"model_name\x18\x04 \x01(\tR\tmodelName\x12#\n" +
+	"\rmodel_version\x18\x05 \x01(\tR\fmodelVersion\x12\x10\n" +
+	"\x03mae\x18\x06 \x01(\x01R\x03mae\x12#\n" +
+	"\rtraining_rows\x18\a \x01(\x05R\ftrainingRows\x12#\n" +
+	"\rartefact_path\x18\b \x01(\tR\fartefactPath\x12#\n" +
+	"\rerror_message\x18\t \x01(\tR\ferrorMessage2\xec\x01\n" +
 	"\x0fForecastService\x12D\n" +
 	"\aPredict\x12\x1b.forecast.v1.PredictRequest\x1a\x1c.forecast.v1.PredictResponse\x12S\n" +
-	"\fGetModelInfo\x12 .forecast.v1.GetModelInfoRequest\x1a!.forecast.v1.GetModelInfoResponseBSZQgithub.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1b\x06proto3"
+	"\fGetModelInfo\x12 .forecast.v1.GetModelInfoRequest\x1a!.forecast.v1.GetModelInfoResponse\x12>\n" +
+	"\x05Train\x12\x19.forecast.v1.TrainRequest\x1a\x1a.forecast.v1.TrainResponseBSZQgithub.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1;forecastv1b\x06proto3"
 
 var (
 	file_forecast_proto_rawDescOnce sync.Once
@@ -593,28 +815,32 @@ func file_forecast_proto_rawDescGZIP() []byte {
 	return file_forecast_proto_rawDescData
 }
 
-var file_forecast_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_forecast_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_forecast_proto_goTypes = []any{
 	(*PredictRequest)(nil),         // 0: forecast.v1.PredictRequest
 	(*PredictionInterval)(nil),     // 1: forecast.v1.PredictionInterval
 	(*PredictResponse)(nil),        // 2: forecast.v1.PredictResponse
 	(*GetModelInfoRequest)(nil),    // 3: forecast.v1.GetModelInfoRequest
 	(*GetModelInfoResponse)(nil),   // 4: forecast.v1.GetModelInfoResponse
-	(*timestamppb.Timestamp)(nil),  // 5: google.protobuf.Timestamp
-	(*wrapperspb.DoubleValue)(nil), // 6: google.protobuf.DoubleValue
+	(*TrainRequest)(nil),           // 5: forecast.v1.TrainRequest
+	(*TrainResponse)(nil),          // 6: forecast.v1.TrainResponse
+	(*timestamppb.Timestamp)(nil),  // 7: google.protobuf.Timestamp
+	(*wrapperspb.DoubleValue)(nil), // 8: google.protobuf.DoubleValue
 }
 var file_forecast_proto_depIdxs = []int32{
-	5, // 0: forecast.v1.PredictRequest.cutoff_time:type_name -> google.protobuf.Timestamp
-	5, // 1: forecast.v1.PredictResponse.period_start_utc:type_name -> google.protobuf.Timestamp
-	5, // 2: forecast.v1.PredictResponse.generated_at_utc:type_name -> google.protobuf.Timestamp
-	6, // 3: forecast.v1.PredictResponse.value:type_name -> google.protobuf.DoubleValue
+	7, // 0: forecast.v1.PredictRequest.cutoff_time:type_name -> google.protobuf.Timestamp
+	7, // 1: forecast.v1.PredictResponse.period_start_utc:type_name -> google.protobuf.Timestamp
+	7, // 2: forecast.v1.PredictResponse.generated_at_utc:type_name -> google.protobuf.Timestamp
+	8, // 3: forecast.v1.PredictResponse.value:type_name -> google.protobuf.DoubleValue
 	1, // 4: forecast.v1.PredictResponse.interval:type_name -> forecast.v1.PredictionInterval
 	0, // 5: forecast.v1.ForecastService.Predict:input_type -> forecast.v1.PredictRequest
 	3, // 6: forecast.v1.ForecastService.GetModelInfo:input_type -> forecast.v1.GetModelInfoRequest
-	2, // 7: forecast.v1.ForecastService.Predict:output_type -> forecast.v1.PredictResponse
-	4, // 8: forecast.v1.ForecastService.GetModelInfo:output_type -> forecast.v1.GetModelInfoResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
+	5, // 7: forecast.v1.ForecastService.Train:input_type -> forecast.v1.TrainRequest
+	2, // 8: forecast.v1.ForecastService.Predict:output_type -> forecast.v1.PredictResponse
+	4, // 9: forecast.v1.ForecastService.GetModelInfo:output_type -> forecast.v1.GetModelInfoResponse
+	6, // 10: forecast.v1.ForecastService.Train:output_type -> forecast.v1.TrainResponse
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name
 	5, // [5:5] is the sub-list for extension extendee
 	0, // [0:5] is the sub-list for field type_name
@@ -631,7 +857,7 @@ func file_forecast_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_forecast_proto_rawDesc), len(file_forecast_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -20,6 +20,10 @@ service ForecastService {
   // Returns static information about the loaded model artifact (readiness)
   // and the list of available model versions.
   rpc GetModelInfo(GetModelInfoRequest) returns (GetModelInfoResponse);
+
+  // Trains a new candidate model for a resource/target and registers it in
+  // ml.training_run / ml.model_version. Invoked by the Go Jobs worker.
+  rpc Train(TrainRequest) returns (TrainResponse);
 }
 
 message PredictRequest {
@@ -117,4 +121,35 @@ message GetModelInfoResponse {
   repeated string available_versions = 10;
   // The version used when Predict omits model_version.
   string default_version = 11;
+}
+
+message TrainRequest {
+  // Public resource identifier.
+  string resource_uid = 1;
+  // Target to train for. Must match a supported target.
+  string target = 2;
+  // Model name for the artefact.
+  string model_name = 3;
+  // Model version string (semver).
+  string model_version = 4;
+  // Algorithm: 'random_forest' or 'linear'.
+  string algorithm = 5;
+  // Hours of history to use for training.
+  int32 hours = 6;
+}
+
+message TrainResponse {
+  // ok | insufficient_data | error.
+  string status = 1;
+  // Internal training run id.
+  int64 training_run_id = 2;
+  // Internal model version id.
+  int64 model_version_id = 3;
+  string model_name = 4;
+  string model_version = 5;
+  // Evaluation MAE on the temporal hold-out.
+  double mae = 6;
+  int32 training_rows = 7;
+  string artefact_path = 8;
+  string error_message = 9;
 }
