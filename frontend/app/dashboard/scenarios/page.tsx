@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, FileSearch, Play, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { PageHeader, Panel, RiskBadge } from '@/components/dashboard/ui'
@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bars } from '@/components/charts'
 import { cn } from '@/lib/utils'
-import { scenarios } from '@/lib/mock-data'
+import { getScenarios } from '@/lib/api-services'
+import type { ScenarioItem } from '@/lib/api-services'
 
-const rows: { key: string; label: string; render: (s: (typeof scenarios)[number]) => React.ReactNode }[] = [
+const rows: { key: string; label: string; render: (s: ScenarioItem) => React.ReactNode }[] = [
   { key: 'capacity', label: 'Capacity', render: (s) => s.capacity },
   { key: 'cost', label: 'Estimated cost', render: (s) => `$${s.cost}` },
   { key: 'savings', label: 'Savings', render: (s) => (s.savings ? `${s.savings}%` : '—') },
@@ -29,10 +30,13 @@ const rows: { key: string; label: string; render: (s: (typeof scenarios)[number]
   { key: 'confidence', label: 'Confidence', render: (s) => (s.confidence ? `${s.confidence}%` : '—') },
 ]
 
-const costBars = scenarios.map((s) => ({ label: s.label, cost: s.cost }))
-
 export default function ScenariosPage() {
+  const [scenarios, setScenarios] = useState<ScenarioItem[]>(scenariosMock)
   const [selected, setSelected] = useState('a')
+
+  useEffect(() => {
+    getScenarios().then(setScenarios)
+  }, [])
 
   return (
     <div>
@@ -93,7 +97,13 @@ export default function ScenariosPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2">
-          <Bars data={costBars} xKey="label" prefix="$" height={230} bars={[{ key: 'cost', color: 'var(--chart-1)', name: 'Est. cost' }]} />
+          <Bars
+            data={scenarios.map((s) => ({ label: s.label, cost: s.cost }))}
+            xKey="label"
+            prefix="$"
+            height={230}
+            bars={[{ key: 'cost', color: 'var(--chart-1)', name: 'Est. cost' }]}
+          />
         </Panel>
 
         <Panel title="Selected scenario">
@@ -159,3 +169,54 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+
+const scenariosMock: ScenarioItem[] = [
+  {
+    id: 'current',
+    label: 'Current',
+    capacity: '8 vCores',
+    vCores: 8,
+    cost: 486,
+    savings: null,
+    cpuP99: 41,
+    latency: 'baseline',
+    latencyPct: 0,
+    risk: 'None',
+    sla: 'Pass',
+    confidence: null,
+    feasible: true,
+    recommended: false,
+  },
+  {
+    id: 'a',
+    label: 'Candidate A',
+    capacity: '4 vCores',
+    vCores: 4,
+    cost: 368,
+    savings: 24.2,
+    cpuP99: 58,
+    latency: '+2.1%',
+    latencyPct: 2.1,
+    risk: 'Low',
+    sla: 'Pass',
+    confidence: 91,
+    feasible: true,
+    recommended: true,
+  },
+  {
+    id: 'b',
+    label: 'Candidate B',
+    capacity: '2 vCores',
+    vCores: 2,
+    cost: 276,
+    savings: 43.2,
+    cpuP99: 81,
+    latency: '+9.7%',
+    latencyPct: 9.7,
+    risk: 'Medium',
+    sla: 'Warning',
+    confidence: 74,
+    feasible: true,
+    recommended: false,
+  },
+]

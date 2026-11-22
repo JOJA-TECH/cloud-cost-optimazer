@@ -84,3 +84,7 @@ Las rutas protegidas se documentan en [`backend/API.md`](backend/API.md):
 La inicialización requiere `CCO_DATA_DSN`; la ausencia de esa variable no detiene la aplicación y produce `503 RECOMMENDATION_STORAGE_UNAVAILABLE` en esas rutas. Las tablas `opt.*` se definen en `databases/cco_data/cco_data_schema.sql`.
 
 La implementación incluye pruebas de servicio, políticas, handlers y límites arquitectónicos, además de pruebas de persistencia y del catálogo de precios sobre SQLite. Las pruebas SQLite requieren CGO habilitado; la validación end-to-end con PostgreSQL sigue pendiente. Los detalles de límites conocidos, reglas de simulación y criterios de confianza/riesgo están en el ADR y el documento de diseño enlazados arriba.
+
+## Usuario de prueba
+ana@example.com
+Password123

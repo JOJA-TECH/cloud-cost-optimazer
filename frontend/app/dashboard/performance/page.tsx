@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageHeader, Panel, toneText } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AreaTrend, MultiLine } from '@/components/charts'
-import { perfSeries, perfSummary, reliabilityEvents } from '@/lib/mock-data'
+import { getPerfSeries, getPerfSummary, getReliabilityEvents } from '@/lib/api-services'
 
 const ranges = [
   { label: '24h', hours: 24 },
@@ -22,8 +22,17 @@ const cpuLines = [
 export default function PerformancePage() {
   const [hours, setHours] = useState(72)
   const [active, setActive] = useState<Record<string, boolean>>({ p50: true, p95: true, p99: true })
+  const [data, setData] = useState(perfSeriesMock)
+  const [perfSummary, setPerfSummary] = useState(perfSummaryMock)
+  const [reliabilityEvents, setReliabilityEvents] = useState(reliabilityEventsMock)
 
-  const data = perfSeries.slice(-hours)
+  useEffect(() => {
+    getPerfSeries().then(setData)
+    getPerfSummary().then(setPerfSummary)
+    getReliabilityEvents().then(setReliabilityEvents)
+  }, [])
+
+  const shownData = data.slice(-hours)
   const shownLines = cpuLines.filter((l) => active[l.key])
 
   return (
@@ -86,7 +95,7 @@ export default function PerformancePage() {
         }
       >
         <MultiLine
-          data={data}
+          data={shownData}
           xKey="t"
           yDomain={[0, 100]}
           unit="%"
@@ -101,19 +110,19 @@ export default function PerformancePage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Panel title="I/O utilization" description="Percent of provisioned throughput">
-          <AreaTrend data={data} dataKey="io" xKey="t" unit="%" color="var(--chart-2)" height={190} />
+          <AreaTrend data={shownData} dataKey="io" xKey="t" unit="%" color="var(--chart-2)" height={190} />
         </Panel>
         <Panel title="Active sessions" description="Concurrent sessions (max 2400)">
-          <AreaTrend data={data} dataKey="sessions" xKey="t" color="var(--chart-1)" height={190} />
+          <AreaTrend data={shownData} dataKey="sessions" xKey="t" color="var(--chart-1)" height={190} />
         </Panel>
         <Panel title="Query latency" description="Average response time (ms)">
-          <AreaTrend data={data} dataKey="latency" xKey="t" unit=" ms" color="var(--chart-3)" height={190} />
+          <AreaTrend data={shownData} dataKey="latency" xKey="t" unit=" ms" color="var(--chart-3)" height={190} />
         </Panel>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="Memory utilization" description="Working set as percent of provisioned">
-          <AreaTrend data={data} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
+          <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
         </Panel>
         <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)">
           <div className="grid grid-cols-2 gap-3">
@@ -136,3 +145,25 @@ export default function PerformancePage() {
     </div>
   )
 }
+
+const perfSeriesMock = [
+  { t: '00:00', idx: 0, p50: 12, p95: 21, p99: 26, io: 24, memory: 58, sessions: 180, latency: 4.2 },
+]
+
+const perfSummaryMock = [
+  { label: 'CPU p50', value: '18%', tone: 'good' as const },
+  { label: 'CPU p95', value: '28%', tone: 'good' as const },
+  { label: 'CPU p99', value: '41%', tone: 'good' as const },
+  { label: 'I/O p95', value: '52%', tone: 'good' as const },
+  { label: 'Memory', value: '68%', tone: 'warn' as const },
+  { label: 'Peak sessions', value: '820 / 2400', tone: 'good' as const },
+  { label: 'Avg latency', value: '5.1 ms', tone: 'good' as const },
+  { label: 'SLA compliance', value: '99.97%', tone: 'good' as const },
+]
+
+const reliabilityEventsMock = [
+  { label: 'Deadlocks (30d)', value: 3, tone: 'good' as const },
+  { label: 'Timeouts (30d)', value: 11, tone: 'warn' as const },
+  { label: 'Errors (30d)', value: 0, tone: 'good' as const },
+  { label: 'Throttling events', value: 0, tone: 'good' as const },
+]

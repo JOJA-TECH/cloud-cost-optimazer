@@ -1,11 +1,12 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { ChevronDown, ArrowRight } from 'lucide-react'
 import { PageHeader, Panel, RiskBadge } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { history, type HistoryStatus } from '@/lib/mock-data'
+import { getHistory } from '@/lib/api-services'
+import type { HistoryItem, HistoryStatus } from '@/lib/api-services'
 
 const statuses: (HistoryStatus | 'All')[] = ['All', 'New', 'Reviewed', 'Accepted', 'Rejected', 'Archived']
 
@@ -20,8 +21,18 @@ const statusVariant: Record<HistoryStatus, 'default' | 'neutral' | 'success' | '
 export default function HistoryPage() {
   const [filter, setFilter] = useState<(typeof statuses)[number]>('All')
   const [open, setOpen] = useState<string | null>('rec-2041')
+  const [rows, setRows] = useState<HistoryItem[]>(historyMock)
 
-  const rows = history.filter((h) => filter === 'All' || h.status === filter)
+  useEffect(() => {
+    getHistory().then((h) => {
+      setRows(h)
+      if (!open || !h.find((x) => x.id === open)) {
+        setOpen(h[0]?.id ?? null)
+      }
+    })
+  }, [])
+
+  const filtered = rows.filter((h) => filter === 'All' || h.status === filter)
 
   return (
     <div>
@@ -63,7 +74,7 @@ export default function HistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((h) => (
+              {filtered.map((h) => (
                 <Fragment key={h.id}>
                   <tr
                     className="cursor-pointer border-b border-border hover:bg-muted/40"
@@ -123,3 +134,11 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
     </div>
   )
 }
+
+const historyMock: HistoryItem[] = [
+  { id: 'rec-2041', date: '2026-09-13', resource: 'sql-prod-orders-eastus', current: '8 vCores', proposed: '4 vCores', savings: '24.2%', risk: 'Low', confidence: 91, status: 'New', version: 'v1.4.2' },
+  { id: 'rec-1990', date: '2026-08-30', resource: 'sql-prod-billing-eastus', current: '6 vCores', proposed: '4 vCores', savings: '18.6%', risk: 'Low', confidence: 88, status: 'Accepted', version: 'v1.4.1' },
+  { id: 'rec-1943', date: '2026-08-14', resource: 'sql-prod-analytics-westus', current: '16 vCores', proposed: '16 vCores', savings: '—', risk: 'None', confidence: 62, status: 'Reviewed', version: 'v1.4.1' },
+  { id: 'rec-1902', date: '2026-07-29', resource: 'sql-prod-orders-eastus', current: '8 vCores', proposed: '6 vCores', savings: '11.9%', risk: 'Medium', confidence: 71, status: 'Rejected', version: 'v1.4.0' },
+  { id: 'rec-1855', date: '2026-07-11', resource: 'sql-prod-identity-eastus', current: '4 vCores', proposed: '—', savings: '—', risk: 'None', confidence: 41, status: 'Archived', version: 'v1.3.9' },
+]

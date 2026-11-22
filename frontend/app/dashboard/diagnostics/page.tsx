@@ -1,9 +1,20 @@
+'use client'
+
 import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { Donut } from '@/components/charts'
-import { topQueries, waitCategories } from '@/lib/mock-data'
+import { useEffect, useState } from 'react'
+import { getTopQueries, getWaitCategories } from '@/lib/api-services'
 
 export default function DiagnosticsPage() {
+  const [topQueries, setTopQueries] = useState(topQueriesMock)
+  const [waitCategories, setWaitCategories] = useState(waitCategoriesMock)
+
+  useEffect(() => {
+    getTopQueries().then(setTopQueries)
+    getWaitCategories().then(setWaitCategories)
+  }, [])
+
   return (
     <div>
       <PageHeader
@@ -94,3 +105,20 @@ function Insight({ title, body }: { title: string; body: string }) {
     </div>
   )
 }
+
+const topQueriesMock = [
+  { id: 'Q1', text: 'SELECT ... FROM orders o JOIN order_items ...', execs: 184203, avgCpuMs: 42, avgDurMs: 61, reads: 1240 },
+  { id: 'Q2', text: 'UPDATE inventory SET qty = qty - @n WHERE ...', execs: 96541, avgCpuMs: 18, avgDurMs: 24, reads: 88 },
+  { id: 'Q3', text: 'SELECT TOP 100 ... FROM audit_log WHERE ...', execs: 12044, avgCpuMs: 210, avgDurMs: 512, reads: 41200 },
+  { id: 'Q4', text: 'EXEC sp_refresh_customer_summary', execs: 2880, avgCpuMs: 640, avgDurMs: 1180, reads: 96400 },
+  { id: 'Q5', text: 'INSERT INTO events (…) VALUES (…)', execs: 421900, avgCpuMs: 6, avgDurMs: 9, reads: 12 },
+]
+
+const waitCategoriesMock = [
+  { name: 'CPU', pct: 34, color: 'var(--chart-1)' },
+  { name: 'PAGEIOLATCH', pct: 22, color: 'var(--chart-2)' },
+  { name: 'LCK_M_X (locks)', pct: 16, color: 'var(--chart-3)' },
+  { name: 'WRITELOG', pct: 14, color: 'var(--chart-4)' },
+  { name: 'Network I/O', pct: 8, color: 'var(--chart-5)' },
+  { name: 'Other', pct: 6, color: '#cbd5e1' },
+]

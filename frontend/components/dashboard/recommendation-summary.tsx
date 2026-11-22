@@ -3,10 +3,10 @@ import { ArrowRight, CircleCheck, FileSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EvidenceDot, RiskBadge, toneText } from './ui'
-import { recommendation } from '@/lib/mock-data'
+import type { RecommendationItem } from '@/lib/api-services'
 
-export function RecommendationSummary() {
-  const r = recommendation
+export function RecommendationSummary({ rec }: { rec: RecommendationItem }) {
+  const r = rec
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
       <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-start">

@@ -1,8 +1,11 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { DollarSign, Tag, Calculator, TrendingDown } from 'lucide-react'
 import { PageHeader, KpiCard, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { AreaTrend, Bars, Donut } from '@/components/charts'
-import { costDaily, costComponents } from '@/lib/mock-data'
+import { getKpis, getCostDaily, getCostComponents } from '@/lib/api-services'
 
 const valueTypes = [
   { label: 'Billed cost', desc: 'Actual usage billed by Azure', color: 'var(--chart-1)' },
@@ -11,16 +14,25 @@ const valueTypes = [
   { label: 'Simulated / counterfactual', desc: 'Replay of an alternative scenario', color: 'var(--chart-3)' },
 ]
 
-const compareData = [
-  { label: 'Compute', current: 372.4, estimated: 254.9 },
-  { label: 'Storage', current: 68.2, estimated: 68.2 },
-  { label: 'Backup', current: 31.6, estimated: 31.6 },
-  { label: 'I/O', current: 14.0, estimated: 13.7 },
-]
-
-const donutData = costComponents.map((c) => ({ name: c.name, value: c.current, color: c.color }))
-
 export default function CostsPage() {
+  const [kpis, setKpis] = useState(kpisMock)
+  const [costDaily, setCostDaily] = useState(costDailyMock)
+  const [costComponents, setCostComponents] = useState(costComponentsMock)
+
+  useEffect(() => {
+    getKpis().then(setKpis)
+    getCostDaily().then(setCostDaily)
+    getCostComponents().then(setCostComponents)
+  }, [])
+
+  const donutData = costComponents.map((c) => ({ name: c.name, value: c.current, color: c.color }))
+
+  const compareData = costComponents.map((c) => ({
+    label: c.name,
+    current: c.current,
+    estimated: c.estimated,
+  }))
+
   return (
     <div>
       <PageHeader
@@ -30,10 +42,10 @@ export default function CostsPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Billed cost" value="$486.20" sub="this period" delta={4.8} icon={DollarSign} />
-        <KpiCard label="Reference price" value="$495.90" sub="list, same capacity" icon={Tag} />
-        <KpiCard label="Estimated cost" value="$368.40" sub="4 vCores, simulated" tone="brand" icon={Calculator} />
-        <KpiCard label="Estimated savings" value="$117.80" sub="24.2% / month" tone="success" icon={TrendingDown} />
+        <KpiCard label="Billed cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="this period" delta={kpis.currentCostDelta} icon={DollarSign} />
+        <KpiCard label="Reference price" value={`$${(kpis.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} />
+        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} />
+        <KpiCard label="Estimated savings" value={`$${kpis.estimatedSavings.toFixed(2)}`} sub={`${kpis.savingsPct}% / month`} tone="success" icon={TrendingDown} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -63,7 +75,7 @@ export default function CostsPage() {
           <div className="relative">
             <Donut data={donutData} height={200} unit="" />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-lg font-semibold tabular-nums text-foreground">$486</span>
+              <span className="text-lg font-semibold tabular-nums text-foreground">${costComponents.reduce((s, c) => s + c.current, 0).toFixed(0)}</span>
               <span className="text-[11px] text-muted-foreground">/ month</span>
             </div>
           </div>
@@ -134,3 +146,25 @@ function Legend({ color, label }: { color: string; label: string }) {
     </span>
   )
 }
+
+const kpisMock = {
+  status: 'Healthy',
+  currentCost: 486.2,
+  currentCostDelta: 4.8,
+  estimatedCost: 368.4,
+  estimatedSavings: 117.8,
+  savingsPct: 24.2,
+  risk: 'Low' as const,
+  confidence: 91,
+}
+
+const costDailyMock = [
+  { day: 'Aug 1', billed: 16.8, estimated: 12.7, reference: 17.1, cumulative: 16.8 },
+]
+
+const costComponentsMock = [
+  { name: 'Compute (vCores)', current: 372.4, estimated: 254.9, color: 'var(--chart-1)' },
+  { name: 'Storage', current: 68.2, estimated: 68.2, color: 'var(--chart-2)' },
+  { name: 'Backup / PITR', current: 31.6, estimated: 31.6, color: 'var(--chart-3)' },
+  { name: 'I/O & egress', current: 14.0, estimated: 13.7, color: 'var(--chart-4)' },
+]

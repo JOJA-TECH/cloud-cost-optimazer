@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -19,12 +19,20 @@ import { navItems } from './nav'
 import { LogoMark } from '@/components/logo'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { resource } from '@/lib/mock-data'
+import { getDashboardResource } from '@/lib/api-services'
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [resource, setResource] = useState({
+    name: 'Cargando...',
+    region: '',
+  } as { name: string; region: string })
+
+  useEffect(() => {
+    getDashboardResource().then((r) => setResource({ name: r.name, region: r.region }))
+  }, [])
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -62,7 +70,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onMenu={() => setMobileOpen(true)} />
+        <TopBar onMenu={() => setMobileOpen(true)} resource={resource} />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 pb-24 sm:px-6 md:pb-6">
           {children}
         </main>
@@ -162,7 +170,7 @@ function SidebarContent({
   )
 }
 
-function TopBar({ onMenu }: { onMenu: () => void }) {
+function TopBar({ onMenu, resource }: { onMenu: () => void; resource: { name: string; region: string } }) {
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-6">
       <button

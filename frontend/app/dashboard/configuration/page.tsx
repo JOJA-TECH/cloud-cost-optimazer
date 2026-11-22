@@ -1,34 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, Database, Server, HardDrive, Shield, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { resource, dataQuality } from '@/lib/mock-data'
-
-const summary = [
-  { icon: Database, label: 'Service', value: resource.service },
-  { icon: Server, label: 'Tier', value: `${resource.tier} · ${resource.computeModel}` },
-  { icon: Server, label: 'Compute', value: `${resource.vCores} vCores · ${resource.memoryGb} GB` },
-  { icon: HardDrive, label: 'Storage', value: `${resource.storageUsedGb} / ${resource.storageLimitGb} GB` },
-  { icon: Shield, label: 'Redundancy', value: resource.redundancy },
-  { icon: CheckCircle2, label: 'State', value: resource.state },
-]
-
-const technical = [
-  { label: 'Server', value: resource.server },
-  { label: 'Region', value: resource.region },
-  { label: 'Collation', value: resource.collation },
-  { label: 'Max workers', value: String(resource.maxWorkers) },
-  { label: 'Max sessions', value: String(resource.maxSessions) },
-  { label: 'Storage limit', value: `${resource.storageLimitGb} GB` },
-  { label: 'Compute model', value: resource.computeModel },
-  { label: 'Service tier', value: resource.tier },
-]
+import { getDashboardResource, getDataQuality } from '@/lib/api-services'
 
 export default function ConfigurationPage() {
   const [showTech, setShowTech] = useState(false)
+  const [resource, setResource] = useState(resourceMock)
+  const [dataQuality, setDataQuality] = useState(dataQualityMock)
+
+  useEffect(() => {
+    getDashboardResource().then(setResource)
+    getDataQuality().then(setDataQuality)
+  }, [])
+
+  const summary = [
+    { icon: Database, label: 'Service', value: resource.service },
+    { icon: Server, label: 'Tier', value: `${resource.tier} · ${resource.computeModel}` },
+    { icon: Server, label: 'Compute', value: `${resource.vCores} vCores · ${resource.memoryGb} GB` },
+    { icon: HardDrive, label: 'Storage', value: `${resource.storageUsedGb} / ${resource.storageLimitGb} GB` },
+    { icon: Shield, label: 'Redundancy', value: resource.redundancy },
+    { icon: CheckCircle2, label: 'State', value: resource.state },
+  ]
+
+  const technical = [
+    { label: 'Server', value: resource.server },
+    { label: 'Region', value: resource.region },
+    { label: 'Collation', value: resource.collation },
+    { label: 'Max workers', value: String(resource.maxWorkers) },
+    { label: 'Max sessions', value: String(resource.maxSessions) },
+    { label: 'Storage limit', value: `${resource.storageLimitGb} GB` },
+    { label: 'Compute model', value: resource.computeModel },
+    { label: 'Service tier', value: resource.tier },
+  ]
 
   return (
     <div>
@@ -103,4 +110,36 @@ export default function ConfigurationPage() {
       </div>
     </div>
   )
+}
+
+const resourceMock = {
+  name: 'sql-prod-orders-eastus',
+  server: 'cdco-prod.database.windows.net',
+  service: 'Azure SQL Database',
+  tier: 'General Purpose',
+  computeModel: 'Provisioned',
+  vCores: 8,
+  memoryGb: 40.8,
+  region: 'East US',
+  storageUsedGb: 214,
+  storageLimitGb: 512,
+  redundancy: 'Zone-redundant',
+  state: 'Online',
+  lastSyncMinutes: 8,
+  collation: 'SQL_Latin1_General_CP1_CI_AS',
+  maxWorkers: 800,
+  maxSessions: 2400,
+}
+
+const dataQualityMock = {
+  globalConfidence: 'High',
+  items: [
+    { label: 'Last collected', value: '8 min ago', info: 'Most recent successful metric collection.', tone: 'good' as const },
+    { label: 'Historical duration', value: '30 days', info: 'Length of observed history feeding the analysis.', tone: 'good' as const },
+    { label: 'Sampling interval', value: '5 min', info: 'Resolution of collected telemetry.', tone: 'good' as const },
+    { label: 'Coverage', value: '96%', info: 'Share of expected samples actually collected.', tone: 'good' as const },
+    { label: 'Missing metrics', value: 'None', info: 'Required signals with no data in the window.', tone: 'good' as const },
+    { label: 'Cost source', value: 'Billed', info: 'Cost derived from billed usage, not list price.', tone: 'good' as const },
+    { label: 'Experimental validation', value: 'Available', info: 'A controlled scenario replay validated the estimate.', tone: 'good' as const },
+  ],
 }

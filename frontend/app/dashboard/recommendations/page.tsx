@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   ChevronDown,
@@ -17,11 +17,16 @@ import { PageHeader, Panel, RiskBadge, ConfidenceBar, EvidenceDot, toneText } fr
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { recommendation, assistantSuggestions, assistantAnswers } from '@/lib/mock-data'
+import { getRecommendationSummary } from '@/lib/api-services'
+import type { RecommendationItem } from '@/lib/api-services'
 
 export default function RecommendationsPage() {
-  const r = recommendation
+  const [r, setR] = useState<RecommendationItem>(recMock)
   const [showWhy, setShowWhy] = useState(true)
+
+  useEffect(() => {
+    getRecommendationSummary().then(setR)
+  }, [])
 
   return (
     <div>
@@ -206,7 +211,7 @@ function AssistantPanel() {
       action={<Sparkles className="size-4 text-primary" />}
     >
       <div className="flex flex-col gap-2">
-        {assistantSuggestions.map((q) => (
+        {assistantSuggestionsMock.map((q) => (
           <button
             key={q}
             onClick={() => setQuestion(q)}
@@ -228,7 +233,7 @@ function AssistantPanel() {
             <Sparkles className="size-3" />
             Grounded in visible evidence
           </div>
-          <p className="text-xs leading-relaxed text-foreground">{assistantAnswers[question]}</p>
+          <p className="text-xs leading-relaxed text-foreground">{assistantAnswersMock[question]}</p>
         </div>
       )}
 
@@ -243,3 +248,54 @@ function AssistantPanel() {
     </Panel>
   )
 }
+
+const recMock: RecommendationItem = {
+  id: 'rec-2041',
+  title: 'Recommendation available',
+  from: '8 vCores',
+  to: '4 vCores',
+  savingsPct: 24.2,
+  savingsAbs: 117.8,
+  risk: 'Low',
+  confidence: 91,
+  latencyImpact: 2.1,
+  analysisPeriod: 'Last 30 days',
+  generated: 'Today, 14:32',
+  modelVersion: 'rightsizer v1.4.2 · ruleset 2024.11',
+  evidence: [
+    { label: 'CPU p95', value: '28%', tone: 'good' },
+    { label: 'CPU p99', value: '41%', tone: 'good' },
+    { label: 'I/O p95', value: 'Below threshold', tone: 'good' },
+    { label: 'Workload trend', value: 'Stable', tone: 'good' },
+    { label: 'Headroom', value: 'Sufficient', tone: 'good' },
+    { label: 'SLA (30d)', value: '99.97%', tone: 'good' },
+  ],
+  constraints: [
+    { label: 'p95 latency within threshold', pass: true },
+    { label: 'No SLA violations in analysis window', pass: true },
+    { label: 'Sufficient CPU headroom at projected peak', pass: true },
+    { label: 'I/O within provisioned limits', pass: true },
+  ],
+  limitations: [],
+  rationale: '',
+}
+
+const assistantSuggestionsMock = [
+  'Why is this recommendation considered low risk?',
+  'What evidence supports the proposed configuration?',
+  'What could happen if workload increases?',
+  'Which metric is limiting the recommendation?',
+]
+
+const assistantAnswersMock: Record<string, string> = {
+  'Why is this recommendation considered low risk?':
+    'Risk is Low because projected CPU p99 at 4 vCores stays near 58% — well below saturation — with sufficient headroom for observed peaks, a stable trend, low variability outside business hours, and no SLA violations in the 30-day window. These are calculated signals shown on the Recommendation and Risk views; the assistant only explains them.',
+  'What evidence supports the proposed configuration?':
+    'The scenario replay shows CPU p95 at 28% and p99 at 41% on current capacity, I/O p95 below threshold, storage growth low, and historical SLA compliance of 99.97%. Simulated on 4 vCores these constraints still pass, which is why Candidate A is marked feasible and recommended.',
+  'What could happen if workload increases?':
+    'Forecasting projects +3.1% over the next 14 days with no CPU saturation in the horizon. If demand grew beyond the upper uncertainty band, p99 headroom on 4 vCores would tighten first; the system would lower confidence and could withdraw the recommendation rather than keep it.',
+  'Which metric is limiting the recommendation?':
+    'CPU p99 at peak is the binding constraint. Candidate B (2 vCores) pushes p99 to ~81% and moves SLA to Warning, which is why it is not recommended despite larger nominal savings. Memory (68%) is the second-closest signal to its threshold.',
+}
+
+

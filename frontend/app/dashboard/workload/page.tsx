@@ -1,11 +1,23 @@
+'use client'
+
 import { Activity, CheckCircle2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { AreaTrend, Bars } from '@/components/charts'
-import { workloadHourly, workloadClassification, workloadPatterns } from '@/lib/mock-data'
+import { getWorkloadHourly, getWorkloadClassification, getWorkloadPatterns } from '@/lib/api-services'
 
 export default function WorkloadPage() {
-  const cls = workloadClassification
+  const [workloadHourly, setWorkloadHourly] = useState(workloadHourlyMock)
+  const [cls, setCls] = useState(workloadClassificationMock)
+  const [workloadPatterns, setWorkloadPatterns] = useState(workloadPatternsMock)
+
+  useEffect(() => {
+    getWorkloadHourly().then(setWorkloadHourly)
+    getWorkloadClassification().then(setCls)
+    getWorkloadPatterns().then(setWorkloadPatterns)
+  }, [])
+
   return (
     <div>
       <PageHeader
@@ -102,3 +114,36 @@ function Legend({ color, label }: { color: string; label: string }) {
     </span>
   )
 }
+
+const workloadHourlyMock = [
+  { hour: '00', intensity: 14, concurrency: 60, reads: 40, writes: 60 },
+]
+
+const workloadClassificationMock = {
+  pattern: 'Periodic',
+  confidence: 89,
+  evidence: [
+    'Predictable daily peaks between 09:00–17:00',
+    'Stable baseline outside business hours',
+    'Low variability outside peak windows',
+    'No sustained upward drift across 30 days',
+  ],
+  metrics: [
+    { label: 'Peak frequency', value: 'Moderate' },
+    { label: 'Peak duration', value: '~6.5 h/day' },
+    { label: 'Variability (CV)', value: '0.34' },
+    { label: 'Growth trend', value: '+1.2% / 30d' },
+    { label: 'Idle windows', value: '22:00–06:00' },
+    { label: 'Read / write mix', value: '58% / 42%' },
+  ],
+}
+
+const workloadPatternsMock = [
+  'Stable',
+  'Periodic',
+  'Bursty',
+  'Increasing',
+  'CPU Intensive',
+  'I/O Intensive',
+  'Mixed',
+]

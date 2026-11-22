@@ -1,10 +1,21 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { TrendingUp, AlertTriangle, Info } from 'lucide-react'
 import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { ForecastChart } from '@/components/charts'
-import { forecastSeries, forecastMeta } from '@/lib/mock-data'
+import { getForecastSeries, getForecastMeta } from '@/lib/api-services'
 
 export default function ForecastingPage() {
+  const [forecastSeries, setForecastSeries] = useState(forecastSeriesMock)
+  const [forecastMeta, setForecastMeta] = useState(forecastMetaMock)
+
+  useEffect(() => {
+    getForecastSeries().then(setForecastSeries)
+    getForecastMeta().then(setForecastMeta)
+  }, [])
+
   return (
     <div>
       <PageHeader
@@ -81,4 +92,19 @@ export default function ForecastingPage() {
       </div>
     </div>
   )
+}
+
+const forecastSeriesMock = [
+  { t: 'D-29', day: -29, observed: 26, forecast: null, lower: null, upper: null },
+]
+
+const forecastMetaMock = {
+  horizonDays: 14,
+  trend: '+3.1% projected over 14 days',
+  saturation: 'No CPU saturation projected within horizon',
+  errors: [
+    { label: 'MAE', value: '3.8%' },
+    { label: 'RMSE', value: '5.1%' },
+    { label: 'MAPE', value: '6.4%' },
+  ],
 }
