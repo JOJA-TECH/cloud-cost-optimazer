@@ -34,61 +34,31 @@ func simulateCandidate(candidate CandidateConfiguration, current Configuration, 
 		}
 	}
 
-	currentVcores := derefFloat(current.CapacityVCores)
-	candidateVcores := derefFloat(candidate.CapacityVCores)
+	simulation.SimulationMethod = "rule_v1_current_configuration_baseline"
 	cpu95, cpu95OK := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 95)
 	cpu99, cpu99OK := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 99)
-	if !cpu95OK {
-		cpu95 = latestSnapshotCPU(evidence.FeatureSnapshots, true)
-		cpu95OK = len(evidence.FeatureSnapshots) > 0
-	}
-	if !cpu99OK {
-		cpu99 = latestSnapshotCPU(evidence.FeatureSnapshots, false)
-		cpu99OK = len(evidence.FeatureSnapshots) > 0
-	}
-	if len(evidence.Forecasts) > 0 {
-		forecastPeak := 0.0
-		for _, forecast := range evidence.Forecasts {
-			if forecast.TargetMetric != "cpu_avg" {
-				continue
-			}
-			value := forecast.YPred
-			if forecast.YUpper != nil && *forecast.YUpper > value {
-				value = *forecast.YUpper
-			}
-			forecastPeak = math.Max(forecastPeak, value)
-		}
-		if forecastPeak > 0 {
-			cpu95 = math.Max(cpu95, forecastPeak)
-			cpu99 = math.Max(cpu99, forecastPeak)
-			cpu95OK, cpu99OK = true, true
-			simulation.SimulationMethod = "rule_v1_capacity_scaled_with_cpu_avg_forecast"
-		}
-	}
-	if currentVcores > 0 && candidateVcores > 0 && cpu95OK && cpu99OK {
-		ratio := currentVcores / candidateVcores
-		simulation.PredictedCPUP95 = floatPtr(cpu95 * ratio)
-		simulation.PredictedCPUP99 = floatPtr(cpu99 * ratio)
-	}
 	if currentCost > 0 {
 		simulation.EstimatedSavingsPct = floatPtr((currentCost - proposedCost) / currentCost * 100)
 	}
-	if simulation.PredictedCPUP95 == nil || simulation.PredictedCPUP99 == nil ||
-		proposedCost <= 0 || currentCost <= 0 {
+	if candidate.SKUName != current.SKUName || derefString(candidate.ComputeModel) != current.ComputeModel ||
+		derefFloat(candidate.CapacityVCores) != derefFloat(current.CapacityVCores) {
+		// Release 1.0 requires validated performance-transfer evidence for SKU changes.
+		// No such adapter/contract exists yet, so alternative configurations fail closed.
 		simulation.Feasible = boolPtr(false)
-		simulation.ViolatedConstraints = []string{"evidence_insufficient_for_simulation"}
+		simulation.SimulationMethod = "rule_v1_unvalidated_candidate_transfer"
+		simulation.ViolatedConstraints = []string{"candidate_transfer_validation_unavailable"}
 		return simulation
 	}
-
 	violations := make([]string, 0)
-	if *simulation.PredictedCPUP95 >= 100 {
-		violations = append(violations, "predicted_cpu_p95_exceeds_capacity")
+	if !cpu95OK || !cpu99OK || proposedCost <= 0 || currentCost <= 0 {
+		violations = append(violations, "evidence_insufficient_for_simulation")
 	}
-	if *simulation.PredictedCPUP99 >= 100 {
-		violations = append(violations, "predicted_cpu_p99_exceeds_capacity")
+	if cpu95OK && cpu95 >= 100 {
+		violations = append(violations, "observed_cpu_p95_exceeds_capacity")
 	}
-	// Latency/SLA claims require a corresponding forecast or measured contract;
-	// do not synthesize them from CPU utilization.
+	if cpu99OK && cpu99 >= 100 {
+		violations = append(violations, "observed_cpu_p99_exceeds_capacity")
+	}
 	simulation.Feasible = boolPtr(len(violations) == 0)
 	simulation.ViolatedConstraints = violations
 	return simulation
@@ -159,82 +129,14 @@ func candidateDiscardReason(simulation ScenarioSimulation, policy PolicyEvaluati
 }
 
 func evaluateInitialOpportunity(candidate CandidateConfiguration, current Configuration, evidence generationEvidence, simulation ScenarioSimulation, saving EstimatedSaving, policy OptimizationPolicy) (bool, string) {
+	if candidate.SKUName != current.SKUName || derefString(candidate.ComputeModel) != current.ComputeModel ||
+		derefFloat(candidate.CapacityVCores) != derefFloat(current.CapacityVCores) {
+		return false, "candidate_transfer_validation_unavailable"
+	}
 	if saving.MonthlyAmount <= 0 {
 		return false, "no_positive_savings"
 	}
-	if candidate.ComputeModel != nil && derefString(candidate.ComputeModel) != current.ComputeModel {
-		if !policyBool(policy.Constraints, "allow_compute_model_change") {
-			return false, "compute_model_change_not_allowed"
-		}
-		if strings.EqualFold(derefString(candidate.ComputeModel), "serverless") {
-			averageCPU := averageSnapshotCPU(evidence.FeatureSnapshots)
-			if averageCPU >= 20 || evidence.WorkloadPattern == nil ||
-				evidence.WorkloadPattern.IntensityBand != "low" ||
-				evidence.WorkloadPattern.PeakFrequency > 2 {
-				return false, "serverless_workload_not_low_or_intermitent"
-			}
-		}
-		return true, ""
-	}
-	currentCapacity := derefFloat(current.CapacityVCores)
-	candidateCapacity := derefFloat(candidate.CapacityVCores)
-	if candidateCapacity < currentCapacity {
-		cpu95, ok95 := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 95)
-		cpu99, ok99 := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 99)
-		if !ok95 || !ok99 || evidence.CapacityAnalysis == nil {
-			return false, "scale_down_evidence_insufficient"
-		}
-		if cpu95 >= 40 || cpu99 >= 60 || evidence.CapacityAnalysis.HeadroomPct <= 40 {
-			return false, "scale_down_utilization_or_headroom_threshold"
-		}
-		increasing := false
-		trendFound := false
-		for _, trend := range evidence.Trends {
-			if trend.MetricCode == "cpu_percent" {
-				trendFound = true
-				if trend.Slope > 0.1 {
-					increasing = true
-				}
-			}
-		}
-		if !trendFound || increasing {
-			return false, "scale_down_trend_unavailable_or_increasing"
-		}
-		if simulation.PredictedCPUP95 == nil || simulation.PredictedCPUP99 == nil ||
-			*simulation.PredictedCPUP95 >= 80 || *simulation.PredictedCPUP99 >= 90 {
-			return false, "scale_down_forecast_exceeds_utilization_threshold"
-		}
-		return true, ""
-	}
-	if candidateCapacity > currentCapacity {
-		cpu95, ok95 := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 95)
-		cpu99, ok99 := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 99)
-		needsScaleUp := (ok95 && cpu95 > 80) || (ok99 && cpu99 > 90)
-		if evidence.CapacityAnalysis != nil && evidence.CapacityAnalysis.HeadroomPct < 15 {
-			needsScaleUp = true
-		}
-		for _, forecast := range evidence.Forecasts {
-			if forecast.TargetMetric == "cpu_avg" && forecast.YPred > 80 {
-				needsScaleUp = true
-			}
-		}
-		if !needsScaleUp {
-			return false, "scale_up_threshold_not_met"
-		}
-		return true, ""
-	}
 	return false, "candidate_is_current_configuration"
-}
-
-func averageSnapshotCPU(snapshots []FeatureSnapshot) float64 {
-	if len(snapshots) == 0 {
-		return math.Inf(1)
-	}
-	total := 0.0
-	for _, snapshot := range snapshots {
-		total += snapshot.CPUAvg
-	}
-	return total / float64(len(snapshots))
 }
 
 func rationaleFromEvidence(evidence generationEvidence, simulation ScenarioSimulation, saving EstimatedSaving, evaluation PolicyEvaluation) RecommendationRationale {
@@ -245,14 +147,27 @@ func rationaleFromEvidence(evidence generationEvidence, simulation ScenarioSimul
 		rationale.Evidence = append(rationale.Evidence, Evidence{
 			Type: "cpu_p95", MetricCode: stringPtr("cpu_percent"), Value: floatPtr(v), Unit: stringPtr("percent"),
 			WindowStartUTC: timePtr(evidenceWindowStart(evidence)), WindowEndUTC: timePtr(evidenceWindowEnd(evidence)),
-			Method: "analytics.percentile_statistic", Quality: floatPtr(1),
+			Method: "analytics.percentile_statistic", Quality: floatPtr(evidence.CPUDataCoveragePct / 100),
+		})
+	}
+	if evidence.CPUDataCoverageAvailable {
+		context := map[string]any{"expected_buckets": evidence.CPUExpectedBuckets, "received_buckets": evidence.CPUReceivedBuckets}
+		if evidence.CPUDataCoverageThresholdPct != nil {
+			context["required_threshold_pct"] = *evidence.CPUDataCoverageThresholdPct
+		}
+		rationale.Evidence = append(rationale.Evidence, Evidence{
+			Type: "cpu_p95_hourly_coverage", MetricCode: stringPtr("cpu_percent"),
+			Value: floatPtr(evidence.CPUDataCoveragePct), Unit: stringPtr("percent"),
+			WindowStartUTC: timePtr(evidence.WindowStartUTC), WindowEndUTC: timePtr(evidence.WindowEndUTC),
+			Method: "distinct_hourly_cpu_p95_buckets_with_observations", Quality: floatPtr(evidence.CPUDataCoveragePct / 100),
+			Context: context,
 		})
 	}
 	if v, ok := evidencePercentile(evidence.PercentileStatistics, "cpu_percent", 99); ok {
 		rationale.Evidence = append(rationale.Evidence, Evidence{
 			Type: "cpu_p99", MetricCode: stringPtr("cpu_percent"), Value: floatPtr(v), Unit: stringPtr("percent"),
 			WindowStartUTC: timePtr(evidenceWindowStart(evidence)), WindowEndUTC: timePtr(evidenceWindowEnd(evidence)),
-			Method: "analytics.percentile_statistic", Quality: floatPtr(1),
+			Method: "analytics.percentile_statistic", Quality: floatPtr(evidence.CPUDataCoveragePct / 100),
 		})
 	}
 	if evidence.CapacityAnalysis != nil {
@@ -283,10 +198,23 @@ func rationaleFromEvidence(evidence generationEvidence, simulation ScenarioSimul
 			Method: "policy_evaluator",
 		})
 	}
-	if simulation.ForecastUID != nil {
+	var selectedForecast *Forecast
+	for i := range evidence.Forecasts {
+		forecast := &evidence.Forecasts[i]
+		if forecast.TargetMetric == "cpu_avg" && (selectedForecast == nil || forecast.YPred > selectedForecast.YPred) {
+			selectedForecast = forecast
+		}
+	}
+	if selectedForecast != nil {
 		rationale.Evidence = append(rationale.Evidence, Evidence{
-			Type: "forecast", Context: map[string]any{"forecast_uid": simulation.ForecastUID},
-			Method: simulation.SimulationMethod,
+			Type: "forecast_cpu_avg", MetricCode: stringPtr("cpu_avg"),
+			Value: floatPtr(selectedForecast.YPred), Unit: stringPtr("percent"),
+			WindowStartUTC: timePtr(selectedForecast.PeriodStartUTC), Method: "analytics.forecast.cpu_avg",
+			Context: map[string]any{
+				"forecast_uid": selectedForecast.ForecastUID,
+				"y_lower":      selectedForecast.YLower, "y_upper": selectedForecast.YUpper,
+				"used_as_p95_or_p99": false,
+			},
 		})
 	}
 	return rationale
@@ -298,7 +226,13 @@ func recommendationEvidence(evidence generationEvidence, rationale Recommendatio
 		result = append(result, RecommendationEvidence{
 			Type: row.Type, MetricCode: row.MetricCode, Value: row.Value, Unit: row.Unit,
 			WindowStartUTC: row.WindowStartUTC, WindowEndUTC: row.WindowEndUTC,
-			Context: map[string]any{"source": row.Method, "quality": row.Quality},
+			Context: func() map[string]any {
+				context := map[string]any{"source": row.Method, "quality": row.Quality}
+				for key, value := range row.Context {
+					context[key] = value
+				}
+				return context
+			}(),
 		})
 	}
 	for _, partialError := range evidence.PartialErrors {
@@ -322,25 +256,6 @@ func evidencePercentile(rows []PercentileStatistic, metric string, percentile fl
 		}
 	}
 	return value, found
-}
-
-func latestSnapshotCPU(rows []FeatureSnapshot, p95 bool) float64 {
-	if len(rows) == 0 {
-		return 0
-	}
-	latest := rows[0]
-	for _, row := range rows[1:] {
-		if row.PeriodStartUTC.After(latest.PeriodStartUTC) {
-			latest = row
-		}
-	}
-	if p95 && latest.CPUP95 != nil {
-		return *latest.CPUP95
-	}
-	if !p95 && latest.CPUP99 != nil {
-		return *latest.CPUP99
-	}
-	return latest.CPUAvg
 }
 
 func evidenceWindowStart(evidence generationEvidence) time.Time {

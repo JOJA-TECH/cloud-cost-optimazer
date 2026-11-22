@@ -184,7 +184,7 @@ async function tryBackend<T>(fn: () => Promise<T>): Promise<T | null> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getCloudAccounts(): Promise<CloudAccount[]> {
-  return tryBackend(() => apiJson<CloudAccount[]>('/api/v1/cloud-accounts')) ?? []
+  return apiJson<CloudAccount[]>('/api/v1/cloud-accounts')
 }
 
 export async function getCloudResources(accountId?: string): Promise<CloudResource[]> {
@@ -194,10 +194,7 @@ export async function getCloudResources(accountId?: string): Promise<CloudResour
   if (accounts.length === 0) return []
 
   const id = accountId ?? accounts[0].cloud_account_id
-  const data = await tryBackend(() =>
-    apiJson<{ resources: CloudResource[] }>(`/api/v1/cloud-accounts/${id}/resources`)
-  )
-  return data?.resources ?? []
+  return apiJson<CloudResource[]>(`/api/v1/cloud-accounts/${id}/resources`)
 }
 
 export async function getDashboardResource(): Promise<typeof mockResource> {

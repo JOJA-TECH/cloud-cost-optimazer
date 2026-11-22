@@ -1,301 +1,181 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import {
-  ArrowRight,
-  ChevronDown,
-  CircleCheck,
-  Check,
-  ShieldCheck,
-  Sparkles,
-  Clock,
-  AlertTriangle,
-  Ban,
-  Send,
-} from 'lucide-react'
-import { PageHeader, Panel, RiskBadge, ConfidenceBar, EvidenceDot, toneText } from '@/components/dashboard/ui'
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { AlertTriangle, Check, Clock3, RefreshCw, X } from 'lucide-react'
+import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { getRecommendationSummary } from '@/lib/api-services'
-import type { RecommendationItem } from '@/lib/api-services'
+import { Button, buttonVariants } from '@/components/ui/button'
+import {
+  decideBackendRecommendation,
+  listBackendRecommendations,
+  type BackendRecommendation,
+} from '@/lib/ai-services'
+
+function formatMoney(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value)
+  } catch {
+    return `${value.toFixed(2)} ${currency}`
+  }
+}
+
+function basisLabel(value: string) {
+  if (value === 'actual_cost_daily') return 'Costo observado normalizado'
+  if (value === 'price_catalog') return 'Precio de lista del catálogo'
+  if (value === 'scenario_simulation') return 'Simulación de escenario'
+  return value || 'No especificada'
+}
 
 export default function RecommendationsPage() {
-  const [r, setR] = useState<RecommendationItem>(recMock)
-  const [showWhy, setShowWhy] = useState(true)
+  const [items, setItems] = useState<BackendRecommendation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busyUid, setBusyUid] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setItems(await listBackendRecommendations())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudieron cargar las recomendaciones.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    getRecommendationSummary().then(setR)
-  }, [])
+    void refresh()
+  }, [refresh])
+
+  async function decide(uid: string, action: 'accept' | 'reject') {
+    setBusyUid(uid)
+    setError(null)
+    try {
+      await decideBackendRecommendation(uid, action)
+      await refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo guardar la decisión humana.')
+    } finally {
+      setBusyUid(null)
+    }
+  }
 
   return (
     <div>
       <PageHeader
-        title="Recommendation detail"
-        description="A decision-support recommendation grounded in calculated evidence. The AI layer explains this evidence — it does not invent the capacity decision or change production."
-        actions={<Badge variant="neutral"><Clock className="size-3" />{r.generated}</Badge>}
+        title="Revisión de recomendaciones"
+        description="Decisiones persistidas por el motor del backend. Revisa evidencia, bases de costo y limitaciones antes de aceptar o rechazar; esta pantalla nunca cambia recursos en Azure."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
+            <RefreshCw className="mr-2 size-3.5" /> Actualizar
+          </Button>
+        }
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Main detail */}
-        <div className="space-y-4 lg:col-span-2">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success">
-                  <CircleCheck className="size-5" />
-                </span>
-                <div>
-                  <p className="text-xs text-muted-foreground">Recommended configuration</p>
-                  <p className="flex items-center gap-2 text-xl font-semibold text-foreground">
-                    {r.from}
-                    <ArrowRight className="size-4 text-primary" />
-                    <span className="text-primary">{r.to}</span>
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <Metric label="Savings" value={`${r.savingsPct}%`} tone="success" />
-                <Metric label="Latency" value={`+${r.latencyImpact}%`} />
-                <Metric label="Confidence" value={`${r.confidence}%`} tone="brand" />
-              </div>
-            </div>
-          </Panel>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Panel title="Constraints evaluated" description="All must pass for feasibility">
-              <ul className="space-y-2.5">
-                {r.constraints.map((c) => (
-                  <li key={c.label} className="flex items-start gap-2 text-sm">
-                    <span className="mt-0.5 flex size-4 items-center justify-center rounded-full bg-success/15 text-success">
-                      <Check className="size-3" />
-                    </span>
-                    <span className="text-muted-foreground">{c.label}</span>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-
-            <Panel title="Evidence" description="Calculated from observed telemetry">
-              <ul className="space-y-2.5">
-                {r.evidence.map((e) => (
-                  <li key={e.label} className="flex items-center gap-2 text-sm">
-                    <EvidenceDot tone={e.tone} />
-                    <span className="text-muted-foreground">{e.label}</span>
-                    <span className={cn('ml-auto font-medium tabular-nums', toneText(e.tone))}>{e.value}</span>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          </div>
-
-          <Panel
-            title="Why this recommendation?"
-            action={
-              <button
-                onClick={() => setShowWhy((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary"
-              >
-                {showWhy ? 'Hide' : 'Show'}
-                <ChevronDown className={cn('size-4 transition-transform', showWhy && 'rotate-180')} />
-              </button>
-            }
-          >
-            {showWhy && (
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Grounded label="Analysis period" value={r.analysisPeriod} />
-                  <Grounded label="Generated" value={r.generated} />
-                  <Grounded label="Model / ruleset" value={r.modelVersion} />
-                  <Grounded label="Resource" value="sql-prod-orders-eastus" />
-                </div>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Limitations" description="Stated explicitly with every recommendation">
-            <ul className="space-y-2">
-              {r.limitations.map((l) => (
-                <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
-                  {l}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        </div>
-
-        {/* Sidebar: risk/confidence + AI + no-rec */}
-        <div className="space-y-4">
-          <Panel title="Risk & confidence" description="Evaluated independently">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
-                <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ShieldCheck className="size-4 text-success" />
-                  Risk
-                </span>
-                <RiskBadge risk={r.risk} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Considers proximity to limits, peak magnitude and frequency, variability, trend,
-                headroom, and SLA history.
-              </p>
-              <div className="border-t border-border pt-4">
-                <ConfidenceBar value={r.confidence} />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  High confidence: sufficient historical coverage, complete CPU/I/O metrics, stable
-                  workload pattern, validated scenario.
-                </p>
-              </div>
-            </div>
-          </Panel>
-
-          <AssistantPanel />
-
-          <Panel title="Other outcomes are valid" description="The system can decline to recommend">
-            <div className="space-y-3">
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <Ban className="size-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-foreground">No recommendation</p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  sql-prod-analytics-westus — current capacity already balanced; no feasible saving.
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <AlertTriangle className="size-3.5 text-warning" />
-                  <p className="text-xs font-semibold text-foreground">Insufficient data</p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  sql-prod-identity-eastus — 41% confidence, &lt;7 days history. Collecting more
-                  telemetry before advising.
-                </p>
-              </div>
-            </div>
-          </Panel>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone?: 'success' | 'brand' }) {
-  const color = tone === 'success' ? 'text-success' : tone === 'brand' ? 'text-primary' : 'text-foreground'
-  return (
-    <div>
-      <p className={cn('text-lg font-semibold tabular-nums', color)}>{value}</p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-    </div>
-  )
-}
-
-function Grounded({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-background px-3 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-xs font-medium text-foreground">{value}</p>
-    </div>
-  )
-}
-
-function AssistantPanel() {
-  const [question, setQuestion] = useState<string | null>(null)
-
-  return (
-    <Panel
-      title="Ask about this recommendation"
-      description="Explanation layer over calculated evidence"
-      action={<Sparkles className="size-4 text-primary" />}
-    >
-      <div className="flex flex-col gap-2">
-        {assistantSuggestionsMock.map((q) => (
-          <button
-            key={q}
-            onClick={() => setQuestion(q)}
-            className={cn(
-              'rounded-lg border px-3 py-2 text-left text-xs transition-colors',
-              question === q
-                ? 'border-primary/40 bg-primary/5 text-foreground'
-                : 'border-border bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground',
-            )}
-          >
-            {q}
-          </button>
-        ))}
-      </div>
-
-      {question && (
-        <div className="mt-3 rounded-lg bg-muted/60 p-3">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-primary">
-            <Sparkles className="size-3" />
-            Grounded in visible evidence
-          </div>
-          <p className="text-xs leading-relaxed text-foreground">{assistantAnswersMock[question]}</p>
+      {error && (
+        <div role="alert" className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+          {error}
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-        <input
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-          placeholder="Ask a question…"
-          readOnly
-        />
-        <Send className="size-3.5 text-muted-foreground" />
-      </div>
-    </Panel>
+      {loading && items.length === 0 ? (
+        <Panel><p className="text-sm text-muted-foreground">Consultando recomendaciones persistidas…</p></Panel>
+      ) : items.length === 0 ? (
+        <Panel title="No hay recomendaciones persistidas">
+          <p className="text-sm text-muted-foreground">
+            No se muestran datos de ejemplo. Calcula analítica y encola una evaluación desde Intelligence para generar una decisión trazable.
+          </p>
+          <Link href="/dashboard/intelligence" className={buttonVariants({ className: 'mt-4' })}>Ir a Intelligence</Link>
+        </Panel>
+      ) : (
+        <div className="space-y-4">
+          {items.map((item) => {
+            const isReviewable = item.status === 'proposed' || item.status === 'under_review'
+            const isChange = item.action.type !== 'no_action'
+            const amount = item.estimated_saving.monthly_amount
+            return (
+              <Panel key={item.recommendation_uid}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-base font-semibold text-foreground">{item.action.description || item.action.type}</h2>
+                      <Badge variant={item.status === 'accepted' ? 'success' : 'neutral'}>{item.status}</Badge>
+                      <Badge variant="outline">Riesgo {item.risk.level}</Badge>
+                      <Badge variant="outline">{item.generation_state}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Recurso {item.resource_uid} · Política v{item.policy_version} · {new Date(item.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {isReviewable && (
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => void decide(item.recommendation_uid, 'accept')} disabled={busyUid !== null}>
+                        <Check className="mr-1.5 size-3.5" />{isChange ? 'Aceptar recomendación' : 'Confirmar revisión'}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => void decide(item.recommendation_uid, 'reject')} disabled={busyUid !== null}>
+                        <X className="mr-1.5 size-3.5" /> Rechazar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <section className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs text-muted-foreground">Configuración observada</p>
+                    <p className="mt-1 font-medium text-foreground">{String(item.current_configuration.SKUName ?? item.current_configuration.sku_name ?? 'No disponible')}</p>
+                  </section>
+                  <section className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs text-muted-foreground">Configuración propuesta</p>
+                    <p className="mt-1 font-medium text-foreground">{String(item.proposed_configuration.SKUName ?? item.proposed_configuration.sku_name ?? 'No disponible')}</p>
+                  </section>
+                  <section className="rounded-lg border border-border bg-background p-3">
+                    <p className="text-xs text-muted-foreground">Ahorro potencial estimado / mes</p>
+                    <p className="mt-1 font-semibold tabular-nums text-foreground">{formatMoney(amount, item.estimated_saving.currency)}</p>
+                    <p className="text-xs text-muted-foreground">No representa ahorro realizado</p>
+                  </section>
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <section>
+                    <h3 className="text-sm font-semibold text-foreground">Explicación y evidencia</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{item.rationale.summary}</p>
+                    {item.rationale.factors.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {item.rationale.factors.map((factor, index) => (
+                          <li key={`${item.recommendation_uid}-${index}`} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />{factor}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  <section>
+                    <h3 className="text-sm font-semibold text-foreground">Bases y supuestos económicos</h3>
+                    <dl className="mt-2 space-y-1 text-xs">
+                      <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Base actual</dt><dd className="text-right text-foreground">{basisLabel(item.estimated_saving.current_cost_basis)}</dd></div>
+                      <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Base propuesta</dt><dd className="text-right text-foreground">{basisLabel(item.estimated_saving.proposed_cost_basis)}</dd></div>
+                      <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Método</dt><dd className="text-right text-foreground">{item.estimated_saving.method}</dd></div>
+                    </dl>
+                    <ul className="mt-2 space-y-1">
+                      {item.estimated_saving.comparison_assumptions.map((assumption) => (
+                        <li key={assumption} className="text-xs text-muted-foreground">• {assumption}</li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5"><Clock3 className="size-3.5" /> {item.evidence_count} referencias de evidencia</span>
+                  <span>{item.audit_status === 'audit_pending' ? 'Auditoría pendiente de reconciliación' : 'Toda decisión de aplicación queda fuera de este flujo'}</span>
+                  {!isChange && <span>Sin cambio de configuración para aprobar</span>}
+                </div>
+              </Panel>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
-
-const recMock: RecommendationItem = {
-  id: 'rec-2041',
-  title: 'Recommendation available',
-  from: '8 vCores',
-  to: '4 vCores',
-  savingsPct: 24.2,
-  savingsAbs: 117.8,
-  risk: 'Low',
-  confidence: 91,
-  latencyImpact: 2.1,
-  analysisPeriod: 'Last 30 days',
-  generated: 'Today, 14:32',
-  modelVersion: 'rightsizer v1.4.2 · ruleset 2024.11',
-  evidence: [
-    { label: 'CPU p95', value: '28%', tone: 'good' },
-    { label: 'CPU p99', value: '41%', tone: 'good' },
-    { label: 'I/O p95', value: 'Below threshold', tone: 'good' },
-    { label: 'Workload trend', value: 'Stable', tone: 'good' },
-    { label: 'Headroom', value: 'Sufficient', tone: 'good' },
-    { label: 'SLA (30d)', value: '99.97%', tone: 'good' },
-  ],
-  constraints: [
-    { label: 'p95 latency within threshold', pass: true },
-    { label: 'No SLA violations in analysis window', pass: true },
-    { label: 'Sufficient CPU headroom at projected peak', pass: true },
-    { label: 'I/O within provisioned limits', pass: true },
-  ],
-  limitations: [],
-  rationale: '',
-}
-
-const assistantSuggestionsMock = [
-  'Why is this recommendation considered low risk?',
-  'What evidence supports the proposed configuration?',
-  'What could happen if workload increases?',
-  'Which metric is limiting the recommendation?',
-]
-
-const assistantAnswersMock: Record<string, string> = {
-  'Why is this recommendation considered low risk?':
-    'Risk is Low because projected CPU p99 at 4 vCores stays near 58% — well below saturation — with sufficient headroom for observed peaks, a stable trend, low variability outside business hours, and no SLA violations in the 30-day window. These are calculated signals shown on the Recommendation and Risk views; the assistant only explains them.',
-  'What evidence supports the proposed configuration?':
-    'The scenario replay shows CPU p95 at 28% and p99 at 41% on current capacity, I/O p95 below threshold, storage growth low, and historical SLA compliance of 99.97%. Simulated on 4 vCores these constraints still pass, which is why Candidate A is marked feasible and recommended.',
-  'What could happen if workload increases?':
-    'Forecasting projects +3.1% over the next 14 days with no CPU saturation in the horizon. If demand grew beyond the upper uncertainty band, p99 headroom on 4 vCores would tighten first; the system would lower confidence and could withdraw the recommendation rather than keep it.',
-  'Which metric is limiting the recommendation?':
-    'CPU p99 at peak is the binding constraint. Candidate B (2 vCores) pushes p99 to ~81% and moves SLA to Warning, which is why it is not recommended despite larger nominal savings. Memory (68%) is the second-closest signal to its threshold.',
-}
-
-

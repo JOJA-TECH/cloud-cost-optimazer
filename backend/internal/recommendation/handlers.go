@@ -22,6 +22,10 @@ func RegisterRoutes(
 	perm *iam.PermissionEngine,
 	traceReaders ...RecommendationTraceReader,
 ) {
+	mux.Handle("GET /api/v1/recommendations/policies",
+		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(http.HandlerFunc(handleListPolicies(svc)))))
+	mux.Handle("POST /api/v1/recommendations/policies",
+		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "write")(http.HandlerFunc(handleCreatePolicy(svc)))))
 	mux.Handle("POST /api/v1/recommendations",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "write")(http.HandlerFunc(handleGenerate(svc)))))
 	mux.Handle("POST /api/v1/recommendations/evaluate",
@@ -391,6 +395,19 @@ func recommendationResponse(value Recommendation) map[string]any {
 			if item.Value != nil && item.Unit != nil {
 				factors = append(factors, fmt.Sprintf("%s: %.2f %s", item.Type, *item.Value, *item.Unit))
 			}
+		case "cpu_p95_hourly_coverage":
+			if item.Value != nil && item.Context != nil {
+				factors = append(factors, fmt.Sprintf("Cobertura horaria CPU p95: %.1f%% (%v/%v buckets; umbral %v%%)",
+					*item.Value, item.Context["received_buckets"], item.Context["expected_buckets"], item.Context["required_threshold_pct"]))
+			}
+		case "forecast_cpu_avg":
+			if item.Value != nil {
+				factors = append(factors, fmt.Sprintf("Forecast de CPU promedio: %.2f%%; no se interpreta como p95/p99", *item.Value))
+			}
+		case "candidate_not_evaluable", "decision_reason":
+			if item.Context != nil {
+				factors = append(factors, fmt.Sprintf("%v: %v", item.Context["sku_name"], item.Context["reason"]))
+			}
 		case "policy_constraint":
 			if item.Context != nil {
 				factors = append(factors, fmt.Sprintf("Restricción de política: %v", item.Context["constraint"]))
@@ -414,14 +431,18 @@ func recommendationResponse(value Recommendation) map[string]any {
 		"current_configuration":  value.CurrentConfiguration,
 		"proposed_configuration": value.ProposedConfiguration,
 		"estimated_saving": map[string]any{
-			"current_monthly_cost":  value.EstimatedSaving.CurrentMonthlyCost,
-			"proposed_monthly_cost": value.EstimatedSaving.ProposedMonthlyCost,
-			"monthly_amount":        value.EstimatedSaving.MonthlyAmount,
-			"monthly_percentage":    value.EstimatedSaving.MonthlyPercentage * 100,
-			"currency":              value.EstimatedSaving.Currency,
-			"period_start":          value.EstimatedSaving.PeriodStart,
-			"period_end":            value.EstimatedSaving.PeriodEnd,
-			"method":                value.EstimatedSaving.Method,
+			"current_monthly_cost":   value.EstimatedSaving.CurrentMonthlyCost,
+			"proposed_monthly_cost":  value.EstimatedSaving.ProposedMonthlyCost,
+			"monthly_amount":         value.EstimatedSaving.MonthlyAmount,
+			"monthly_percentage":     value.EstimatedSaving.MonthlyPercentage * 100,
+			"currency":               value.EstimatedSaving.Currency,
+			"current_cost_basis":     value.EstimatedSaving.CurrentCostBasis,
+			"proposed_cost_basis":    value.EstimatedSaving.ProposedCostBasis,
+			"period_start":           value.EstimatedSaving.PeriodStart,
+			"period_end":             value.EstimatedSaving.PeriodEnd,
+			"method":                 value.EstimatedSaving.Method,
+			"interpretation":         "potential_estimate_not_realized_savings",
+			"comparison_assumptions": []string{"current cost uses observed daily charges normalized to a month", "proposed cost uses retail catalog list price", "negotiated discounts, credits, taxes, and workload transfer are not modeled"},
 		},
 		"risk": map[string]any{"score": value.Risk.Score, "level": value.Risk.Level},
 		"confidence": map[string]any{
@@ -519,5 +540,77 @@ func validRecommendationStatus(status RecommendationStatus) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func handleListPolicies(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardService(svc, w) {
+			return
+		}
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		enabledOnly := false
+		if raw := r.URL.Query().Get("enabled_only"); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_POLICY_QUERY", "enabled_only must be true or false")
+				return
+			}
+			enabledOnly = parsed
+		}
+		policies, err := svc.ListPolicies(r.Context(), name, enabledOnly)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		response := make([]map[string]any, 0, len(policies))
+		for _, policy := range policies {
+			response = append(response, policyResponse(policy))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": response, "count": len(response)})
+	}
+}
+
+func handleCreatePolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardService(svc, w) {
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		var request struct {
+			Name             string             `json:"name"`
+			Version          int                `json:"version"`
+			ObjectiveWeights map[string]float64 `json:"objective_weights,omitempty"`
+			Constraints      map[string]any     `json:"constraints,omitempty"`
+			Enabled          bool               `json:"enabled"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_POLICY_REQUEST", "invalid policy request body")
+			return
+		}
+		if strings.TrimSpace(request.Name) == "" || request.Version < 1 {
+			writeError(w, http.StatusBadRequest, "INVALID_POLICY_REQUEST", "name and version >= 1 are required")
+			return
+		}
+		policy, err := svc.CreatePolicy(r.Context(), OptimizationPolicy{
+			Name: request.Name, Version: request.Version,
+			ObjectiveWeights: request.ObjectiveWeights, Constraints: request.Constraints,
+			Enabled: request.Enabled, CreatedBy: actorFromRequest(r), CreatedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, policyResponse(policy))
+	}
+}
+
+func policyResponse(policy OptimizationPolicy) map[string]any {
+	return map[string]any{
+		"policy_uid": policy.UID, "name": policy.Name, "version": policy.Version,
+		"objective_weights": policy.ObjectiveWeights, "constraints": policy.Constraints,
+		"enabled": policy.Enabled, "created_by": policy.CreatedBy, "created_at": policy.CreatedAt,
 	}
 }

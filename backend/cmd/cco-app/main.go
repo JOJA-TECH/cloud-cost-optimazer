@@ -535,15 +535,23 @@ func main() {
 			return errors.New("recommendation service not configured (CCO_DATA_DSN missing)")
 		}
 		var parsed struct {
-			ResourceUID string `json:"resource_uid"`
-			From        string `json:"from"`
-			To          string `json:"to"`
-			HorizonDays int    `json:"horizon_days,omitempty"`
+			ResourceUID  string `json:"resource_uid"`
+			PolicyUID    string `json:"policy_uid"`
+			From         string `json:"from"`
+			To           string `json:"to"`
+			HorizonDays  int    `json:"horizon_days"`
+			Currency     string `json:"currency"`
+			ForceRefresh bool   `json:"force_refresh"`
+			CreatedBy    string `json:"created_by"`
 		}
 		if err := json.Unmarshal(payload, &parsed); err != nil {
 			return err
 		}
 		resourceUID, err := uuid.Parse(parsed.ResourceUID)
+		if err != nil {
+			return err
+		}
+		policyUID, err := uuid.Parse(parsed.PolicyUID)
 		if err != nil {
 			return err
 		}
@@ -556,11 +564,10 @@ func main() {
 			return err
 		}
 		_, err = recommendationSvc.GenerateRecommendation(ctx, recommendation.GenerateRecommendationInput{
-			ResourceUID: resourceUID,
-			From:        from,
-			To:          to,
-			HorizonDays: parsed.HorizonDays,
-			CreatedBy:   "jobs-worker",
+			ResourceUID: resourceUID, PolicyUID: policyUID,
+			From: from, To: to, HorizonDays: parsed.HorizonDays,
+			Currency: strings.ToUpper(parsed.Currency), ForceRefresh: parsed.ForceRefresh,
+			CreatedBy: parsed.CreatedBy,
 		})
 		return err
 	})
@@ -939,10 +946,13 @@ func main() {
 			const maxBody = 1 << 20 // 1 MB
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 			var req struct {
-				ResourceUID string `json:"resource_uid"`
-				From        string `json:"from"`
-				To          string `json:"to"`
-				HorizonDays int    `json:"horizon_days,omitempty"`
+				ResourceUID  string `json:"resource_uid"`
+				PolicyUID    string `json:"policy_uid"`
+				From         string `json:"from"`
+				To           string `json:"to"`
+				HorizonDays  int    `json:"horizon_days"`
+				Currency     string `json:"currency"`
+				ForceRefresh bool   `json:"force_refresh"`
 			}
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
@@ -955,6 +965,14 @@ func main() {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
 				return
 			}
+			if _, err := uuid.Parse(req.PolicyUID); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid policy_uid")
+				return
+			}
+			if len(req.Currency) != 3 || strings.ToUpper(req.Currency) != req.Currency {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "currency must be a three-letter uppercase code")
+				return
+			}
 			from, err := time.Parse(time.RFC3339, req.From)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid from")
@@ -965,16 +983,25 @@ func main() {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid to")
 				return
 			}
+			if !from.Before(to) {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "from must be before to")
+				return
+			}
+			if req.HorizonDays < 1 || req.HorizonDays > 365 {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "horizon_days must be between 1 and 365")
+				return
+			}
 			ic, ok := iam.IdentityContextFromContext(r.Context())
 			if !ok {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no identity context")
 				return
 			}
 			payload, _ := json.Marshal(map[string]any{
-				"resource_uid": req.ResourceUID,
-				"from":         from.UTC().Format(time.RFC3339),
-				"to":           to.UTC().Format(time.RFC3339),
-				"horizon_days": req.HorizonDays,
+				"resource_uid": req.ResourceUID, "policy_uid": req.PolicyUID,
+				"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339),
+				"horizon_days": req.HorizonDays, "currency": req.Currency,
+				"force_refresh": req.ForceRefresh,
+				"created_by":    ic.UserID.String(),
 			})
 			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
 				Type:           "recommendation:generate",

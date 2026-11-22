@@ -82,6 +82,12 @@ func calculateRisk(evidence generationEvidence, simulation ScenarioSimulation, c
 	case score >= 0.35:
 		level = RiskLevelMedium
 	}
+	for _, violation := range simulation.ViolatedConstraints {
+		if violation == "candidate_transfer_validation_unavailable" || violation == "evidence_insufficient_for_simulation" {
+			level = RiskLevelIndeterminate
+			break
+		}
+	}
 	return RecommendationRisk{
 		Score: score, Level: level, PeakUsage: peak, Variability: variability,
 		Trend: trend, Headroom: headroom, ModelVersion: "rule_v1",
@@ -100,13 +106,13 @@ func calculateRisk(evidence generationEvidence, simulation ScenarioSimulation, c
 
 func calculateConfidence(evidence generationEvidence, simulation ScenarioSimulation, policyMatch, dataComplete bool) RecommendationConfidence {
 	dataQuality := 0.0
-	if len(evidence.FeatureSnapshots) > 0 {
-		dataQuality += 0.4
+	if evidence.CPUDataCoverageAvailable {
+		dataQuality += 0.4 * clamp(evidence.CPUDataCoveragePct/100, 0, 1)
 	}
-	if len(evidence.Costs) > 0 || evidence.CostAnalysis != nil {
+	if len(evidence.Costs) > 0 || (evidence.CostAnalysis != nil && !evidence.CostAnalysis.ComputedAt.IsZero()) {
 		dataQuality += 0.3
 	}
-	if evidence.CapacityAnalysis != nil {
+	if evidence.CapacityAnalysis != nil && !evidence.CapacityAnalysis.ComputedAt.IsZero() {
 		dataQuality += 0.3
 	}
 	if evidence.Degraded {
@@ -141,16 +147,9 @@ func calculateConfidence(evidence generationEvidence, simulation ScenarioSimulat
 	}
 	completeness := clamp(present/requiredEvidence, 0, 1)
 
+	// Interval presence alone is not a forecast validation/backtest contract.
+	// Keep this at zero until calibrated model-quality evidence is available.
 	forecastQuality := 0.0
-	if len(evidence.Forecasts) > 0 {
-		forecastQuality = 0.6
-		for _, forecast := range evidence.Forecasts {
-			if forecast.YLower != nil && forecast.YUpper != nil {
-				forecastQuality = 1
-				break
-			}
-		}
-	}
 	feasibility := 0.0
 	if simulation.Feasible != nil && *simulation.Feasible {
 		feasibility = 1
