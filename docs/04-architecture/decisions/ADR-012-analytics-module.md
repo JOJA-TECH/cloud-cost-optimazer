@@ -56,6 +56,16 @@ Se decide **Alternativa B**:
    La promoción a `champion` se gestiona con `promote_model()` (archiva el
    campeón previo y promueve la versión solicitada); la política de promoción
    se define en Slice 4.
+
+   **Seguridad de datos (Slice 4a):** el servidor Python se conecta a `cco_data`
+   mediante un rol dedicado `app_mlservice` con permisos mínimos:
+   lectura sobre `catalog`, `core`, `raw`, `feat` y vistas públicas de
+   `contract`; escritura ÚNICAMENTE sobre tablas y secuencias de `ml.*`.
+   Sin acceso a `cco_app`, `opt.*`, ni escritura en `raw`/`core`. Los grants
+   están definidos en `databases/cco_data/roles/ml_service.sql` y se aplican
+   con un rol de administrador de base de datos antes de desplegar el servicio
+   Python. La variable `CCO_ML_DATA_DSN` debe apuntar a una conexión con este
+   rol (nunca reutilizar credenciales administrativas de Go).
 4. **DES (Database Efficiency Score):** `capacity_e`, `cost_e`, `performance_e`; pesos `v1_equal` (1/3 cada uno) en Release 1.0; Module 7 aplica los pesos para la recomendación final.
 5. **Portabilidad:** mismos contratos y repositorios en SQLite y PostgreSQL.
 
@@ -81,6 +91,7 @@ Separar el motor analítico del transporte HTTP permite probar la lógica de for
 - El cliente gRPC usa canal insegura por defecto (loopback); TLS/mTLS se configura en un slice posterior.
 - El servidor Python requiere `FORECAST_MODEL_DIR` con un artefacto de modelo válido para estar listo (`GetModelInfo` reporta NOT_SERVING sin artefacto).
 - No existe aún una interfaz `MLManagementPort` separada; `Train` comparte el servicio gRPC con `Predict`.
+- El rol `app_mlservice` debe aplicarse manualmente en cada entorno (`databases/cco_data/roles/ml_service.sql`) antes de desplegar el servicio Python productivo.
 
 ### Riesgos
 

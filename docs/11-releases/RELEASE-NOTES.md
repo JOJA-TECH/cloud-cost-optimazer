@@ -1,3 +1,68 @@
+# REL-1.0-slice-4a — Release Notes (Slice 4a: rol de datos app_mlservice)
+
+- **Versión:** 1.0.0-slice-4a
+- **Fecha:** 2026-11-22
+- **Estado:** Implementado (backend + base de datos)
+
+## Resumen
+
+Se implementa el rol de base de datos `app_mlservice` con permisos mínimos para el servicio Python ML (Module 6). El rol permite lectura sobre `catalog`, `core`, `raw`, `feat` y vistas públicas de `contract`, y escritura ÚNICAMENTE sobre tablas y secuencias de `ml.*`. No tiene acceso a `cco_app`, `opt.*`, ni escritura en `raw`/`core`.
+
+## Nuevas funcionalidades
+
+- `databases/cco_data/roles/ml_service.sql` (nuevo): script SQL que crea el rol `app_mlservice` y otorga los permisos mínimos requeridos por el servicio Python.
+- El servidor Python ahora debe conectarse a `cco_data` mediante una DSN dedicada (`CCO_ML_DATA_DSN`) con credenciales del rol `app_mlservice`, nunca reutilizando credenciales administrativas de Go.
+
+## Cambios
+
+- `databases/cco_data/cco_data_schema.sql`: el comentario de plantillas de roles ahora referencia `databases/cco_data/roles/ml_service.sql` en lugar de tener los roles comentados en línea.
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`: documenta el rol `app_mlservice` y sus permisos (Slice 4a).
+- `docs/04-architecture/MODULES.md`: módulo 6 menciona el rol `app_mlservice` y su script SQL.
+
+## Correcciones
+
+Ninguna.
+
+## Requisitos modificados
+
+Ninguno (se implementa capacidad prevista en REQ de seguridad de datos).
+
+## Arquitectura modificada
+
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`: actualizado para Slice 4a.
+- `docs/04-architecture/MODULES.md`: actualizado para Slice 4a.
+
+## Experimentos / pruebas
+
+- El rol `app_mlservice` se aplicó a la base de datos local `cco_data` y se verificó:
+  - Lectura de `feat.feature_snapshot`, `core.resource`, `catalog.sql_sku`, `raw.metric_reading`: OK.
+  - Escritura en `ml.forecast`: OK (INSERT funciona).
+  - Escritura en `opt.*`: correctamente rechazada (sin permiso).
+  - No acceso a `cco_app` (otra base de datos).
+
+## Limitaciones conocidas
+
+- El rol debe aplicarse manualmente en cada entorno de despliegue antes de iniciar el servicio Python productivo.
+- La contraseña del rol no está hardcodeada; debe configurarse mediante variable de entorno en el entorno de destino.
+
+## Migraciones / despliegue
+
+Aplicar el script SQL antes de desplegar el servicio Python:
+   ```bash
+   psql -d cco_data -f databases/cco_data/roles/ml_service.sql
+   ALTER ROLE app_mlservice WITH PASSWORD '<contraseña_segura>';
+   ```
+Variables de entorno nuevas (requeridas para el servicio Python):
+- `CCO_ML_DATA_DSN`: DSN de conexión a `cco_data` con credenciales de `app_mlservice`.
+
+## Documentación relacionada
+
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`
+- `docs/04-architecture/MODULES.md`
+- `databases/cco_data/roles/ml_service.sql`
+
+---
+
 # REL-1.0-slice-3 — Release Notes (Slice 3: ML training and model registry)
 
 - **Versión:** 1.0.0-slice-3

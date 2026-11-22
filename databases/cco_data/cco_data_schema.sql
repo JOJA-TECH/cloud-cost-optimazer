@@ -1310,18 +1310,11 @@ COMMENT ON VIEW raw.v_default_partition_health IS 'Debe permanecer en cero; fila
 -- Plantillas de roles, retención y permisos para completar según el entorno.
 
 -- Roles por schema (separación conceptual Y física de permisos):
---   CREATE ROLE app_backend LOGIN;      -- Go: core, raw (collector), opt (lectura+escritura)
---   CREATE ROLE app_mlservice LOGIN;    -- Python: feat, ml (lectura+escritura), raw (lectura)
---   CREATE ROLE app_frontend LOGIN;     -- vistas de opt y core, solo lectura
---   GRANT USAGE ON SCHEMA catalog, core, raw TO app_backend;
---   GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA raw, core TO app_backend;
---   GRANT USAGE ON SCHEMA feat, ml TO app_mlservice;
---   GRANT SELECT ON ALL TABLES IN SCHEMA raw, core, catalog TO app_mlservice;
---   GRANT SELECT ON opt.v_recommendation_latest TO app_frontend;
---   GRANT USAGE ON SCHEMA contract TO cco_data_backend, cco_data_readonly;
---   GRANT SELECT ON contract.v_resource, contract.v_forecast, contract.v_scenario,
---       contract.v_percentile_statistic, contract.v_recommendation
---       TO cco_data_backend, cco_data_readonly;
+--   El rol app_mlservice (Python/ML) está definido y aplicado mediante:
+--     databases/cco_data/roles/ml_service.sql
+--   Ese script otorga lectura sobre catalog, core, raw, feat, contract y
+--   escritura ÚNICAMENTE sobre ml.* (tablas y secuencias).
+--   Sin acceso a cco_app, opt.*, ni escritura en raw/core.
 
 -- Retención de crudo (control de costos del laboratorio — plan 19):
 --   -- Archivar un mes viejo sin borrar fila a fila:
