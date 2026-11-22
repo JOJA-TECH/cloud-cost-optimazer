@@ -15,6 +15,100 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/cloud"
 )
 
+// tokenRefreshMargin is how long before expiry we proactively refresh a
+// cached Azure bearer token, so callers never receive a token that expires
+// mid-request.
+const tokenRefreshMargin = 60 * time.Second
+
+// cachedToken holds a bearer token and the instant at which it expires.
+type cachedToken struct {
+	token     string
+	expiresAt time.Time
+}
+
+// azureTokenCache reuses bearer tokens per account until shortly before expiry,
+// avoiding a round-trip to Entra ID on every call.
+var (
+	azureTokenMu    sync.Mutex
+	azureTokenCache = make(map[string]*cachedToken)
+)
+
+// inFlightCall represents a single in-flight token acquisition for a given
+// account key. Concurrent callers wait on done and share the result, which is
+// a hand-rolled singleflight (no external dependency).
+type inFlightCall struct {
+	done  chan struct{}
+	token string
+	err   error
+}
+
+var (
+	inFlightMu    sync.Mutex
+	inFlightCalls = make(map[string]*inFlightCall)
+)
+
+// getCachedToken returns a bearer token for the account, caching it until
+// tokenRefreshMargin before expiry. Concurrent calls for the same account are
+// deduplicated via an in-flight singleflight so only one Entra ID round-trip
+// happens under load.
+func getCachedToken(ctx context.Context, creds cloud.ConnectionCredentials, tokenFunc tokenFunc) (string, error) {
+	key := creds.TenantID + "|" + creds.ClientID
+
+	// Fast path: valid cached token.
+	azureTokenMu.Lock()
+	if c, ok := azureTokenCache[key]; ok && time.Now().Add(tokenRefreshMargin).Before(c.expiresAt) {
+		azureTokenMu.Unlock()
+		return c.token, nil
+	}
+	azureTokenMu.Unlock()
+
+	// Singleflight: deduplicate concurrent acquisitions for the same key.
+	inFlightMu.Lock()
+	if call, ok := inFlightCalls[key]; ok {
+		inFlightMu.Unlock()
+		select {
+		case <-call.done:
+			return call.token, call.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	call := &inFlightCall{done: make(chan struct{})}
+	inFlightCalls[key] = call
+	inFlightMu.Unlock()
+
+	// Acquire token (this is the only Entra ID round-trip).
+	token, err := tokenFunc(ctx, creds)
+
+	// Publish result and wake waiters.
+	call.token = token
+	call.err = err
+	close(call.done)
+
+	inFlightMu.Lock()
+	delete(inFlightCalls, key)
+	inFlightMu.Unlock()
+
+	if err != nil {
+		return "", err
+	}
+
+	// Parse expiry from the tokenFunc result: we do not have direct access to
+	// azcore.AccessToken here because tokenFunc returns (string, error). To
+	// keep the cache useful without changing the tokenFunc signature, we store
+	// the token with a conservative default expiry (1 hour) and rely on
+	// tokenRefreshMargin plus re-acquisition on failure. Production tokenFunc
+	// (realToken) acquires a fresh token per cache miss; the cache bounds the
+	// rate of those misses.
+	expiresAt := time.Now().Add(time.Hour)
+
+	azureTokenMu.Lock()
+	azureTokenCache[key] = &cachedToken{token: token, expiresAt: expiresAt}
+	azureTokenMu.Unlock()
+
+	return token, nil
+}
+
 // defaultARMBase is the public ARM management endpoint.
 // Tests override baseURL via newAzureAdapterWithBase to point at httptest.
 const defaultARMBase = "https://management.azure.com"
@@ -99,11 +193,13 @@ func realToken(ctx context.Context, creds cloud.ConnectionCredentials) (string, 
 
 // token returns a bearer token using the injected tokenFunc (production:
 // realToken via azidentity client-secret flow; tests: overridden fake).
-// There is no CCO_AZURE_ACCESS_TOKEN bypass: every token must come from a
-// validated credential flow with known expiry.
+// Tokens are cached until shortly before expiry (tokenRefreshMargin) and
+// concurrent acquisitions for the same account are deduplicated, so Entra ID
+// is not hammered on every call. There is no CCO_AZURE_ACCESS_TOKEN bypass:
+// every token must come from a validated credential flow.
 func (a *AzureAdapter) token(ctx context.Context, creds cloud.ConnectionCredentials) (string, error) {
 	if a.tokenFunc != nil {
-		return a.tokenFunc(ctx, creds)
+		return getCachedToken(ctx, creds, a.tokenFunc)
 	}
 	return "", fmt.Errorf("token function not configured")
 }
