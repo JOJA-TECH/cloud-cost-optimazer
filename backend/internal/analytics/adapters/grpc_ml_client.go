@@ -18,15 +18,14 @@ import (
 )
 
 // grpcMLClient implements analytics.MLPort over gRPC against the external
-// Python ML service (Module 6). It is a thin transport adapter: it translates
-// the Go forecast contract into the server's PredictRequest and returns the
-// forecast_uid. Persistence of the forecast in ml.forecast (and the model
-// registry it depends on) is handled in a later slice (app_mlservice role +
-// write path), so the returned forecast_uid is not yet consultable via
-// contract.v_forecast until that slice lands.
+// Python ML service (Module 6). It translates the Go forecast contract into
+// the server's PredictRequest and returns the forecast_uid that the Python
+// service persists in ml.forecast. The returned forecast_uid is the shared
+// public reference that Go can re-query via contract.v_forecast.
 //
-// shortcut: ml.forecast persistence is deferred to Slice 2; the adapter today
-// only bridges the transport and generates the forecast_uid.
+// The Python service owns ml.forecast persistence (Slice 2). The adapter only
+// bridges transport and translates errors; it never generates a local UID
+// when the server did not persist a forecast.
 type grpcMLClient struct {
 	conn   *grpc.ClientConn
 	client forecastv1.ForecastServiceClient
@@ -124,7 +123,21 @@ func (c *grpcMLClient) Forecast(ctx context.Context, req analytics.ForecastReque
 		)
 	}
 
-	forecastUID := uuid.New()
+	if resp.ForecastUid == "" {
+		return uuid.Nil, analytics.NewError(analytics.CodeMLUnavailable,
+			fmt.Sprintf("ML service did not persist a forecast for resource %s", req.ResourceUID),
+			analytics.ErrMLUnavailable,
+		)
+	}
+
+	forecastUID, err := uuid.Parse(resp.ForecastUid)
+	if err != nil {
+		return uuid.Nil, analytics.NewError(analytics.CodeMLUnavailable,
+			fmt.Sprintf("ML service returned invalid forecast_uid %q: %v", resp.ForecastUid, err),
+			analytics.ErrMLUnavailable,
+		)
+	}
+
 	slog.Info("ML forecast produced", "forecast_uid", forecastUID, "resource_uid", req.ResourceUID, "target", req.TargetMetric, "model", resp.ModelVersion)
 	return forecastUID, nil
 }

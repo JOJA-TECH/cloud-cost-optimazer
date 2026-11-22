@@ -48,6 +48,11 @@ message PredictRequest {
   // uses the default version (FORECAST_MODEL_VERSION env, or the only
   // available version). Must match one of GetModelInfo.available_versions.
   string model_version = 6;
+
+  // Optional content hash of the feature dataset used for inference, for
+  // reproducibility and idempotency checks. When provided the server may
+  // verify it against the registered training dataset.
+  string dataset_hash = 7;
 }
 
 message PredictionInterval {
@@ -90,6 +95,10 @@ message PredictResponse {
   // Prediction interval. Present only when the loaded artifact carries a
   // calibrated interval; absent otherwise.
   PredictionInterval interval = 13;
+
+  // Stable public identifier of the persisted forecast row in ml.forecast.
+  // Empty when the forecast could not be persisted (non-ok status).
+  string forecast_uid = 14;
 }
 
 message GetModelInfoRequest {}

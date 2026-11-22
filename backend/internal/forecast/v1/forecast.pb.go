@@ -44,7 +44,11 @@ type PredictRequest struct {
 	// Optional model version to use for inference. When omitted the server
 	// uses the default version (FORECAST_MODEL_VERSION env, or the only
 	// available version). Must match one of GetModelInfo.available_versions.
-	ModelVersion  string `protobuf:"bytes,6,opt,name=model_version,json=modelVersion,proto3" json:"model_version,omitempty"`
+	ModelVersion string `protobuf:"bytes,6,opt,name=model_version,json=modelVersion,proto3" json:"model_version,omitempty"`
+	// Optional content hash of the feature dataset used for inference, for
+	// reproducibility and idempotency checks. When provided the server may
+	// verify it against the registered training dataset.
+	DatasetHash   string `protobuf:"bytes,7,opt,name=dataset_hash,json=datasetHash,proto3" json:"dataset_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -117,6 +121,13 @@ func (x *PredictRequest) GetCutoffTime() *timestamppb.Timestamp {
 func (x *PredictRequest) GetModelVersion() string {
 	if x != nil {
 		return x.ModelVersion
+	}
+	return ""
+}
+
+func (x *PredictRequest) GetDatasetHash() string {
+	if x != nil {
+		return x.DatasetHash
 	}
 	return ""
 }
@@ -215,7 +226,10 @@ type PredictResponse struct {
 	RequestId string `protobuf:"bytes,12,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// Prediction interval. Present only when the loaded artifact carries a
 	// calibrated interval; absent otherwise.
-	Interval      *PredictionInterval `protobuf:"bytes,13,opt,name=interval,proto3" json:"interval,omitempty"`
+	Interval *PredictionInterval `protobuf:"bytes,13,opt,name=interval,proto3" json:"interval,omitempty"`
+	// Stable public identifier of the persisted forecast row in ml.forecast.
+	// Empty when the forecast could not be persisted (non-ok status).
+	ForecastUid   string `protobuf:"bytes,14,opt,name=forecast_uid,json=forecastUid,proto3" json:"forecast_uid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -339,6 +353,13 @@ func (x *PredictResponse) GetInterval() *PredictionInterval {
 		return x.Interval
 	}
 	return nil
+}
+
+func (x *PredictResponse) GetForecastUid() string {
+	if x != nil {
+		return x.ForecastUid
+	}
+	return ""
 }
 
 type GetModelInfoRequest struct {
@@ -507,7 +528,7 @@ var File_forecast_proto protoreflect.FileDescriptor
 
 const file_forecast_proto_rawDesc = "" +
 	"\n" +
-	"\x0eforecast.proto\x12\vforecast.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\xf5\x01\n" +
+	"\x0eforecast.proto\x12\vforecast.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/wrappers.proto\"\x98\x02\n" +
 	"\x0ePredictRequest\x12!\n" +
 	"\fresource_uid\x18\x01 \x01(\tR\vresourceUid\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12'\n" +
@@ -516,12 +537,13 @@ const file_forecast_proto_rawDesc = "" +
 	"request_id\x18\x04 \x01(\tR\trequestId\x12;\n" +
 	"\vcutoff_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"cutoffTime\x12#\n" +
-	"\rmodel_version\x18\x06 \x01(\tR\fmodelVersion\"\x83\x01\n" +
+	"\rmodel_version\x18\x06 \x01(\tR\fmodelVersion\x12!\n" +
+	"\fdataset_hash\x18\a \x01(\tR\vdatasetHash\"\x83\x01\n" +
 	"\x12PredictionInterval\x12\x14\n" +
 	"\x05lower\x18\x01 \x01(\x01R\x05lower\x12\x14\n" +
 	"\x05upper\x18\x02 \x01(\x01R\x05upper\x12\x16\n" +
 	"\x06method\x18\x03 \x01(\tR\x06method\x12)\n" +
-	"\x10nominal_coverage\x18\x04 \x01(\x01R\x0fnominalCoverage\"\xa5\x04\n" +
+	"\x10nominal_coverage\x18\x04 \x01(\x01R\x0fnominalCoverage\"\xc8\x04\n" +
 	"\x0fPredictResponse\x12!\n" +
 	"\fresource_uid\x18\x01 \x01(\tR\vresourceUid\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x12\n" +
@@ -538,7 +560,8 @@ const file_forecast_proto_rawDesc = "" +
 	"\fexperimental\x18\v \x01(\bR\fexperimental\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\f \x01(\tR\trequestId\x12;\n" +
-	"\binterval\x18\r \x01(\v2\x1f.forecast.v1.PredictionIntervalR\binterval\"\x15\n" +
+	"\binterval\x18\r \x01(\v2\x1f.forecast.v1.PredictionIntervalR\binterval\x12!\n" +
+	"\fforecast_uid\x18\x0e \x01(\tR\vforecastUid\"\x15\n" +
 	"\x13GetModelInfoRequest\"\xa2\x03\n" +
 	"\x14GetModelInfoResponse\x12\x1d\n" +
 	"\n" +
