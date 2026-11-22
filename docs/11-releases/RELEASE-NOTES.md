@@ -1,3 +1,71 @@
+# REL-1.0-slice-4b — Release Notes (Slice 4b: ML promotion thresholds and dataset_hash validation)
+
+- **Versión:** 1.0.0-slice-4b
+- **Fecha:** 2026-11-22
+- **Estado:** Implementado (backend + servidor Python + base de datos)
+
+## Resumen
+
+Se agregan gates de calidad para la promoción de modelos ML a `champion` y validación de integridad de datasets antes de entrenar. El servidor Python ahora verifica que el hash del contenido real del dataset coincida con el registrado en `ml.training_dataset`, y la promoción a `champion` requiere cumplir umbrales de calidad definidos en `ml.promotion_policy`.
+
+## Nuevas funcionalidades
+
+- `databases/cco_data/roles/promotion_policy.sql` (nuevo): tabla `ml.promotion_policy` con umbrales de calidad por modelo/versión (mae_max, min_improvement_pct, min_training_rows) y función `ml.can_promote()` para evaluar elegibilidad antes de promover.
+- `src/forecasting/training.py`: `train_model()` valida `dataset_hash` contra `ml.training_dataset` antes de entrenar (rechaza si el hash del contenido real no coincide). `promote_model()` llama a `ml.can_promote()` y rechaza la promoción si no se cumplen los umbrales.
+- Versiones de modelo son inmutables: no se puede re-entrenar con el mismo nombre/versión.
+
+## Cambios
+
+- `databases/cco_data/roles/promotion_policy.sql`: tabla y función SQL para políticas de promoción.
+- `src/forecasting/training.py`: validación de dataset_hash y umbrales en promote_model().
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`: documenta dataset_hash validation y umbrales de promoción.
+- `docs/04-architecture/MODULES.md`: menciona validación de dataset_hash y umbrales de promoción.
+- `docs/11-releases/RELEASE-NOTES.md`: entrada REL-1.0-slice-4b.
+
+## Correcciones
+
+Ninguna.
+
+## Requisitos modificados
+
+Ninguno (se implementa capacidad prevista en REQ de seguridad de datos y calidad de modelo).
+
+## Arquitectura modificada
+
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`: actualizado para Slice 4b.
+- `docs/04-architecture/MODULES.md`: actualizado para Slice 4b.
+
+## Experimentos / pruebas
+
+- Probado end-to-end con datos de Supabase (91 filas de feat.metric_hourly):
+  - Train v17.0.0: MAE=0.0566, registrado en ml.training_dataset/ml.training_run/ml.model_version
+  - Re-train same version: rejected (versions are immutable)
+  - Create promotion policy: mae_max=0.01, min_improvement_pct=10%, min_training_rows=50
+  - Promote v17.0.0: rejected (MAE 0.0566 > mae_max 0.01)
+  - Train v18.0.0: MAE=0.0566
+  - Promote v18.0.0: succeeded (champion)
+
+## Limitaciones conocidas
+
+- No existe aún una interfaz `MLManagementPort` separada; `Train` comparte el servicio gRPC con `Predict`.
+- Los umbrales de promoción deben configurarse manualmente en cada entorno (insertar en ml.promotion_policy).
+
+## Migraciones / despliegue
+
+Aplicar el script SQL antes de usar la promoción de modelos:
+   ```bash
+   psql -d cco_data -f databases/cco_data/roles/promotion_policy.sql
+   ```
+Insertar políticas de promoción en `ml.promotion_policy` para cada modelo que requiera umbrales.
+
+## Documentación relacionada
+
+- `docs/04-architecture/decisions/ADR-012-analytics-module.md`
+- `docs/04-architecture/MODULES.md`
+- `databases/cco_data/roles/promotion_policy.sql`
+
+---
+
 # REL-1.0-slice-4a — Release Notes (Slice 4a: rol de datos app_mlservice)
 
 - **Versión:** 1.0.0-slice-4a

@@ -96,8 +96,7 @@ Separar el motor analítico del transporte HTTP permite probar la lógica de for
 ### Riesgos
 
 - La lógica de DES y percentiles usa shortcuts (peso igual, computación on-the-fil) documentados como tales; Module 7 debería refinarlos antes de producción.
-- No hay validación de `dataset_hash` contra `ml.training_dataset` todavía.
-- La promoción a `champion` no aplica umbrales de calidad automáticos (Slice 4); cualquier versión puede promoverse con `promote_model()`.
+- No existe aún una interfaz `MLManagementPort` separada; `Train` comparte el servicio gRPC con `Predict`.
 
 ## Evidencia
 
