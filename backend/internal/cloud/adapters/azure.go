@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -72,7 +73,13 @@ func realToken(ctx context.Context, creds cloud.ConnectionCredentials) (string, 
 }
 
 // token returns a bearer token, using the injected tokenFunc when set.
+// shortcut: CCO_AZURE_ACCESS_TOKEN lets a developer use their own `az`
+// access token directly, bypassing the Entra ID client-secret flow (temporary
+// until a service principal can be created in the tenant).
 func (a *AzureAdapter) token(ctx context.Context, creds cloud.ConnectionCredentials) (string, error) {
+	if v := os.Getenv("CCO_AZURE_ACCESS_TOKEN"); v != "" {
+		return v, nil
+	}
 	if a.tokenFunc != nil {
 		return a.tokenFunc(ctx, creds)
 	}

@@ -48,7 +48,7 @@ func (RoleModel) TableName() string { return "roles" }
 
 type PermissionModel struct {
 	PermissionID   int16     `gorm:"column:permission_id;primaryKey"`
-	PermissionCode string    `gorm:"column:permission_code;not null"`
+	PermissionCode string    `gorm:"column:permission_code;not null;uniqueIndex"`
 	Description    *string   `gorm:"column:description"`
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 }

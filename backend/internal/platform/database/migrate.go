@@ -40,6 +40,25 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateAuditEvents(db); err != nil {
 			return err
 		}
+		if err := migratePermissionIndexes(db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migratePermissionIndexes crea los índices únicos que requieren los seeds
+// de permisos (ON CONFLICT permission_code). Es idempotente: seguro ejecutar
+// sobre bases de datos ya desplegadas antes de que existiera el índice.
+func migratePermissionIndexes(db *gorm.DB) error {
+	statements := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS ix_iam_permissions_permission_code
+			ON iam.permissions (permission_code)`,
+	}
+	for _, sql := range statements {
+		if err := db.Exec(sql).Error; err != nil {
+			return fmt.Errorf("create permission index: %w", err)
+		}
 	}
 	return nil
 }
