@@ -109,8 +109,8 @@ func limitParam(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return 0, true
 	}
 	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		writeError(w, http.StatusBadRequest, CodeInvalidQuery, "invalid limit")
+	if err != nil || n < 0 || n > 1000 {
+		writeError(w, http.StatusBadRequest, CodeInvalidQuery, "invalid limit (max 1000)")
 		return 0, false
 	}
 	return n, true
