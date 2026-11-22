@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // oidcAuthURLProvider is implemented by *adapters.OIDCAdapter.
@@ -18,13 +19,38 @@ type oidcAuthURLProvider interface {
 	AuthURL(state string) string
 }
 
-// HealthHandler returns 200 OK for liveness/readiness checks.
+// HealthHandler returns 200 OK for liveness checks.
 type HealthHandler struct{}
 
 func (h HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// ReadyzHandler checks that mandatory dependencies (database) are reachable.
+// Returns 200 when ready, 503 otherwise. No secrets or internals are exposed.
+type ReadyzHandler struct {
+	DB *gorm.DB
+}
+
+func (h ReadyzHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.DB == nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database not configured")
+		return
+	}
+	sqlDB, err := h.DB.DB()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database driver unavailable")
+		return
+	}
+	if err := sqlDB.PingContext(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database unreachable")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 // RootHandler returns basic API information for the root path "/".

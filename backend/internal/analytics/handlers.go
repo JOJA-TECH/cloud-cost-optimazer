@@ -389,12 +389,16 @@ func handleComputeDES(svc *Service) http.HandlerFunc {
 		if !guardStorage(svc, w) {
 			return
 		}
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req struct {
 			ResourceUID string `json:"resource_uid"`
 			PeriodType  string `json:"period_type"`
 			PeriodStart string `json:"period_start"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, CodeInvalidQuery, "invalid request body")
 			return
 		}
@@ -426,8 +430,12 @@ func handleBuildDataset(svc *Service) http.HandlerFunc {
 		if !guardStorage(svc, w) {
 			return
 		}
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req TrainingDatasetSpec
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, CodeInvalidQuery, "invalid request body")
 			return
 		}
@@ -445,8 +453,12 @@ func handleRequestForecast(svc *Service) http.HandlerFunc {
 		if !guardStorage(svc, w) {
 			return
 		}
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req ForecastRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, CodeInvalidQuery, "invalid request body")
 			return
 		}

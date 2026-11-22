@@ -80,22 +80,23 @@ type QueryStoreRuntimeRecord struct {
 // SourceChargeID is the idempotency key of the unique partial index
 // ux_cost_daily_source_charge; a nil value is rejected by the writer.
 type CostRecord struct {
-	ResourceUID    *uuid.UUID // nil: cost without a mapped database (Storage, VNet)
-	ProviderCode   string
-	ScopeType      string // 'subscription' | 'resource_group' | 'resource'
-	ScopeName      string
-	ServiceName    string
-	RegionCode     *string
-	UsageDate      time.Time // day (UTC)
-	Currency       string
-	SourceChargeID *string
-	MeterID        *string
-	PreTaxCost     float64
-	UsageQuantity  *float64
-	UsageUnit      *string
-	PricingModel   *string // 'consumption'|'reservation'|'spot'|'unknown'
-	ChargeCategory *string // 'usage'|'purchase'|'tax'|'adjustment'|'credit'
-	Source         string  // defaults to 'azure_cost_management'
+	ResourceUID      *uuid.UUID // nil: cost without a mapped database (Storage, VNet)
+	ProviderCode     string
+	ScopeType        string // 'subscription' | 'resource_group' | 'resource'
+	ScopeName        string
+	ServiceName      string
+	RegionCode       *string
+	UsageDate        time.Time // day (UTC)
+	Currency         string
+	SourceChargeID   *string
+	MeterID          *string
+	PreTaxCost       float64
+	UsageQuantity    *float64
+	UsageUnit        *string
+	PricingModel     *string // 'consumption'|'reservation'|'spot'|'unknown'
+	ChargeCategory   *string // 'usage'|'purchase'|'tax'|'adjustment'|'credit'
+	Source           string  // defaults to 'azure_cost_management'
+	SourceResourceID *string // ARM resource id; canonical contract field so costs are assignable to resources
 }
 
 // ConfigurationSnapshot maps core.resource_config_snapshot (append-only ARM

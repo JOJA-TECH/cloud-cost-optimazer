@@ -72,14 +72,16 @@ func handleTriggerRun(svc *Service) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no org context")
 			return
 		}
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req struct {
 			ResourceUID string `json:"resource_uid"`
 		}
-		if r.Body != nil {
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
-				return
-			}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
+			return
 		}
 		var resourceUID *uuid.UUID
 		if req.ResourceUID != "" {
@@ -90,6 +92,9 @@ func handleTriggerRun(svc *Service) http.HandlerFunc {
 			}
 			resourceUID = &uid
 		}
+		// BOLA: RunCycle only returns runs for targets belonging to orgID;
+		// a resource_uid outside the org yields ErrResourceNotFound (404),
+		// never exposing resources of other organizations.
 		outcomes, err := svc.RunCycle(r.Context(), &orgID, resourceUID)
 		if err != nil {
 			slog.Warn("acquisition trigger failed", "error", err.Error())
@@ -125,8 +130,8 @@ func handleListRuns(svc *Service) http.HandlerFunc {
 		}
 		if v := r.URL.Query().Get("limit"); v != "" {
 			n, err := strconv.Atoi(v)
-			if err != nil || n < 0 {
-				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid limit")
+			if err != nil || n < 0 || n > 1000 {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid limit (max 1000)")
 				return
 			}
 			filter.Limit = n

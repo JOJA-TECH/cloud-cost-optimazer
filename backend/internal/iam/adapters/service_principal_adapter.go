@@ -2,13 +2,21 @@ package adapters
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/argon2"
 )
+
+// m2mMaxAttempts is the max failed M2M attempts per client_id before
+// temporarily rejecting further attempts (simple in-memory brute-force guard).
+const m2mMaxAttempts = 5
 
 // ServicePrincipalAdapter implements AuthenticationProvider for client_credentials flow.
 // Used by collectors, ML service, and other machine-to-machine callers.
@@ -17,13 +25,37 @@ type ServicePrincipalAdapter struct {
 	repo          iam.IdentityRepository
 	validClients  map[string]string   // client_id -> client_secret_hash (argon2id)
 	allowedScopes map[string][]string // client_id -> allowed scopes
+	m2mAttempts   map[string]int      // client_id -> failed attempt count (brute-force guard)
+	m2mAttemptsMu sync.Mutex
+}
+
+// spArgon2Params mirrors the Argon2id parameters used for password hashing in
+// internal/iam/auth.go so M2M client secrets follow the same standard:
+//
+//	argon2id, m=64MiB, t=3, p=4, kl=32, sl=16
+//
+// stored as base64(salt).base64(hash).
+var spArgon2Params = struct {
+	memory      uint32
+	iterations  uint32
+	parallelism uint8
+	keyLength   uint32
+	saltLength  uint32
+}{
+	memory:      64 * 1024,
+	iterations:  3,
+	parallelism: 4,
+	keyLength:   32,
+	saltLength:  16,
 }
 
 // SPConfig holds service principal configuration.
+// Clients values must be Argon2id hashes (base64(salt).base64(hash)), never
+// plaintext secrets.
 type SPConfig struct {
 	TokenManager  *iam.TokenManager
 	Repo          iam.IdentityRepository
-	Clients       map[string]string // client_id -> client_secret_hash
+	Clients       map[string]string // client_id -> argon2id hash of client_secret
 	AllowedScopes map[string][]string
 }
 
@@ -40,7 +72,37 @@ func NewServicePrincipalAdapter(cfg SPConfig) *ServicePrincipalAdapter {
 		repo:          cfg.Repo,
 		validClients:  cfg.Clients,
 		allowedScopes: cfg.AllowedScopes,
+		m2mAttempts:   make(map[string]int),
 	}
+}
+
+// verifyClientSecret compares a plaintext secret against its stored Argon2id
+// hash using constant-time comparison (iam.VerifyPassword).
+func verifyClientSecret(expectedHash, secret string) bool {
+	if expectedHash == "" || secret == "" {
+		return false
+	}
+	return argon2Verify(expectedHash, secret) == nil
+}
+
+func argon2Verify(hash, password string) error {
+	parts := strings.SplitN(hash, ".", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid hash format")
+	}
+	salt, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		return err
+	}
+	expectedHash, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return err
+	}
+	computedHash := argon2.IDKey([]byte(password), salt, spArgon2Params.iterations, spArgon2Params.memory, spArgon2Params.parallelism, spArgon2Params.keyLength)
+	if subtle.ConstantTimeCompare(computedHash, expectedHash) != 1 {
+		return fmt.Errorf("secret does not match")
+	}
+	return nil
 }
 
 // Authenticate validates client_credentials and returns IdentityContext.
@@ -53,16 +115,33 @@ func (a *ServicePrincipalAdapter) Authenticate(ctx context.Context, cred iam.Cre
 		return iam.IdentityContext{}, iam.ErrInvalidCredentials
 	}
 
-	// Verify client secret
+	// Per-client_id brute-force guard: reject if too many recent failures.
+	a.m2mAttemptsMu.Lock()
+	if a.m2mAttempts[cred.ClientID] >= m2mMaxAttempts {
+		a.m2mAttemptsMu.Unlock()
+		return iam.IdentityContext{}, iam.ErrSPValidationFailed
+	}
+	a.m2mAttemptsMu.Unlock()
+
+	// Verify client secret against its Argon2id hash (repo standard).
 	expectedHash, ok := a.validClients[cred.ClientID]
 	if !ok {
+		a.m2mAttemptsMu.Lock()
+		a.m2mAttempts[cred.ClientID]++
+		a.m2mAttemptsMu.Unlock()
+		return iam.IdentityContext{}, iam.ErrSPValidationFailed
+	}
+	if !verifyClientSecret(expectedHash, cred.ClientSecret) {
+		a.m2mAttemptsMu.Lock()
+		a.m2mAttempts[cred.ClientID]++
+		a.m2mAttemptsMu.Unlock()
 		return iam.IdentityContext{}, iam.ErrSPValidationFailed
 	}
 
-	// Direct compare (secrets should be hashed in config for production)
-	if expectedHash != cred.ClientSecret {
-		return iam.IdentityContext{}, iam.ErrSPValidationFailed
-	}
+	// Successful authentication clears the failure counter for this client.
+	a.m2mAttemptsMu.Lock()
+	delete(a.m2mAttempts, cred.ClientID)
+	a.m2mAttemptsMu.Unlock()
 
 	// Validate scope
 	if cred.Scope != "" {

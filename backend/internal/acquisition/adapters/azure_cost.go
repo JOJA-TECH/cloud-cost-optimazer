@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -80,48 +79,20 @@ func (p *AzureCostProvider) FetchDailyCosts(ctx context.Context, creds cloud.Con
 	return allRecords, nil
 }
 
-// postWithRetry performs POST with 429 retry logic.
+// postWithRetry performs POST with backoff+jitter, Retry-After, 408/429/5xx handling.
 func (p *AzureCostProvider) postWithRetry(ctx context.Context, token, requestURL string, body interface{}) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
 		reqBody = strings.NewReader(string(b))
 	}
-	for attempt := 0; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, reqBody)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := p.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("request: %w", err)
-		}
-		if resp.StatusCode == http.StatusOK {
-			return resp, nil
-		}
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < costMaxRetries {
-			wait := time.Second
-			if secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && secs >= 0 {
-				wait = time.Duration(secs) * time.Second
-			}
-			_ = resp.Body.Close()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(wait):
-			}
-			continue
-		}
-		b, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		msg := string(b)
-		if len(msg) > 256 {
-			msg = msg[:256]
-		}
-		return nil, fmt.Errorf("cost management HTTP %d: %s", resp.StatusCode, msg)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, reqBody)
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	return doWithRetry(ctx, p.httpClient, req, costMaxRetries, time.Second)
 }
 
 // buildCostQueryBody constructs the Usage query body (POST /query).
@@ -243,13 +214,10 @@ func (p *AzureCostProvider) parseCostResponse(resp *http.Response, subscriptionI
 			Source:         "azure_cost_management",
 		}
 
-		// Map ResourceId -> resource_uid if it matches a registered resource.
-		// The service layer does this resolution via DataWriter.UpsertCostDaily.
-		// Here we just pass the ARM id for the lookup (or leave nil and let the
-		// writer resolve; see UpsertCostDaily's resolveResourceID).
-		// shortcut: not doing the lookup here; upgrade: resolve at write time.
+		// Preserve the ARM resource id in the canonical contract so costs can
+		// be assigned to resources (batch resolution at write time).
 		if resourceArmID != "" {
-			rec.ResourceUID = nil // will be resolved by writer via ARM id match
+			rec.SourceResourceID = &resourceArmID
 		}
 
 		records = append(records, rec)

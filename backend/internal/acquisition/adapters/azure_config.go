@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -67,42 +66,19 @@ func (p *AzureConfigProvider) FetchConfigSnapshot(ctx context.Context, creds clo
 	return mapARMToConfigReading(payload), nil
 }
 
-// getWithRetry performs GET with 429 retry logic.
+// getWithRetry performs GET with backoff+jitter, Retry-After, 408/429/5xx handling.
 func (p *AzureConfigProvider) getWithRetry(ctx context.Context, token, requestURL string) ([]byte, error) {
-	for attempt := 0; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := p.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("request: %w", err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			return body, nil
-		}
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < armMaxRetries {
-			wait := time.Second
-			if secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && secs >= 0 {
-				wait = time.Duration(secs) * time.Second
-			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(wait):
-			}
-			continue
-		}
-		msg := string(body)
-		if len(msg) > 256 {
-			msg = msg[:256]
-		}
-		return nil, fmt.Errorf("arm HTTP %d: %s", resp.StatusCode, msg)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := doWithRetry(ctx, p.httpClient, req, armMaxRetries, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 // mapARMToConfigReading extracts the normalized fields from the ARM response.

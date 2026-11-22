@@ -85,6 +85,8 @@ func handleRegisterAccount(svc *Service) http.HandlerFunc {
 			return
 		}
 		ic, _ := iam.IdentityContextFromContext(r.Context())
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req struct {
 			ProviderCode        string  `json:"provider_code"`
 			DisplayName         string  `json:"display_name"`
@@ -93,7 +95,9 @@ func handleRegisterAccount(svc *Service) http.HandlerFunc {
 			ClientID            *string `json:"client_id,omitempty"`
 			CredentialReference string  `json:"credential_reference"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
 			return
 		}
@@ -251,13 +255,17 @@ func toResourceAPI(resources []ResourceDTO) []ResourceAPIDTO {
 
 func handleRegisterDataSource(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req struct {
 			ProjectID       string `json:"project_id"`
 			CloudAccountID  string `json:"cloud_account_id"`
 			DataResourceUID string `json:"data_resource_uid"`
 			DisplayName     string `json:"display_name"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
 			return
 		}
@@ -333,10 +341,14 @@ func handleSetDataSourceMonitored(svc *Service) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no org context")
 			return
 		}
+		const maxBody = 1 << 20 // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		var req struct {
 			IsMonitored bool `json:"is_monitored"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request body")
 			return
 		}

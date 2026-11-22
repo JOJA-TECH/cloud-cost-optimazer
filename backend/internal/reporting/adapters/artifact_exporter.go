@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -204,6 +205,9 @@ func (s *LocalFilesystemObjectStorage) Put(ctx context.Context, name string, con
 	if filename == "" || filename == "." || filename == ".." || len(content) == 0 {
 		return "", errInvalidFormattedReport
 	}
+	if err := s.enforceLimits(); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(s.root, 0700); err != nil {
 		return "", fmt.Errorf("create report storage directory: %w", err)
 	}
@@ -217,6 +221,69 @@ func (s *LocalFilesystemObjectStorage) Put(ctx context.Context, name string, con
 	}
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(absoluteTarget)}).String()
 	return uri, nil
+}
+
+// enforceLimits applies retention and quota controls to the local report store:
+// expired files (older than CCO_REPORTS_TTL_HOURS) are deleted, and the store
+// refuses new writes once CCO_REPORTS_MAX_FILES or CCO_REPORTS_MAX_SIZE_MB are
+// exceeded. This keeps var/reports from filling disk on a single instance.
+func (s *LocalFilesystemObjectStorage) enforceLimits() error {
+	maxFiles := envInt("CCO_REPORTS_MAX_FILES", 100)
+	maxSizeMB := envInt64("CCO_REPORTS_MAX_SIZE_MB", 500)
+	ttlHours := envInt("CCO_REPORTS_TTL_HOURS", 168)
+
+	entries, err := os.ReadDir(s.root)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("list report storage directory: %w", err)
+	}
+
+	var (
+		totalSize int64
+		fileCount int
+		now       = time.Now()
+		cutoff    = now.Add(-time.Duration(ttlHours) * time.Hour)
+	)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(s.root, e.Name()))
+			continue
+		}
+		fileCount++
+		totalSize += info.Size()
+	}
+
+	if fileCount >= maxFiles {
+		return fmt.Errorf("report storage limit reached: %d files (max %d)", fileCount, maxFiles)
+	}
+	if totalSize >= maxSizeMB*1024*1024 {
+		return fmt.Errorf("report storage limit reached: %d MB (max %d MB)", totalSize/(1024*1024), maxSizeMB)
+	}
+	return nil
+}
+
+func envInt(name string, def int) int {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
+func envInt64(name string, def int64) int64 {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
 }
 
 func (s *LocalFilesystemObjectStorage) Get(ctx context.Context, uri string) ([]byte, error) {

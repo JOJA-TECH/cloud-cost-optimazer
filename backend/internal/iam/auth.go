@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,7 +127,9 @@ func (m *TokenManager) Validate(ctx context.Context, token string) (IdentityCont
 	return m.ValidateAccessToken(token)
 }
 
-// GenerateTokenPair creates both access and refresh tokens.
+// GenerateTokenPair creates both access and refresh tokens. The refresh token
+// must be persisted before the pair is returned; if persistence fails the
+// login fails and no token is issued.
 func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) {
 	access, err := m.GenerateAccessToken(ic)
 	if err != nil {
@@ -138,7 +141,9 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 	}
 	expiresAt := time.Now().Add(m.config.AccessTokenTTL).UnixMilli()
 	refreshExpiresAt := time.Now().Add(m.config.RefreshTokenTTL)
-	m.persistRefreshToken(refresh, ic.UserID, refreshExpiresAt)
+	if err := m.persistRefreshToken(refresh, ic.UserID, refreshExpiresAt); err != nil {
+		return TokenPair{}, err
+	}
 	return TokenPair{
 		AccessToken:  access,
 		RefreshToken: refresh,
@@ -147,22 +152,23 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 }
 
 // StoreRefreshToken stores a refresh token with its expiry.
-func (m *TokenManager) StoreRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
-	m.persistRefreshToken(token, userID, expiresAt)
+func (m *TokenManager) StoreRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) error {
+	return m.persistRefreshToken(token, userID, expiresAt)
 }
 
 // persistRefreshToken stores a refresh token: hashed in the DB when available,
-// in memory otherwise. Persistence is best-effort — a failed write is logged
-// but does not fail the login.
-func (m *TokenManager) persistRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
+// in memory otherwise. A failed DB write is returned so the caller can fail
+// the login instead of issuing an unpersistable refresh token.
+func (m *TokenManager) persistRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) error {
 	if m.db == nil {
 		m.refreshTokens.Store(token, refreshTokenEntry{userID: userID, expiresAt: expiresAt})
-		return
+		return nil
 	}
 	row := database.RefreshTokenModel{TokenHash: hashToken(token), UserID: userID, ExpiresAt: expiresAt, CreatedAt: time.Now()}
 	if err := m.db.Table(database.TableName(m.db, "iam", "refresh_tokens")).Create(&row).Error; err != nil {
-		slog.Error("persist refresh token", "error", err)
+		return fmt.Errorf("persist refresh token: %w", err)
 	}
+	return nil
 }
 
 // hashToken returns the SHA-256 hex digest of a raw token.
@@ -191,20 +197,29 @@ func (m *TokenManager) ValidateRefreshToken(token string) (uuid.UUID, bool) {
 	return entry.userID, true
 }
 
-// validateDBRefreshToken looks the token up by hash and deletes it in the same
-// call (consume-on-use). RowsAffected == 0 on delete means another request
-// already consumed it, so the token is rejected.
+// validateDBRefreshToken consumes (deletes) the refresh token atomically and
+// returns the associated user id. A single DELETE ... RETURNING ensures that
+// concurrent attempts to reuse the same token are rejected (RowsAffected == 0).
+// Expired tokens are never returned.
 func (m *TokenManager) validateDBRefreshToken(token string) (uuid.UUID, bool) {
 	table := database.TableName(m.db, "iam", "refresh_tokens")
-	var row database.RefreshTokenModel
-	if err := m.db.Table(table).Where("token_hash = ?", hashToken(token)).First(&row).Error; err != nil {
+	type consumedRow struct {
+		UserID    uuid.UUID
+		ExpiresAt time.Time
+	}
+	var row consumedRow
+	err := m.db.Raw(
+		"DELETE FROM "+table+
+			" WHERE token_hash = ? AND expires_at > ?"+
+			" RETURNING user_id, expires_at",
+		hashToken(token), time.Now(),
+	).Scan(&row).Error
+	if err != nil {
 		return uuid.Nil, false
 	}
-	del := m.db.Table(table).Where("token_hash = ?", hashToken(token)).Delete(&database.RefreshTokenModel{})
-	if del.Error != nil || del.RowsAffected == 0 {
-		return uuid.Nil, false
-	}
-	if time.Now().After(row.ExpiresAt) {
+	// GORM Scan with DELETE RETURNING: RowsAffected is on the underlying
+	// statement; check via the result's rows affected if available.
+	if m.db.Statement.RowsAffected == 0 {
 		return uuid.Nil, false
 	}
 	return row.UserID, true
@@ -410,13 +425,28 @@ func (a *AccountLockout) lockedKey(email string) string {
 	return "cco:lock:locked:" + email
 }
 
+// authFailClosed reports whether Valkey/cache failures must deny requests
+// instead of allowing them (fail-closed). Controlled via CCO_SECURITY_FAIL_CLOSED;
+// forced true when CCO_ENV=prod.
+func authFailClosed() bool {
+	if os.Getenv("CCO_ENV") == "prod" {
+		return true
+	}
+	return os.Getenv("CCO_SECURITY_FAIL_CLOSED") == "true"
+}
+
 // IsLocked reports whether the email is currently locked out.
+// When fail-closed (prod or CCO_SECURITY_FAIL_CLOSED=true), a Valkey error
+// treats the account as locked (deny) rather than failing open.
 func (a *AccountLockout) IsLocked(email string) bool {
 	email = strings.ToLower(email)
 	if a.valkey != nil {
 		n, err := a.valkey.Do(context.Background(), a.valkey.B().Exists().Key(a.lockedKey(email)).Build()).ToInt64()
 		if err != nil {
-			// Prototype policy: fail open — never block logins because the cache is down.
+			if authFailClosed() {
+				slog.Warn("lockout: valkey EXISTS failed, denying (fail-closed)", "error", err)
+				return true
+			}
 			slog.Warn("lockout: valkey EXISTS failed, failing open", "error", err)
 			return false
 		}

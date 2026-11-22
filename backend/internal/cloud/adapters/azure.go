@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
+	"sync"
 	"time"
 
 	azpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -56,10 +56,35 @@ func newAzureAdapterWithBase(baseURL string) *AzureAdapter {
 	}
 }
 
+// cloudAzureCredsCache reuses ClientSecretCredential per account (tenant+client)
+// so the credential object — and azcore's internal token cache — is not rebuilt
+// on every call.
+var (
+	cloudAzureCredsMu    sync.Mutex
+	cloudAzureCredsCache = make(map[string]*azidentity.ClientSecretCredential)
+)
+
+// getCloudAzureCredential returns a cached ClientSecretCredential for the
+// account, creating it on first use.
+func getCloudAzureCredential(creds cloud.ConnectionCredentials) (*azidentity.ClientSecretCredential, error) {
+	key := creds.TenantID + "|" + creds.ClientID
+	cloudAzureCredsMu.Lock()
+	defer cloudAzureCredsMu.Unlock()
+	if c, ok := cloudAzureCredsCache[key]; ok {
+		return c, nil
+	}
+	c, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
+	if err != nil {
+		return nil, err
+	}
+	cloudAzureCredsCache[key] = c
+	return c, nil
+}
+
 // realToken acquires an ARM bearer token via azidentity client-secret flow.
 // It never logs or returns the client secret.
 func realToken(ctx context.Context, creds cloud.ConnectionCredentials) (string, error) {
-	cred, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
+	cred, err := getCloudAzureCredential(creds)
 	if err != nil {
 		return "", fmt.Errorf("build credential: %w", err)
 	}
@@ -72,14 +97,11 @@ func realToken(ctx context.Context, creds cloud.ConnectionCredentials) (string, 
 	return tok.Token, nil
 }
 
-// token returns a bearer token, using the injected tokenFunc when set.
-// shortcut: CCO_AZURE_ACCESS_TOKEN lets a developer use their own `az`
-// access token directly, bypassing the Entra ID client-secret flow (temporary
-// until a service principal can be created in the tenant).
+// token returns a bearer token using the injected tokenFunc (production:
+// realToken via azidentity client-secret flow; tests: overridden fake).
+// There is no CCO_AZURE_ACCESS_TOKEN bypass: every token must come from a
+// validated credential flow with known expiry.
 func (a *AzureAdapter) token(ctx context.Context, creds cloud.ConnectionCredentials) (string, error) {
-	if v := os.Getenv("CCO_AZURE_ACCESS_TOKEN"); v != "" {
-		return v, nil
-	}
 	if a.tokenFunc != nil {
 		return a.tokenFunc(ctx, creds)
 	}
