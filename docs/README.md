@@ -33,6 +33,7 @@ El backend Go (`backend/`) documenta su API HTTP en [`backend/API.md`](../backen
 - `analytics` — Analítica y Optimización (17 endpoints REST: snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts)
 - `recommendation` — Motor de Recomendaciones (decisiones versionadas, estados explícitos y trazas)
 - `audit` — Auditoría y Trazabilidad (registro append-only en `cco_app.audit.events`, consultas protegidas)
+- `jobs` — Jobs duraderos y worker (cola `app.jobs`, reintentos con backoff+jitter, idempotencia, cancelación, endpoints `/api/v1/jobs/*`; encolado asíncrono de adquisición, reportes, analítica y recomendaciones pesadas)
 - `platform/database` — persistencia GORM portátil SQLite/PostgreSQL
 
 La integración productiva con ML, Simulación y Laboratorio, y Reportes siguen pendientes. Analytics aún no tiene eventos de auditoría específicos.

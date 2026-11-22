@@ -14,6 +14,7 @@ El backend es un monolito modular Go. Los módulos de negocio exponen contratos 
 | 6. Integración con ML | `backend/internal/analytics` (contrato) | Por definir | Contrato `MLPort` disponible; proveedor productivo pendiente |
 | 7. Recommendation | `backend/internal/recommendation` | `cco_data` | Implementado: evaluación, persistencia versionada, trazas y transiciones explícitas de estado |
 | 8. Auditoría y Trazabilidad | `backend/internal/audit` | `cco_app.audit.events` | Implementado: captura, persistencia append-only, consulta y correlación |
+| 9. Jobs (cola duradera y worker) | `backend/internal/jobs` | `cco_app.app.jobs` | Implementado: creación, reclamación, estados, reintentos con backoff+jitter, idempotencia, cancelación, endpoints de consulta y ejecución asíncrona de adquisición (`acquisition:run`), reportes (`report:optimization`), analítica (`analytics:compute`) y recomendaciones pesadas (`recommendation:generate`) |
 | Simulación y Laboratorio | — | — | Pendiente |
 | Reportes | — | — | Pendiente |
 

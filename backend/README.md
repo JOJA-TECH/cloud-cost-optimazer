@@ -18,6 +18,7 @@ backend/
 │   ├── recommendation/     # Module 7 — Motor de Recomendaciones (implementado)
 │   ├── recommendation/     # Module 7 — Motor de Recomendaciones (implementado)
 │   ├── audit/              # Module 8 — Auditoría y Trazabilidad (implementado)
+│   ├── jobs/               # Module 9 — Jobs duraderos y worker (implementado, Fase 3)
 │   └── platform/           # infraestructura transversal
 │       ├── database/       # GORM portable (SQLite/PostgreSQL), migración
 │       └── valkey/         # cliente Valkey compartido (rate limiting, lockout)
@@ -40,6 +41,7 @@ El catálogo de módulos y sus límites está en [`docs/04-architecture/MODULES.
 | Integración con ML | `internal/analytics` (contrato) | Parcial | Contrato `MLPort`; proveedor productivo pendiente (Module 6) |
 | Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación, persistencia versionada, trazas y transiciones explícitas (Module 7) |
 | Auditoría y Trazabilidad | `internal/audit` | Implementado | Eventos append-only, consultas protegidas y propagación de trazas (Module 8) |
+| Jobs (cola duradera y worker) | `internal/jobs` | Implementado | Tabla `app.jobs`, reclamación con `FOR UPDATE SKIP LOCKED`, reintentos con backoff+jitter, idempotencia, cancelación; endpoints `/api/v1/jobs/*` y encolado asíncrono de adquisición (`/api/v1/jobs/acquisition`), reportes (`/api/v1/jobs/report`), analítica (`/api/v1/jobs/analytics`) y recomendaciones pesadas (`/api/v1/jobs/recommendation`) (Module 9) |
 | Gestión de Datos | `internal/data` | Implementado | API de solo lectura sobre `cco_data`: métricas, costos, snapshots, cobertura |
 | Analítica y Optimización | `internal/analytics` | Implementado | Evidencia: snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets y forecasts |
 | Integración con ML | `internal/recommendation` | Integrado por contrato | Forecasts consumidos mediante `MLPredictionReader`; el dominio no depende de la implementación ML |
