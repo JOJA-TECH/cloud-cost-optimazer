@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
@@ -554,18 +555,33 @@ func main() {
 		return err
 	})
 
+	// wg tracks background workers/schedulers so shutdown can wait for them
+	// to finish (bounded by CCO_SHUTDOWN_TIMEOUT_SEC).
+	var wg sync.WaitGroup
+
 	// Shutdown context: cancelled on SIGINT/SIGTERM; shared by the
 	// acquisition/cost schedulers, the jobs worker and the HTTP server for
 	// orderly shutdown.
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	go jw.Run(shutdownCtx)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		jw.Run(shutdownCtx)
+	}()
 
 	if acqWriter != nil {
-		go acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(shutdownCtx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			acquisition.NewScheduler(acqSvc, envSeconds("CCO_ACQ_INTERVAL_SECONDS", 60*time.Second)).Run(shutdownCtx)
+		}()
 
 		// Cost scheduler (T5): separate ticker, runs per-subscription.
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			ticker := time.NewTicker(envSeconds("CCO_ACQ_COST_INTERVAL_SECONDS", 6*time.Hour))
 			defer ticker.Stop()
 			slog.Info("cost scheduler started", "interval", envSeconds("CCO_ACQ_COST_INTERVAL_SECONDS", 6*time.Hour))
@@ -639,7 +655,10 @@ func main() {
 	// Public
 	mux.Handle("GET /", iam.RootHandler{})
 	mux.Handle("GET /healthz", iam.HealthHandler{})
-	mux.Handle("GET /readyz", iam.ReadyzHandler{DB: db})
+	mux.Handle("GET /readyz", iam.ReadyzHandler{
+		DB:        db,
+		MigrateOK: func() bool { return database.SchemaMigrationOK(db) },
+	})
 
 	// Auth (password dev, OIDC, M2M)
 	mux.Handle("POST /auth/register", iam.NewRegisterHandler(userRepo, tokenMgr))
@@ -771,15 +790,15 @@ func main() {
 			const maxBody = 1 << 20 // 1 MB
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 			var req struct {
-				ResourceUID        string   `json:"resource_uid"`
-				From               string   `json:"from"`
-				To                 string   `json:"to"`
-				Format             string   `json:"format"`
-				IncludeAudit       bool     `json:"include_audit"`
-				IncludeEvidence    bool     `json:"include_evidence"`
-				IncludeRisks       bool     `json:"include_risks"`
-				IncludeMetrics     bool     `json:"include_metrics"`
-				Title              string   `json:"title"`
+				ResourceUID        string      `json:"resource_uid"`
+				From               string      `json:"from"`
+				To                 string      `json:"to"`
+				Format             string      `json:"format"`
+				IncludeAudit       bool        `json:"include_audit"`
+				IncludeEvidence    bool        `json:"include_evidence"`
+				IncludeRisks       bool        `json:"include_risks"`
+				IncludeMetrics     bool        `json:"include_metrics"`
+				Title              string      `json:"title"`
 				RecommendationUIDs []uuid.UUID `json:"recommendation_uids,omitempty"`
 			}
 			dec := json.NewDecoder(r.Body)
@@ -843,13 +862,13 @@ func main() {
 			const maxBody = 1 << 20 // 1 MB
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 			var req struct {
-				Operation   string `json:"operation"`
-				ResourceUID string `json:"resource_uid"`
-				From        string `json:"from"`
-				To          string `json:"to"`
-				MetricCode  string `json:"metric_code,omitempty"`
-				PeriodType  string `json:"period_type,omitempty"`
-				HorizonSteps int   `json:"horizon_steps,omitempty"`
+				Operation    string `json:"operation"`
+				ResourceUID  string `json:"resource_uid"`
+				From         string `json:"from"`
+				To           string `json:"to"`
+				MetricCode   string `json:"metric_code,omitempty"`
+				PeriodType   string `json:"period_type,omitempty"`
+				HorizonSteps int    `json:"horizon_steps,omitempty"`
 			}
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
@@ -882,12 +901,12 @@ func main() {
 				return
 			}
 			payload, _ := json.Marshal(map[string]any{
-				"operation":   req.Operation,
-				"resource_uid": req.ResourceUID,
-				"from":        from.UTC().Format(time.RFC3339),
-				"to":          to.UTC().Format(time.RFC3339),
-				"metric_code": req.MetricCode,
-				"period_type": req.PeriodType,
+				"operation":     req.Operation,
+				"resource_uid":  req.ResourceUID,
+				"from":          from.UTC().Format(time.RFC3339),
+				"to":            to.UTC().Format(time.RFC3339),
+				"metric_code":   req.MetricCode,
+				"period_type":   req.PeriodType,
 				"horizon_steps": req.HorizonSteps,
 			})
 			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
@@ -987,6 +1006,11 @@ func main() {
 	handler := middleware.CORS(allowedOrigins, mux)
 	handler = middleware.SecurityHeaders(os.Getenv("CCO_CSP"), handler)
 	handler = middleware.RateLimitMiddleware(60, time.Minute, vc, handler)
+	// CSRF protection: strict in prod, permissive otherwise (no cookie yet ->
+	// not blocked). Clients must send X-CSRF-Token matching cco_csrf cookie
+	// on state-changing requests once the cookie is issued.
+	csrfStrict := os.Getenv("CCO_ENV") == "prod" || os.Getenv("CCO_CSRF_STRICT") == "true"
+	handler = middleware.CSRFMiddleware(csrfStrict, handler)
 	handler = audit.TraceMiddleware(handler, auditService)
 
 	// ── Server ───────────────────────────────────────────────────────────
@@ -1009,6 +1033,20 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+
+		// Wait for background workers/schedulers to finish, bounded by the
+		// same shutdown timeout so a stuck worker cannot block shutdown forever.
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			slog.Info("background workers stopped")
+		case <-ctx.Done():
+			slog.Warn("shutdown timeout waiting for background workers")
+		}
 	}()
 
 	log.Printf("cco-app listening on %s (driver=%s)", addr, driver)
