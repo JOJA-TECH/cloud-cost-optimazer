@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -115,45 +114,19 @@ func (p *AzureMonitorProvider) FetchPlatformMetrics(ctx context.Context, creds c
 	return readings, nil
 }
 
-// getWithRetry performs the GET, retrying up to maxRetries429 times on 429
-// while honoring Retry-After seconds (1s when absent). The context deadline
-// always wins; other non-200 statuses fail immediately with the status and a
-// truncated response body.
+// getWithRetry performs the GET with backoff+jitter, Retry-After, 408/429/5xx handling.
 func (p *AzureMonitorProvider) getWithRetry(ctx context.Context, token, requestURL string) ([]byte, error) {
-	for attempt := 0; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := p.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("request: %w", err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			return body, nil
-		}
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries429 {
-			wait := time.Second
-			if secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && secs >= 0 {
-				wait = time.Duration(secs) * time.Second
-			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(wait):
-			}
-			continue
-		}
-		msg := string(body)
-		if len(msg) > 256 {
-			msg = msg[:256]
-		}
-		return nil, fmt.Errorf("azure monitor HTTP %d: %s", resp.StatusCode, msg)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := doWithRetry(ctx, p.httpClient, req, maxRetries429, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 // monitorResponse is the Microsoft.Insights/metrics envelope.
