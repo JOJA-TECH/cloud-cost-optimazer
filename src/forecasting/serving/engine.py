@@ -102,7 +102,10 @@ class InferenceEngine:
     # ------------------------------------------------------------------ #
     @staticmethod
     def _validate_history(frame: pd.DataFrame) -> tuple[bool, str]:
-        # Check ordering, duplicates and contiguity of the trailing window.
+        # Check ordering, duplicates and sufficient rows. Contiguity is NOT
+        # required: real-world telemetry (e.g. lab experiments, intermittent
+        # collectors) can have gaps. Lags/rolling windows naturally produce
+        # NaN after a gap, and the sklearn imputer fills them.
         if frame.empty:
             return False, "insufficient_data"
 
@@ -115,11 +118,6 @@ class InferenceEngine:
 
         tail = frame.tail(REQUIRED_HISTORY_HOURS + 1)
         if len(tail) < REQUIRED_HISTORY_HOURS + 1:
-            return False, "insufficient_data"
-
-        diffs = tail["period_start_utc"].diff().dropna()
-        expected = pd.Timedelta(hours=1)
-        if not (diffs == expected).all():
             return False, "insufficient_data"
 
         return True, "ok"
