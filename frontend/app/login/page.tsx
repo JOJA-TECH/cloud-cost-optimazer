@@ -1,17 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { login } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/components/auth-provider'
 
 export default function LoginPage() {
+  return <LoginForm />
+}
+
+function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const { login } = useAuth()
   const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -19,10 +24,10 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      await login({ email, password })
+      await login(email, password)
       router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión')
+      setError(err.message || 'Credenciales inválidas')
     } finally {
       setLoading(false)
     }

@@ -1,5 +1,14 @@
 import { apiJson } from './api'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Estado de autenticación
+// - Token: solo en memoria (se pierde al recargar → se exige login)
+// - Nombre/email: sessionStorage (persiste entre navegaciones hacia atrás/adelante
+//   en la misma pestaña, pero se limpia al cerrar la pestaña)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let currentToken: string | null = null
+
 export interface LoginRequest {
   email: string
   password: string
@@ -11,6 +20,7 @@ export interface LoginResponse {
   expires_at: number
   user_id: string
   email: string
+  display_name: string
   org_id: string
   org_role: string
 }
@@ -26,8 +36,13 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
     method: 'POST',
     body: JSON.stringify(req),
   })
-  localStorage.setItem('cco_access_token', data.access_token)
-  localStorage.setItem('cco_refresh_token', data.refresh_token)
+  // Token solo en memoria (se pierde al recargar la página)
+  currentToken = data.access_token
+  // Nombre y email en sessionStorage para que persistan entre navegaciones
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem('cco_user_name', data.display_name || data.email.split('@')[0] || 'Usuario')
+    sessionStorage.setItem('cco_user_email', data.email)
+  }
   return data
 }
 
@@ -39,18 +54,32 @@ export async function register(req: RegisterRequest) {
 }
 
 export function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem('cco_access_token')
+  return currentToken
 }
 
-export function logout() {
-  localStorage.removeItem('cco_access_token')
-  localStorage.removeItem('cco_refresh_token')
+export function getUserName(): string | null {
   if (typeof window !== 'undefined') {
-    window.location.href = '/login'
+    return sessionStorage.getItem('cco_user_name') ?? null
   }
+  return null
+}
+
+export function getUserEmail(): string | null {
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('cco_user_email') ?? null
+  }
+  return null
 }
 
 export function isAuthenticated(): boolean {
-  return !!getToken()
+  return !!currentToken
+}
+
+export function logout() {
+  currentToken = null
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem('cco_user_name')
+    sessionStorage.removeItem('cco_user_email')
+    window.location.href = '/login'
+  }
 }
