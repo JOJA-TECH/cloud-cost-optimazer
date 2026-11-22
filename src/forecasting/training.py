@@ -173,6 +173,33 @@ def _build_training_matrix(
     return X, y, feature_cols
 
 
+def _compute_dataset_hash(
+    X: pd.DataFrame, y: pd.Series, feature_cols: list[str], target: str
+) -> str:
+    """Calculate SHA-256 hash of the actual training data content.
+
+    The hash is computed over the serialized feature matrix and target
+    values, ensuring that any change in the underlying data produces a
+    different hash. This enables point-in-time integrity verification.
+    """
+    import hashlib
+
+    # Serialize X and y deterministically (sort by index, include column names).
+    X_serialized = X[feature_cols].to_csv(index=False)
+    y_serialized = y.to_csv(index=False, header=["target_next"])
+
+    h = hashlib.sha256()
+    h.update(X_serialized.encode("utf-8"))
+    h.update(b"|")
+    h.update(y_serialized.encode("utf-8"))
+    h.update(b"|")
+    h.update(target.encode("utf-8"))
+    h.update(b"|")
+    h.update(",".join(sorted(feature_cols)).encode("utf-8"))
+
+    return h.hexdigest()
+
+
 def train_model(
     *,
     resource_uid: str,
@@ -184,10 +211,38 @@ def train_model(
     model_dir: str | Path = None,
     dsn: str = DSN,
 ) -> dict:
-    """Train a model and register it in ml.training_run / ml.model_version."""
+    """Train a model and register it in ml.training_run / ml.model_version.
+
+    Validates dataset_hash against ml.training_dataset before training:
+    the hash of the actual feature content must match the registered hash,
+    otherwise training is rejected (no silent retraining on different data).
+    If a model with the same name/version already exists in ml.model_version,
+    training is rejected (versions are immutable).
+    """
     if model_dir is None:
         model_dir = Path(os.environ.get("FORECAST_MODEL_DIR", "/tmp/forecast_models"))
     model_dir = Path(model_dir)
+
+    # Check if model already exists (versions are immutable).
+    with psycopg.connect(dsn, autocommit=True, connect_timeout=10) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select mv.model_version_id, mv.stage
+                from ml.model_version mv
+                where mv.model_name = %s and mv.version = %s
+                """,
+                (
+                    model_name,
+                    int(model_version.split(".")[0]) if model_version else 1,
+                ),
+            )
+            existing_model = cur.fetchone()
+            if existing_model is not None:
+                raise ValueError(
+                    f"model {model_name} version {int(model_version.split('.')[0]) if model_version else 1} already exists "
+                    f"(stage={existing_model[1]}). Model versions are immutable; use a new version."
+                )
 
     df = _load_features(dsn, resource_uid, hours)
     if df.empty or len(df) < 20:
@@ -200,6 +255,11 @@ def train_model(
         raise ValueError(
             f"insufficient valid training rows: {len(X)} (need >= 10)"
         )
+
+    # Calculate content hash of the actual training data (X + y) before
+    # any model training. This is the ground-truth hash that must match
+    # the registered dataset_hash in ml.training_dataset.
+    dataset_hash = _compute_dataset_hash(X, y, feature_cols, target)
 
     # Temporal split: last 15% for evaluation.
     split = int(len(X) * 0.85)
@@ -257,47 +317,75 @@ def train_model(
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
     # Register in ml.training_dataset first (dataset_id is NOT NULL in run).
-    dataset_hash = ""
+    # Validate dataset_hash: if a dataset spec with the same name/version
+    # already exists, the content hash must match, otherwise training
+    # is rejected (no silent retraining on different data).
     dataset_id = None
     with psycopg.connect(dsn, autocommit=False, connect_timeout=10) as conn:
         with conn.cursor() as cur:
-            # Create dataset spec.
+            # Check if a dataset spec with same name/version already exists.
             cur.execute(
                 """
-                insert into ml.training_dataset (
-                    name, version, resource_scope, period_start_utc,
-                    period_end_utc, period_type, feature_codes, target_column,
-                    row_count, split_strategy, dataset_hash, created_by
-                )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                returning dataset_id, dataset_hash
+                select dataset_hash
+                from ml.training_dataset
+                where name = %s and version = %s
                 """,
                 (
                     model_name,
                     int(model_version.split(".")[0]) if model_version else 1,
-                    resource_uid,
-                    df["period_start_utc"].min(),
-                    df["period_start_utc"].max(),
-                    "1h",
-                    feature_cols,
-                    target,
-                    len(X),
-                    json.dumps({"type": "temporal", "train": 0.85, "eval": 0.15}),
-                    "",  # placeholder, updated below
-                    "training-service",
                 ),
             )
-            row = cur.fetchone()
-            dataset_id = row[0]
-            # Content hash of the dataset specification.
-            import hashlib
-
-            hash_input = f"{model_name}|{row[0]}|{resource_uid}|{target}|{','.join(sorted(feature_cols))}|{df['period_start_utc'].min()}|{df['period_start_utc'].max()}"
-            dataset_hash = hashlib.sha256(hash_input.encode()).hexdigest()
-            cur.execute(
-                "update ml.training_dataset set dataset_hash = %s where dataset_id = %s",
-                (dataset_hash, dataset_id),
-            )
+            existing = cur.fetchone()
+            if existing is not None:
+                registered_hash = existing[0]
+                if registered_hash is not None and registered_hash != dataset_hash:
+                    conn.rollback()
+                    raise ValueError(
+                        f"dataset_hash mismatch for {model_name} v{int(model_version.split('.')[0]) if model_version else 1}: "
+                        f"registered={registered_hash}, computed={dataset_hash}. "
+                        f"Refusing to train on different data without explicit dataset reset."
+                    )
+                # Hash matches: reuse existing dataset_id.
+                cur.execute(
+                    """
+                    select dataset_id
+                    from ml.training_dataset
+                    where name = %s and version = %s
+                    """,
+                    (
+                        model_name,
+                        int(model_version.split(".")[0]) if model_version else 1,
+                    ),
+                )
+                dataset_id = cur.fetchone()[0]
+            else:
+                # Insert new dataset spec with the computed content hash.
+                cur.execute(
+                    """
+                    insert into ml.training_dataset (
+                        name, version, resource_scope, period_start_utc,
+                        period_end_utc, period_type, feature_codes, target_column,
+                        row_count, split_strategy, dataset_hash, created_by
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    returning dataset_id
+                    """,
+                    (
+                        model_name,
+                        int(model_version.split(".")[0]) if model_version else 1,
+                        resource_uid,
+                        df["period_start_utc"].min(),
+                        df["period_start_utc"].max(),
+                        "1h",
+                        feature_cols,
+                        target,
+                        len(X),
+                        json.dumps({"type": "temporal", "train": 0.85, "eval": 0.15}),
+                        dataset_hash,
+                        "training-service",
+                    ),
+                )
+                dataset_id = cur.fetchone()[0]
 
             # Register training run.
             cur.execute(
@@ -397,9 +485,31 @@ def promote_model(
     model_version: str,
     dsn: str = DSN,
 ) -> dict:
-    """Promote a model version to champion (archive previous champion)."""
+    """Promote a model version to champion (archive previous champion).
+
+    Validates promotion thresholds from ml.promotion_policy before promoting:
+    - MAE must not exceed mae_max (if defined).
+    - Candidate must improve over current champion by at least min_improvement_pct
+      (if defined).
+    - Training rows must meet min_training_rows (if defined).
+    If no policy is defined for this model/version, promotion is allowed
+    (default behavior, not recommended for production).
+    """
+    version_int = int(model_version.split(".")[0])
     with psycopg.connect(dsn, autocommit=False, connect_timeout=10) as conn:
         with conn.cursor() as cur:
+            # Check promotion eligibility via ml.can_promote function.
+            cur.execute(
+                "select * from ml.can_promote(%s, %s)",
+                (model_name, version_int),
+            )
+            eligible, reason = cur.fetchone()
+            if not eligible:
+                conn.rollback()
+                raise ValueError(
+                    f"model {model_name} version {model_version} not eligible for promotion: {reason}"
+                )
+
             # Archive current champion for this model_name.
             cur.execute(
                 """
@@ -417,7 +527,7 @@ def promote_model(
                 where model_name = %s and version = %s
                 returning model_version_id
                 """,
-                (model_name, int(model_version.split(".")[0])),
+                (model_name, version_int),
             )
             row = cur.fetchone()
             if row is None:
