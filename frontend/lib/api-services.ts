@@ -627,15 +627,66 @@ export interface RecommendationEvidence {
   rationale: string
 }
 
+export interface AuditActor {
+  user_id: string | null
+  actor_type: string
+  auth_method: string | null
+  principal_id: string | null
+}
+
+export interface AuditResource {
+  type: string | null
+  id: string | null
+  external_id: string | null
+}
+
+export interface AuditTrace {
+  request_id: string
+  correlation_id: string
+  operation_id: string | null
+}
+
+export interface DecisionTrace {
+  trace_id: string
+  recommendation_uid: string
+  scenario_uid: string | null
+  resource_uid: string
+  policy_uid: string | null
+  policy_version: number | null
+  algorithm_version: string
+  action: string
+  status: string
+  risk_score: number | null
+  risk_level: string | null
+  confidence_score: number | null
+  estimated_saving: number | null
+  evidence_count: number
+  evidence_references: string[]
+  decision: string
+  rationale: string
+  input_references: Record<string, any>
+  output_references: Record<string, any>
+  actor: AuditActor
+  created_at: string
+}
+
 export interface RecommendationTrace {
   recommendation_uid: string
-  trace_items: Array<{
-    timestamp_utc: string
-    actor_type: string
-    actor_id: string
-    action: string
-    details: Record<string, any>
-  }>
+  decision_traces: DecisionTrace[]
+  events: AuditEvent[]
+}
+
+export interface AuditEvent {
+  event_id: number
+  organization_id: string | null
+  actor: AuditActor
+  action: string
+  resource: AuditResource
+  occurred_at: string
+  trace: AuditTrace
+  metadata: Record<string, any> | null
+  ip_address: string | null
+  user_agent: string | null
 }
 
 export interface RecommendationDecision {
@@ -643,6 +694,8 @@ export interface RecommendationDecision {
   action: 'accept' | 'reject' | 'dismiss' | 'apply'
   decided_at: string
   decided_by: string
+  decided_at_utc: string
+  decision_trace_id: string | null
 }
 
 export async function getRecommendationEvidence(uid: string): Promise<ServiceResult<RecommendationEvidence | null>> {

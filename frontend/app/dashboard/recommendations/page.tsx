@@ -27,6 +27,7 @@ import {
   dismissRecommendation,
   applyRecommendation,
   getSelectedResourceUid,
+  type RecommendationTrace,
 } from '@/lib/api-services'
 import type { RecommendationItem } from '@/lib/api-services'
 
@@ -41,7 +42,7 @@ export default function RecommendationsPage() {
   const [showWhy, setShowWhy] = useState(true)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [evidence, setEvidence] = useState<EvidenceItem[]>(recMock.evidence)
-  const [trace, setTrace] = useState<{ recommendation_uid: string; trace_items: Array<any> } | null>(null)
+  const [trace, setTrace] = useState<RecommendationTrace | null>(null)
   const [traceLoaded, setTraceLoaded] = useState(false)
   const [recSource, setRecSource] = useState<'mock' | 'backend'>('mock')
 
@@ -307,17 +308,54 @@ export default function RecommendationsPage() {
 
           {traceLoaded && trace && (
             <Panel title="Audit trace" description="Recommendation decision lineage">
-              <div className="space-y-2">
-                {trace.trace_items.map((item: any, i: number) => (
-                  <div key={i} className="border-b border-border pb-2 text-xs">
-                    <p className="text-[10px] font-semibold text-muted-foreground">
-                      {item.action} — {item.actor_type}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {item.timestamp_utc} · {item.actor_id}
-                    </p>
+              <div className="space-y-3">
+                {trace.decision_traces.map((dt: any, i: number) => (
+                  <div key={i} className="border-b border-border pb-3 last:border-0">
+                    <div className="flex justify-between mb-1">
+                      <p className="text-xs font-semibold text-foreground">{dt.action}</p>
+                      <Badge variant={dt.status === 'complete' ? 'success' : dt.status === 'failed' ? 'destructive' : 'warning'} className="text-[9px]">
+                        {dt.status}
+                      </Badge>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {dt.decision} — {dt.actor.actor_type} ({dt.actor.user_id ?? 'system'})
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {dt.created_at} · trace_id: {dt.trace_id.slice(0, 8)}...
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[9px] text-muted-foreground mt-1">
+                      <div>
+                        <span className="text-xs font-medium">Risk:</span>
+                        <span className="text-xs">{dt.risk_score?.toFixed(2) ?? '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs font-medium">Confidence:</span>
+                        <span className="text-xs">{dt.confidence_score?.toFixed(2) ?? '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs font-medium">Saving:</span>
+                        <span className="text-xs">{dt.estimated_saving?.toFixed(2) ?? '—'}</span>
+                      </div>
+                    </div>
+                    {dt.rationale && (
+                      <div className="text-[9px] text-muted-foreground italic mt-1">
+                        {dt.rationale}
+                      </div>
+                    )}
                   </div>
                 ))}
+                {trace.events && trace.events.length > 0 && (
+                  <div className="mt-3 border-t border-border pt-3 text-[9px] text-muted-foreground">
+                    <div className="font-semibold mb-1">Audit events:</div>
+                    {trace.events.map((e: any) => (
+                      <div key={e.event_id} className="flex gap-2 mb-1">
+                        <span className="font-mono">{e.event_id}</span>
+                        <span>{e.action}</span>
+                        <span>{e.occurred_at}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </Panel>
           )}
