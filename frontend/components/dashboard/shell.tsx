@@ -34,6 +34,11 @@ import {
 } from '@/lib/api-services'
 import { useAuth } from '@/components/auth-provider'
 
+const DEFAULT_TIME_RANGE: { from: string; to: string } = {
+  from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+  to: new Date().toISOString(),
+}
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { token, logout } = useAuth()
   const router = useRouter()
@@ -46,7 +51,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<CloudAccount[]>([])
   const [cloudResources, setCloudResourcesState] = useState<CloudResource[]>([])
   const [resourceDropdownOpen, setResourceDropdownOpen] = useState(false)
-  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string }>(getTimeRange())
+  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string }>(DEFAULT_TIME_RANGE)
 
   // Verificar autenticación: si no hay token, redirigir al login
   useEffect(() => {

@@ -41,7 +41,10 @@ export default function HistoryPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid) return
+
+    const range = getTimeRange()
+    if (!range) return
 
     getHistory().then((hRes) => {
       if (hRes.source === 'backend' && hRes.data) {
@@ -55,8 +58,8 @@ export default function HistoryPage() {
 
     getAuditEvents({
       entity_type: 'recommendation',
-      from: timeRange.from,
-      to: timeRange.to,
+      from: range.from,
+      to: range.to,
       limit: 50,
     }).then((res) => {
       if (res.source === 'backend' && res.data) {
@@ -78,7 +81,7 @@ export default function HistoryPage() {
       }
       setAuditLoaded(true)
     })
-  }, [resourceUid, timeRange])
+  }, [resourceUid])
 
   const filtered = rows.filter((h) => filter === 'All' || h.status === filter)
 

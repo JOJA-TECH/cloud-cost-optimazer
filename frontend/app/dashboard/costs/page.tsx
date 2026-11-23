@@ -35,14 +35,21 @@ type CostComponent = {
   color: string
 }
 
+type DataResult<T> = {
+  data: T | null
+  source: 'backend' | 'mock' | null
+  status: 'loading' | 'ready' | 'empty' | 'error'
+  error: string | null
+}
+
 export default function CostsPage() {
-  const [kpis, setKpis] = useState<any>(kpisMock)
+  const [kpisResult, setKpisResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
   const [costDaily, setCostDaily] = useState<CostDay[]>([])
+  const [costsLoaded, setCostsLoaded] = useState(false)
+  const [costsSource, setCostsSource] = useState<'mock' | 'backend' | null>(null)
   const [costComponents, setCostComponents] = useState<CostComponent[]>([])
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
-  const [costsLoaded, setCostsLoaded] = useState(false)
-  const [costsSource, setCostsSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -52,26 +59,27 @@ export default function CostsPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid) return
 
-    getCostDaily(resourceUid, timeRange.from, timeRange.to)
+    const range = getTimeRange()
+    if (!range) return
+
+    getCostDaily(resourceUid, range.from, range.to)
       .then((res) => {
         setCostDaily(res.data ?? [])
         setCostsLoaded(!!res.data && res.data.length > 0)
         setCostsSource(res.source)
       })
-      .catch(() => setCostsLoaded(false))
 
-    getCostComponents(resourceUid, timeRange.from, timeRange.to)
+    getCostComponents(resourceUid, range.from, range.to)
       .then((res) => {
         setCostComponents(res.data ?? costComponentsMock)
       })
-      .catch(() => setCostComponents(costComponentsMock))
 
     getKpis().then((res) => {
-      setKpis(res.data ?? kpisMock)
+      setKpisResult(res)
     })
-  }, [resourceUid, timeRange])
+  }, [resourceUid])
 
   const donutData = costComponents.map((c) => ({ name: c.name, value: c.current, color: c.color }))
 
@@ -89,6 +97,7 @@ export default function CostsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Last 30 days</Badge>
+            <Badge variant="outline" className="text-[9px]">{costsSource}</Badge>
           </div>
         }
       />
@@ -104,11 +113,11 @@ export default function CostsPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Billed cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="this period" delta={kpis.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
-        <KpiCard label="Reference price" value={`$${(kpis.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
-        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
-        <KpiCard label="Estimated savings" value={`$${kpis.estimatedSavings.toFixed(2)}`} sub={`${kpis.savingsPct}% / month`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
-      </div>
+            <KpiCard label="Billed cost" value={`$${kpisResult.data?.currentCost.toFixed(2)}`} sub="this period" delta={kpisResult.data?.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Reference price" value={`$${(kpisResult.data?.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Estimated cost" value={`$${kpisResult.data?.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Estimated savings" value={`$${kpisResult.data?.estimatedSavings.toFixed(2)}`} sub={`${kpisResult.data?.savingsPct}% / month`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <Panel

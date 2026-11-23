@@ -31,8 +31,7 @@ export default function ForecastingPage() {
   const [forecastMeta, setForecastMeta] = useState<ForecastMeta>(forecastMetaMock)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
-  const [forecastLoaded, setForecastLoaded] = useState(false)
-  const [forecastSource, setForecastSource] = useState<'mock' | 'backend'>('mock')
+  const [forecastResult, setForecastResult] = useState<DataResult<ForecastResponse | null>>({ data: null, source: null, status: 'loading', error: null })
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -45,24 +44,8 @@ export default function ForecastingPage() {
     if (!resourceUid || !timeRange) return
 
     getAnalyticsForecasts('cpu_percent')
-      .then((forecastRes) => {
-        if (forecastRes.source === 'backend' && forecastRes.data && forecastRes.data.points?.length > 0) {
-          const series: ForecastPoint[] = forecastRes.data.points.map((p) => ({
-            t: p.timestamp_utc,
-            observed: null,
-            forecast: p.forecast,
-            lower: p.lower,
-            upper: p.upper,
-          }))
-          setForecastSeries(series)
-          setForecastLoaded(true)
-          setForecastSource('backend')
-        } else {
-          setForecastLoaded(false)
-          setForecastSource('mock')
-        }
-      })
-      .catch(() => setForecastLoaded(false))
+      .then((res) => setForecastResult(res))
+      .catch((err) => setForecastResult({ data: null, source: null, status: 'error', error: err?.message }))
   }, [resourceUid, timeRange])
 
   return (
@@ -73,11 +56,12 @@ export default function ForecastingPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Horizon: {forecastMeta.horizonDays} days</Badge>
+            <Badge variant="outline" className="text-[9px]">{forecastResult.source}</Badge>
           </div>
         }
       />
 
-      {!forecastLoaded ? (
+      {!forecastResult.data || forecastResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           <p className="text-sm text-muted-foreground">Datos insuficientes</p>
           <p className="text-xs text-muted-foreground">
@@ -91,15 +75,15 @@ export default function ForecastingPage() {
             title="CPU utilization — observed vs forecast"
             description="Solid = observed telemetry · dashed = forecast · shaded = uncertainty band"
             note="Uncertainty widens with horizon. Beyond 14 days, forecast confidence degrades and should not drive irreversible decisions."
-            action={<Badge variant="outline" className="text-[9px]">{forecastSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>}
+            action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}
           >
             <ForecastChart data={forecastSeries} height={300} />
           </Panel>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
-            <Panel title="Model error" description="Backtested accuracy over the window" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
+            <Panel title="Model error" description="Backtested accuracy over the window">
               <div className="grid grid-cols-3 gap-3">
-                {forecastMeta.errors.map((e: any) => (
+                {forecastMeta.errors.map((e) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3 text-center">
                     <p className="text-lg font-semibold tabular-nums text-foreground">{e.value}</p>
                     <p className="text-[11px] text-muted-foreground">{e.label}</p>
@@ -111,7 +95,7 @@ export default function ForecastingPage() {
               </p>
             </Panel>
 
-            <Panel title="Trend & saturation" description="What the projection implies" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
+            <Panel title="Trend & saturation" description="What the projection implies">
               <ul className="space-y-3 text-sm">
                 <li className="flex items-start gap-2">
                   <TrendingUp className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -128,7 +112,7 @@ export default function ForecastingPage() {
               </div>
             </Panel>
 
-            <Panel title="Data sufficiency" description="Guardrail for forecast validity" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
+            <Panel title="Data sufficiency" description="Guardrail for forecast validity">
               <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                 <span className="text-xs text-muted-foreground">History available</span>
                 <Badge variant="success">30 days</Badge>

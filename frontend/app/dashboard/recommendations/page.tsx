@@ -27,9 +27,9 @@ import {
   dismissRecommendation,
   applyRecommendation,
   getSelectedResourceUid,
+  type RecommendationItem,
   type RecommendationTrace,
 } from '@/lib/api-services'
-import type { RecommendationItem } from '@/lib/api-services'
 
 type EvidenceItem = {
   label: string
@@ -44,13 +44,14 @@ export default function RecommendationsPage() {
   const [evidence, setEvidence] = useState<EvidenceItem[]>(recMock.evidence)
   const [trace, setTrace] = useState<RecommendationTrace | null>(null)
   const [traceLoaded, setTraceLoaded] = useState(false)
-  const [recSource, setRecSource] = useState<'mock' | 'backend'>('mock')
+  const [recResult, setRecResult] = useState<DataResult<RecommendationItem>>({ data: null, source: null, status: 'loading', error: null })
+  const [recSource, setRecSource] = useState<'mock' | 'backend' | null>(null)
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
     getRecommendationSummary().then((res) => {
-      setR(res.data ?? recMock)
+      setRecResult(res)
       setRecSource(res.source)
     })
   }, [])
@@ -79,7 +80,7 @@ export default function RecommendationsPage() {
   async function handleAccept() {
     if (!resourceUid) return
     const result = await acceptRecommendation(resourceUid)
-    if (result && result.source === 'backend') {
+    if (result && result.source === 'backend' && result.data) {
       setR((prev) => ({ ...prev, risk: 'Low', confidence: prev.confidence }))
     }
   }
@@ -87,7 +88,7 @@ export default function RecommendationsPage() {
   async function handleReject() {
     if (!resourceUid) return
     const result = await rejectRecommendation(resourceUid)
-    if (result && result.source === 'backend') {
+    if (result && result.source === 'backend' && result.data) {
       setR((prev) => ({ ...prev, risk: 'High' }))
     }
   }
@@ -95,7 +96,7 @@ export default function RecommendationsPage() {
   async function handleDismiss() {
     if (!resourceUid) return
     const result = await dismissRecommendation(resourceUid)
-    if (result && result.source === 'backend') {
+    if (result && result.source === 'backend' && result.data) {
       setR((prev) => ({ ...prev, risk: 'None' }))
     }
   }
@@ -103,7 +104,7 @@ export default function RecommendationsPage() {
   async function handleApply() {
     if (!resourceUid) return
     const result = await applyRecommendation(resourceUid)
-    if (result && result.source === 'backend') {
+    if (result && result.source === 'backend' && result.data) {
       setR((prev) => ({ ...prev, risk: 'None' }))
     }
   }
@@ -119,7 +120,7 @@ export default function RecommendationsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Main detail */}
         <div className="space-y-4 lg:col-span-2">
-          <Panel title="Recommended configuration" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+          <Panel>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success">
@@ -143,9 +144,9 @@ export default function RecommendationsPage() {
           </Panel>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Panel title="Constraints evaluated" description="All must pass for feasibility" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+            <Panel title="Constraints evaluated" description="All must pass for feasibility">
               <ul className="space-y-2.5">
-                {r.constraints.map((c: any) => (
+                {r.constraints.map((c) => (
                   <li key={c.label} className="flex items-start gap-2 text-sm">
                     <span className="mt-0.5 flex size-4 items-center justify-center rounded-full bg-success/15 text-success">
                       <Check className="size-3" />
@@ -156,7 +157,7 @@ export default function RecommendationsPage() {
               </ul>
             </Panel>
 
-            <Panel title="Evidence" description="Calculated from observed telemetry" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+            <Panel title="Evidence" description="Calculated from observed telemetry">
               <ul className="space-y-2.5">
                 {evidence.map((e) => (
                   <li key={e.label} className="flex items-center gap-2 text-sm">
@@ -172,14 +173,6 @@ export default function RecommendationsPage() {
               title="Why this recommendation?"
               action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
             >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <button
-                  onClick={() => setShowWhy((v) => !v)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary"
-                >
-                  {showWhy ? 'Hide' : 'Show'}
-                  <ChevronDown className={cn('size-4 transition-transform', showWhy && 'rotate-180')} />
-                </button>
               {showWhy && (
                 <div className="space-y-3">
                   <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
@@ -191,10 +184,9 @@ export default function RecommendationsPage() {
                   </div>
                 </div>
               )}
-              </div>
             </Panel>
 
-            <Panel title="Limitations" description="Stated explicitly with every recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+            <Panel title="Limitations" description="Stated explicitly with every recommendation">
               <ul className="space-y-2">
                 {r.limitations.map((l: string) => (
                   <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -204,162 +196,160 @@ export default function RecommendationsPage() {
                 ))}
               </ul>
             </Panel>
+
+            {/* Decision actions */}
+            <Panel title="Decision actions" description="Record your decision on this recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  size="sm"
+                  variant="success"
+                  onClick={handleAccept}
+                  disabled={recSource !== 'backend'}
+                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                >
+                  Accept
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleReject}
+                  disabled={recSource !== 'backend'}
+                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                >
+                  Reject
+                </Button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDismiss}
+                  disabled={recSource !== 'backend'}
+                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                >
+                  Dismiss
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleApply}
+                  disabled={recSource !== 'backend'}
+                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                >
+                  Apply (record only)
+                </Button>
+              </div>
+              {recSource !== 'backend' && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Los botones de decisión están deshabilitados sin conexión al backend.
+                </p>
+              )}
+            </Panel>
           </div>
 
-          {/* Decision actions */}
-          <Panel title="Decision actions" description="Record your decision on this recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                size="sm"
-                variant="success"
-                onClick={handleAccept}
-                disabled={recSource !== 'backend'}
-                className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
-              >
-                Accept
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={handleReject}
-                disabled={recSource !== 'backend'}
-                className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
-              >
-                Reject
-              </Button>
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleDismiss}
-                disabled={recSource !== 'backend'}
-                className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
-              >
-                Dismiss
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleApply}
-                disabled={recSource !== 'backend'}
-                className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
-              >
-                Apply (record only)
-              </Button>
-            </div>
-            {recSource !== 'backend' && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Los botones de decisión están deshabilitados sin conexión al backend.
-              </p>
-            )}
-          </Panel>
-        </div>
-
-        {/* Sidebar: risk/confidence + AI + no-rec */}
-        <div className="space-y-4">
-          <Panel title="Risk & confidence" description="Evaluated independently" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
-                <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ShieldCheck className="size-4 text-success" />
-                  Risk
-                </span>
-                <RiskBadge risk={r.risk} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Considers proximity to limits, peak magnitude and frequency, variability, trend,
-                headroom, and SLA history.
-              </p>
-              <div className="border-t border-border pt-4">
-                <ConfidenceBar value={r.confidence} />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  High confidence: sufficient historical coverage, complete CPU/I/O metrics, stable
-                  workload pattern, validated scenario.
-                </p>
-              </div>
-            </div>
-          </Panel>
-
-          <AssistantPanel recSource={recSource} />
-
-          <Panel title="Other outcomes are valid" description="The system can decline to recommend" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
-            <div className="space-y-3">
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <Ban className="size-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-foreground">No recommendation</p>
+          {/* Sidebar: risk/confidence + AI + no-rec */}
+          <div className="space-y-4">
+            <Panel title="Risk & confidence" description="Evaluated independently">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
+                  <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <ShieldCheck className="size-4 text-success" />
+                    Risk
+                  </span>
+                  <RiskBadge risk={r.risk} />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  sql-prod-analytics-westus — current capacity already balanced; no feasible saving.
+                  Considers proximity to limits, peak magnitude and frequency, variability, trend,
+                  headroom, and SLA history.
                 </p>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <AlertTriangle className="size-3.5 text-warning" />
-                  <p className="text-xs font-semibold text-foreground">Insufficient data</p>
+                <div className="border-t border-border pt-4">
+                  <ConfidenceBar value={r.confidence} />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    High confidence: sufficient historical coverage, complete CPU/I/O metrics, stable
+                    workload pattern, validated scenario.
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  sql-prod-identity-eastus — 41% confidence, &lt;7 days history. Collecting more
-                  telemetry before advising.
-                </p>
-              </div>
-            </div>
-          </Panel>
-
-          {traceLoaded && trace && (
-            <Panel title="Audit trace" description="Recommendation decision lineage" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
-              <div className="space-y-3">
-                {trace.decision_traces.map((dt: any, i: number) => (
-                  <div key={i} className="border-b border-border pb-3 last:border-0">
-                    <div className="flex justify-between mb-1">
-                      <p className="text-xs font-semibold text-foreground">{dt.action}</p>
-                      <Badge variant={dt.status === 'complete' ? 'success' : dt.status === 'failed' ? 'destructive' : 'warning'} className="text-[9px]">
-                        {dt.status}
-                      </Badge>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {dt.decision} — {dt.actor.actor_type} ({dt.actor.user_id ?? 'system'})
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {dt.created_at} · trace_id: {dt.trace_id.slice(0, 8)}...
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-[9px] text-muted-foreground mt-1">
-                      <div>
-                        <span className="text-xs font-medium">Risk:</span>
-                        <span className="text-xs">{dt.risk_score?.toFixed(2) ?? '—'}</span>
-                      </div>
-                      <div>
-                        <span className="text-xs font-medium">Confidence:</span>
-                        <span className="text-xs">{dt.confidence_score?.toFixed(2) ?? '—'}</span>
-                      </div>
-                      <div>
-                        <span className="text-xs font-medium">Saving:</span>
-                        <span className="text-xs">{dt.estimated_saving?.toFixed(2) ?? '—'}</span>
-                      </div>
-                    </div>
-                    {dt.rationale && (
-                      <div className="text-[9px] text-muted-foreground italic mt-1">
-                        {dt.rationale}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {trace.events && trace.events.length > 0 && (
-                  <div className="mt-3 border-t border-border pt-3 text-[9px] text-muted-foreground">
-                    <div className="font-semibold mb-1">Audit events:</div>
-                    {trace.events.map((e: any) => (
-                      <div key={e.event_id} className="flex gap-2 mb-1">
-                        <span className="font-mono">{e.event_id}</span>
-                        <span>{e.action}</span>
-                        <span>{e.occurred_at}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </Panel>
-          )}
+
+            <AssistantPanel recSource={recSource} />
+
+            <Panel title="Other outcomes are valid" description="The system can decline to recommend">
+              <div className="space-y-3">
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <div className="mb-1 flex items-center gap-2">
+                    <Ban className="size-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-foreground">No recommendation</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    sql-prod-analytics-westus — current capacity already balanced; no feasible saving.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <div className="mb-1 flex items-center gap-2">
+                    <AlertTriangle className="size-3.5 text-warning" />
+                    <p className="text-xs font-semibold text-foreground">Insufficient data</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    sql-prod-identity-eastus — 41% confidence, &lt;7 days history. Collecting more
+                    telemetry before advising.
+                  </p>
+                </div>
+              </div>
+            </Panel>
+
+            {traceLoaded && trace && (
+              <Panel title="Audit trace" description="Recommendation decision lineage">
+                <div className="space-y-2">
+                  {trace.decision_traces.map((dt: any, i: number) => (
+                    <div key={i} className="border-b border-border pb-3 last:border-0">
+                      <div className="flex justify-between mb-1">
+                        <p className="text-xs font-semibold text-foreground">{dt.action}</p>
+                        <Badge variant={dt.status === 'complete' ? 'success' : dt.status === 'failed' ? 'destructive' : 'warning'} className="text-[9px]">
+                          {dt.status}
+                        </Badge>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {dt.action} — {dt.actor_type}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {dt.created_at} · trace_id: {dt.trace_id.slice(0, 8)}...
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-[9px] text-muted-foreground mt-1">
+                        <div>
+                          <span className="text-xs font-medium">Risk score:</span>
+                          <span className="text-xs">{dt.risk_score?.toFixed(2) ?? '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-medium">Confidence score:</span>
+                          <span className="text-xs">{dt.confidence_score?.toFixed(2) ?? '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-medium">Estimated saving:</span>
+                          <span className="text-xs">{dt.estimated_saving?.toFixed(2) ?? '—'}</span>
+                        </div>
+                      </div>
+                      {dt.rationale && (
+                        <div className="mt-1 text-[9px] text-muted-foreground italic">{dt.rationale}</div>
+                      )}
+                    </div>
+                  ))}
+                  {trace.events && trace.events.length > 0 && (
+                    <div className="mt-3 border-t border-border pt-3 text-[9px] text-muted-foreground">
+                      <div className="font-semibold mb-1">Audit events:</div>
+                      {trace.events.map((e: any) => (
+                        <div key={e.event_id} className="flex gap-2 mb-1 text-xs text-muted-foreground">
+                          <span className="font-mono">{e.event_id}</span>
+                          <span>{e.action}</span>
+                          <span>{e.occurred_at}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Panel>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -395,7 +385,7 @@ function AssistantPanel({ recSource }: { recSource: string }) {
       action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
     >
       <div className="flex flex-col gap-2">
-        {assistantSuggestionsMock.map((q: string) => (
+        {Object.values(assistantSuggestionsMock).map((q) => (
           <button
             key={q}
             onClick={() => setQuestion(q)}
@@ -417,7 +407,7 @@ function AssistantPanel({ recSource }: { recSource: string }) {
             <Sparkles className="size-3" />
             Grounded in visible evidence
           </div>
-          <p className="text-xs leading-relaxed text-foreground">{assistantAnswersMock[question]}</p>
+          <p className="text-xs leading-relaxed text-foreground">{assistantSuggestionsMock[question]}</p>
         </div>
       )}
 
@@ -464,14 +454,7 @@ const recMock: RecommendationItem = {
   rationale: '',
 }
 
-const assistantSuggestionsMock = [
-  'Why is this recommendation considered low risk?',
-  'What evidence supports the proposed configuration?',
-  'What could happen if workload increases?',
-  'Which metric is limiting the recommendation?',
-]
-
-const assistantAnswersMock: Record<string, string> = {
+const assistantSuggestionsMock: Record<string, string> = {
   'Why is this recommendation considered low risk?':
     'Risk is Low because projected CPU p99 at 4 vCores stays near 58% — well below saturation — with sufficient headroom for observed peaks, a stable trend, low variability outside business hours, and no SLA violations in the 30-day window. These are calculated signals shown on the Recommendation and Risk views; the assistant only explains them.',
   'What evidence supports the proposed configuration?':

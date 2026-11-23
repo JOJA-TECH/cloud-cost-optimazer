@@ -169,83 +169,51 @@ export interface DataQuality {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper: llama al backend y devuelve el origen de los datos
+// Tipos de estado para consultas al backend
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type DataSource = 'backend' | 'mock'
 
+export type DataStatus = 'loading' | 'ready' | 'empty' | 'error'
+
 export interface ServiceResult<T> {
   data: T | null
-  source: DataSource
+  source: DataSource | null
+  status: DataStatus
   error: string | null
 }
+
+// Helpers para construir resultados
+export function backendResult<T>(data: T): ServiceResult<T> {
+  if (Array.isArray(data) && data.length === 0) {
+    return { data: null, source: 'backend', status: 'empty', error: 'no_data' }
+  }
+  return { data, source: 'backend', status: 'ready', error: null }
+}
+
+export function emptyResult<T>(reason: 'no_resource' | 'no_data'): ServiceResult<T> {
+  return { data: null, source: null, status: 'empty', error: reason }
+}
+
+export function mockResult<T>(data: T, reason: 'backend_unavailable' | 'request_failed' = 'backend_unavailable'): ServiceResult<T> {
+  return { data, source: 'mock', status: 'ready', error: reason }
+}
+
+export function errorResult<T>(message: string): ServiceResult<T> {
+  return { data: null, source: null, status: 'error', error: message }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: llama al backend y devuelve ServiceResult
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function tryBackend<T>(fn: () => Promise<T>): Promise<ServiceResult<T>> {
   try {
     const data = await fn()
-    return { data, source: 'backend', error: null }
+    return backendResult(data)
   } catch (err: any) {
-    return { data: null, source: 'mock', error: err?.message ?? 'Error desconocido' }
+    return { data: null, source: null, status: 'error', error: err?.message ?? 'Error desconocido' }
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Contexto de sesión: recurso seleccionado y ventana temporal
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface TimeRange {
-  from: string
-  to: string
-}
-
-const SESSION_RESOURCE_UID = 'cco_selected_resource_uid'
-const SESSION_TIME_RANGE = 'cco_selected_time_range'
-
-// Ventana por defecto: últimos 30 días
-function defaultTimeRange(): TimeRange {
-  const to = new Date()
-  const from = new Date(to)
-  from.setDate(to.getDate() - 30)
-  return {
-    from: from.toISOString(),
-    to: to.toISOString(),
-  }
-}
-
-export function getSelectedResourceUid(): string | null {
-  if (typeof window === 'undefined') return null
-  return sessionStorage.getItem(SESSION_RESOURCE_UID) ?? null
-}
-
-export function setSelectedResourceUid(uid: string | null): void {
-  if (typeof window === 'undefined') return
-  if (uid) {
-    sessionStorage.setItem(SESSION_RESOURCE_UID, uid)
-  } else {
-    sessionStorage.removeItem(SESSION_RESOURCE_UID)
-  }
-}
-
-export function getTimeRange(): TimeRange {
-  if (typeof window === 'undefined') return defaultTimeRange()
-  const raw = sessionStorage.getItem(SESSION_TIME_RANGE)
-  if (!raw) return defaultTimeRange()
-  try {
-    const parsed = JSON.parse(raw) as TimeRange
-    if (parsed.from && parsed.to) return parsed
-  } catch {}
-  return defaultTimeRange()
-}
-
-export function setTimeRange(from: string, to: string): void {
-  if (typeof window === 'undefined') return
-  sessionStorage.setItem(SESSION_TIME_RANGE, JSON.stringify({ from, to }))
-}
-
-// Formatea una fecha a RFC3339 UTC para enviar al backend
-export function toRfc3339(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toISOString()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,17 +224,12 @@ export async function getCloudAccounts(): Promise<ServiceResult<CloudAccount[]>>
   return tryBackend(() => apiJson<CloudAccount[]>('/api/v1/cloud-accounts'))
 }
 
-export async function getCloudResources(accountId?: string): Promise<ServiceResult<CloudResource[]>> {
-  const accountsRes = await getCloudAccounts()
-  if (accountsRes.source === 'mock' || !accountsRes.data || accountsRes.data.length === 0) {
-    return { data: [], source: 'mock', error: accountsRes.error }
-  }
-
-  const accounts = accountsRes.data
-  const id = accountId ?? accounts[0].cloud_account_id
-  return tryBackend(() =>
-    apiJson<CloudResource[]>(`/api/v1/cloud-accounts/${id}/resources`)
-  )
+export async function getCloudResources(
+  resourceUid?: string | null
+): Promise<ServiceResult<CloudResource[]>> {
+  const uid = resourceUid ?? getSelectedResourceUid()
+  if (!uid) return emptyResult('no_resource')
+  return tryBackend(() => apiJson<CloudResource[]>(`/api/v1/cloud-accounts/${uid}/resources`))
 }
 
 export interface DashboardResource {
@@ -291,15 +254,14 @@ export interface DashboardResource {
 
 export async function getDashboardResource(): Promise<ServiceResult<DashboardResource | null>> {
   const cloudResourcesRes = await getCloudResources()
-  if (cloudResourcesRes.source === 'mock' || !cloudResourcesRes.data || cloudResourcesRes.data.length === 0) {
-    return { data: null, source: 'mock', error: cloudResourcesRes.error }
+  if (cloudResourcesRes.source !== 'backend' || !cloudResourcesRes.data || cloudResourcesRes.data.length === 0) {
+    return emptyResult('no_resource')
   }
 
   const r = cloudResourcesRes.data[0]
-  const resourceUid = r.resource_uid
+  const resourceUID = r.resource_uid
   setSelectedResourceUid(resourceUid)
 
-  // Obtener configuración real desde el backend (config snapshots)
   const configRes = await getConfigSnapshots(resourceUid)
   const latestSnapshot = configRes.source === 'backend' && configRes.data ? configRes.data[0] : null
 
@@ -338,9 +300,7 @@ export async function getMetrics(
 ): Promise<ServiceResult<MetricsResponse | null>> {
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
-  if (!uid || !metricCode) {
-    return { data: null, source: 'mock', error: 'resource_uid or metric_code missing' }
-  }
+  if (!uid || !metricCode) return { data: null, source: null, status: 'empty', error: 'resource_uid or metric_code missing' }
   return tryBackend(() =>
     apiJson<MetricsResponse>(
       `/api/v1/data/metrics?resource_uid=${uid}&metric_code=${metricCode}&from=${range.from}&to=${range.to}`
@@ -355,11 +315,9 @@ export async function getCosts(
 ): Promise<ServiceResult<CostRecord[]>> {
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
-  if (!uid) return { data: [], source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
-    apiJson<CostRecord[]>(
-      `/api/v1/data/costs?resource_uid=${uid}&from=${range.from}&to=${range.to}`
-    )
+    apiJson<CostRecord[]>(`/api/v1/data/costs?resource_uid=${uid}&from=${range.from}&to=${range.to}`)
   )
 }
 
@@ -367,10 +325,8 @@ export async function getConfigSnapshots(
   resourceUid?: string | null
 ): Promise<ServiceResult<ConfigSnapshot[]>> {
   const uid = resourceUid ?? getSelectedResourceUid()
-  if (!uid) return { data: [], source: 'mock', error: 'resource_uid missing' }
-  return tryBackend(() =>
-    apiJson<ConfigSnapshot[]>(`/api/v1/data/config-snapshots?resource_uid=${uid}`)
-  )
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  return tryBackend(() => apiJson<ConfigSnapshot[]>(`/api/v1/data/config-snapshots?resource_uid=${uid}`))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -397,9 +353,8 @@ export interface TrendResult {
 export interface WorkloadPattern {
   pattern: string
   confidence: number
-  peak_hours: string[]
-  intensity_band: string
   evidence: string[]
+  intensity_band: string
 }
 
 export interface CapacityAnalysis {
@@ -446,20 +401,17 @@ export interface ForecastResponse {
 
 export interface AnalyticsJob {
   job_uid: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   created_at: string
-  completed_at?: string
-  error?: string
+  completed_at: string | null
+  error: string | null
 }
 
 // ── Helper para llamadas POST de analytics (computar) ──
-async function analyticsPost<T>(
-  path: string,
-  body: any
-): Promise<ServiceResult<T>> {
+async function analyticsPost<T>(path: string, body: any): Promise<ServiceResult<T>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
     apiJson<T>(path, {
       method: 'POST',
@@ -469,16 +421,12 @@ async function analyticsPost<T>(
 }
 
 // ── Helper para llamadas GET de analytics (leer) ──
-async function analyticsGet<T>(
-  path: string
-): Promise<ServiceResult<T>> {
+async function analyticsGet<T>(path: string): Promise<ServiceResult<T>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
-    apiJson<T>(
-      `${path}?resource_uid=${uid}&from=${range.from}&to=${range.to}`
-    )
+    apiJson<T>(`${path}?resource_uid=${uid}&from=${range.from}&to=${range.to}`)
   )
 }
 
@@ -488,7 +436,7 @@ export async function getPercentiles(
 ): Promise<ServiceResult<PercentileResult[]>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
     apiJson<PercentileResult[]>(
       `/api/v1/analytics/percentiles?resource_uid=${uid}&metric_code=${metricCode}&period_type=${periodType}&from=${range.from}&to=${range.to}`
@@ -500,7 +448,7 @@ export async function getTrends(): Promise<ServiceResult<TrendResult[]>> {
   return analyticsGet<TrendResult[]>('/api/v1/analytics/trends')
 }
 
-export async function getWorkloadPattern(): Promise<ServiceResult<WorkloadPattern>> {
+export async function getWorkloadPattern(): Promise<ServiceResult<WorkloadPattern | null>> {
   return analyticsGet<WorkloadPattern>('/api/v1/analytics/patterns')
 }
 
@@ -509,11 +457,9 @@ export async function getCapacityAnalysis(
 ): Promise<ServiceResult<CapacityAnalysis | null>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
-    apiJson<CapacityAnalysis>(
-      `/api/v1/analytics/capacity?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`
-    )
+    apiJson<CapacityAnalysis>(`/api/v1/analytics/capacity?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`)
   )
 }
 
@@ -526,11 +472,9 @@ export async function getDESComponents(
 ): Promise<ServiceResult<DESComponents | null>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
-    apiJson<DESComponents>(
-      `/api/v1/analytics/des?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`
-    )
+    apiJson<DESComponents>(`/api/v1/analytics/des?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`)
   )
 }
 
@@ -539,11 +483,9 @@ export async function getAnalyticsForecasts(
 ): Promise<ServiceResult<ForecastResponse | null>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
-    apiJson<ForecastResponse>(
-      `/api/v1/analytics/forecasts?resource_uid=${uid}&target_metric=${targetMetric}&from=${range.from}&to=${range.to}`
-    )
+    apiJson<ForecastResponse>(`/api/v1/analytics/forecasts?resource_uid=${uid}&target_metric=${targetMetric}&from=${range.from}&to=${range.to}`)
   )
 }
 
@@ -555,10 +497,7 @@ export async function computePercentiles(
   metricCode: string = 'cpu_percent',
   periodType: string = '1h'
 ): Promise<ServiceResult<AnalyticsJob | null>> {
-  return analyticsPost<AnalyticsJob>('/api/v1/analytics/percentiles', {
-    metric_code: metricCode,
-    period_type: periodType,
-  })
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/percentiles', { metric_code: metricCode, period_type: periodType })
 }
 
 export async function computeTrends(): Promise<ServiceResult<AnalyticsJob | null>> {
@@ -572,9 +511,7 @@ export async function detectPatterns(): Promise<ServiceResult<AnalyticsJob | nul
 export async function analyzeCapacity(
   periodType: string = '1d'
 ): Promise<ServiceResult<AnalyticsJob | null>> {
-  return analyticsPost<AnalyticsJob>('/api/v1/analytics/capacity', {
-    period_type: periodType,
-  })
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/capacity', { period_type: periodType })
 }
 
 export async function analyzeAnalyticsCosts(): Promise<ServiceResult<AnalyticsJob | null>> {
@@ -584,9 +521,7 @@ export async function analyzeAnalyticsCosts(): Promise<ServiceResult<AnalyticsJo
 export async function computeDES(
   periodType: string = '1d'
 ): Promise<ServiceResult<AnalyticsJob | null>> {
-  return analyticsPost<AnalyticsJob>('/api/v1/analytics/des', {
-    period_type: periodType,
-  })
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/des', { period_type: periodType })
 }
 
 export async function requestForecast(
@@ -601,7 +536,7 @@ export async function requestForecast(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Recommendations (requieren CCO_DATA_DSN → 503 sin él, fallback a mock)
+// Recommendations (requieren CCO_DATA_DSN → 503 sin él)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getRecommendations(): Promise<ServiceResult<RecommendationItem[]>> {
@@ -619,74 +554,15 @@ export interface RecommendationEvidence {
     value: string
     tone: 'good' | 'warn' | 'bad'
   }>
-  constraints: Array<{
-    label: string
-    pass: boolean
-  }>
+  constraints: Array<{ label: string; pass: boolean }>
   limitations: string[]
   rationale: string
-}
-
-export interface AuditActor {
-  user_id: string | null
-  actor_type: string
-  auth_method: string | null
-  principal_id: string | null
-}
-
-export interface AuditResource {
-  type: string | null
-  id: string | null
-  external_id: string | null
-}
-
-export interface AuditTrace {
-  request_id: string
-  correlation_id: string
-  operation_id: string | null
-}
-
-export interface DecisionTrace {
-  trace_id: string
-  recommendation_uid: string
-  scenario_uid: string | null
-  resource_uid: string
-  policy_uid: string | null
-  policy_version: number | null
-  algorithm_version: string
-  action: string
-  status: string
-  risk_score: number | null
-  risk_level: string | null
-  confidence_score: number | null
-  estimated_saving: number | null
-  evidence_count: number
-  evidence_references: string[]
-  decision: string
-  rationale: string
-  input_references: Record<string, any>
-  output_references: Record<string, any>
-  actor: AuditActor
-  created_at: string
 }
 
 export interface RecommendationTrace {
   recommendation_uid: string
   decision_traces: DecisionTrace[]
   events: AuditEvent[]
-}
-
-export interface AuditEvent {
-  event_id: number
-  organization_id: string | null
-  actor: AuditActor
-  action: string
-  resource: AuditResource
-  occurred_at: string
-  trace: AuditTrace
-  metadata: Record<string, any> | null
-  ip_address: string | null
-  user_agent: string | null
 }
 
 export interface RecommendationDecision {
@@ -698,10 +574,10 @@ export interface RecommendationDecision {
   decision_trace_id: string | null
 }
 
-export async function getRecommendationEvidence(uid: string): Promise<ServiceResult<RecommendationEvidence | null>> {
-  return tryBackend(() =>
-    apiJson<RecommendationEvidence>(`/api/v1/recommendations/${uid}/evidence`)
-  )
+export async function getRecommendationEvidence(
+  uid: string
+): Promise<ServiceResult<RecommendationEvidence | null>> {
+  return tryBackend(() => apiJson<RecommendationEvidence>(`/api/v1/recommendations/${uid}/evidence`))
 }
 
 export async function evaluateRecommendations(
@@ -714,7 +590,7 @@ export async function evaluateRecommendations(
 ): Promise<ServiceResult<any>> {
   const uid = resourceUid || getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   return tryBackend(() =>
     apiJson('/api/v1/recommendations/evaluate', {
       method: 'POST',
@@ -731,87 +607,28 @@ export async function evaluateRecommendations(
 }
 
 export async function acceptRecommendation(uid: string): Promise<ServiceResult<any>> {
-  return tryBackend(() =>
-    apiJson(`/api/v1/recommendations/${uid}/accept`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-  )
+  return tryBackend(() => apiJson(`/api/v1/recommendations/${uid}/accept`, { method: 'POST', body: JSON.stringify({}) }))
 }
 
 export async function rejectRecommendation(uid: string): Promise<ServiceResult<any>> {
-  return tryBackend(() =>
-    apiJson(`/api/v1/recommendations/${uid}/reject`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-  )
+  return tryBackend(() => apiJson(`/api/v1/recommendations/${uid}/reject`, { method: 'POST', body: JSON.stringify({}) }))
 }
 
 export async function dismissRecommendation(uid: string): Promise<ServiceResult<any>> {
-  return tryBackend(() =>
-    apiJson(`/api/v1/recommendations/${uid}/dismiss`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-  )
+  return tryBackend(() => apiJson(`/api/v1/recommendations/${uid}/dismiss`, { method: 'POST', body: JSON.stringify({}) }))
 }
 
 export async function applyRecommendation(uid: string): Promise<ServiceResult<any>> {
-  return tryBackend(() =>
-    apiJson(`/api/v1/recommendations/${uid}/apply`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-  )
+  return tryBackend(() => apiJson(`/api/v1/recommendations/${uid}/apply`, { method: 'POST', body: JSON.stringify({}) }))
 }
 
 export async function getRecommendationTrace(uid: string): Promise<ServiceResult<RecommendationTrace | null>> {
-  return tryBackend(() =>
-    apiJson<RecommendationTrace>(`/api/v1/recommendations/${uid}/trace`)
-  )
+  return tryBackend(() => apiJson<RecommendationTrace>(`/api/v1/recommendations/${uid}/trace`))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Audit & Traceability (requieren CCO_DATA_DSN → 503 sin él)
 // ─────────────────────────────────────────────────────────────────────────────
-
-export interface AuditActor {
-  user_id: string | null
-  actor_type: string
-  auth_method: string | null
-  principal_id: string | null
-}
-
-export interface AuditResource {
-  type: string | null
-  id: string | null
-  external_id: string | null
-}
-
-export interface AuditTrace {
-  request_id: string
-  correlation_id: string
-  operation_id: string | null
-}
-
-export interface AuditEvent {
-  event_id: number
-  organization_id: string | null
-  actor: AuditActor
-  action: string
-  resource: AuditResource
-  occurred_at: string
-  trace: AuditTrace
-  metadata: Record<string, any> | null
-  ip_address: string | null
-  user_agent: string | null
-}
-
-export interface AuditEventsResponse {
-  items: AuditEvent[]
-  count: number
-}
 
 export async function getAuditEvents(
   params?: {
@@ -829,7 +646,7 @@ export async function getAuditEvents(
 ): Promise<ServiceResult<AuditEventsResponse | null>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
 
   const query = new URLSearchParams()
   query.set('resource_uid', uid)
@@ -844,25 +661,17 @@ export async function getAuditEvents(
   if (params?.limit) query.set('limit', String(params.limit))
   if (params?.offset) query.set('offset', String(params.offset))
 
-  return tryBackend(() =>
-    apiJson<AuditEventsResponse>(`/api/v1/audit/events?${query.toString()}`)
-  )
+  return tryBackend(() => apiJson<AuditEventsResponse>(`/api/v1/audit/events?${query.toString()}`))
 }
 
 export async function getAuditEvent(eventId: number): Promise<ServiceResult<AuditEvent | null>> {
-  return tryBackend(() =>
-    apiJson<AuditEvent>(`/api/v1/audit/events/${eventId}`)
-  )
+  return tryBackend(() => apiJson<AuditEvent>(`/api/v1/audit/events/${eventId}`))
 }
 
 export async function getAuditCorrelationHistory(
   correlationId: string
 ): Promise<ServiceResult<AuditEventsResponse | null>> {
-  return tryBackend(() =>
-    apiJson<AuditEventsResponse>(
-      `/api/v1/audit/correlations/${correlationId}`
-    )
-  )
+  return tryBackend(() => apiJson<AuditEventsResponse>(`/api/v1/audit/correlations/${correlationId}`))
 }
 
 export async function getAuditResourceHistory(
@@ -870,9 +679,7 @@ export async function getAuditResourceHistory(
   entityId: string
 ): Promise<ServiceResult<AuditEventsResponse | null>> {
   return tryBackend(() =>
-    apiJson<AuditEventsResponse>(
-      `/api/v1/audit/resources/${entityType}/${entityId}/history`
-    )
+    apiJson<AuditEventsResponse>(`/api/v1/audit/resources/${entityType}/${entityId}/history`)
   )
 }
 
@@ -881,30 +688,7 @@ export async function getAuditResourceHistory(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getKpis(): Promise<ServiceResult<any>> {
-  const uid = getSelectedResourceUid()
-  if (!uid) return { data: kpis, source: 'mock', error: 'resource_uid missing' }
-
-  const costsRes = await getCostsSummary(uid)
-  if (costsRes.source === 'backend' && costsRes.data) {
-    const recommendationRes = await getRecommendation(uid)
-    const recData = recommendationRes.source === 'backend' && recommendationRes.data ? recommendationRes.data : null
-
-    return {
-      data: {
-        status: 'Healthy',
-        currentCost: costsRes.data.currentCost,
-        currentCostDelta: 4.8, // No hay cálculo de delta en el backend, usamos valor por defecto
-        estimatedCost: costsRes.data.estimatedCost,
-        estimatedSavings: costsRes.data.estimatedSavings,
-        savingsPct: costsRes.data.savingsPct,
-        risk: recData?.risk ?? 'Low',
-        confidence: recData?.confidence ?? 91,
-      },
-      source: 'backend',
-      error: null,
-    }
-  }
-  return { data: kpis, source: 'mock', error: costsRes.error }
+  return { data: kpis, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getCostDaily(
@@ -956,47 +740,16 @@ export async function getCostComponents(
   return { data: costComponents, source: 'mock', error: costsRes.error }
 }
 
-export async function getCostsSummary(
-  resourceUid?: string | null,
-  from?: string | null,
-  to?: string | null
-): Promise<ServiceResult<{ currentCost: number; estimatedCost: number; estimatedSavings: number; savingsPct: number } | null>> {
-  const uid = resourceUid ?? getSelectedResourceUid()
-  const range = from && to ? { from, to } : getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
-
-  const costsRes = await getCosts(uid, range.from, range.to)
-  if (costsRes.source === 'backend' && costsRes.data && costsRes.data.length > 0) {
-    const currentCost = costsRes.data.reduce((s, c) => s + c.pre_tax_cost, 0)
-    const estimatedCost = costsRes.data.reduce((s, c) => s + (c.pre_tax_cost * 0.758), 0)
-    const estimatedSavings = currentCost - estimatedCost
-    const savingsPct = currentCost > 0 ? (estimatedSavings / currentCost) * 100 : 0
-
-    return {
-      data: {
-        currentCost: Math.round(currentCost * 100) / 100,
-        estimatedCost: Math.round(estimatedCost * 100) / 100,
-        estimatedSavings: Math.round(estimatedSavings * 100) / 100,
-        savingsPct: Math.round(savingsPct * 100) / 100,
-      },
-      source: 'backend',
-      error: null,
-    }
-  }
-  return { data: null, source: 'mock', error: costsRes.error }
-}
-
 export async function getPerfSeries(
   resourceUid?: string | null,
-  metricCode?: string | null,
+  metricCode: string = 'cpu_percent',
   from?: string | null,
   to?: string | null
 ): Promise<ServiceResult<any[]>> {
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
 
-  // Obtener cada métrica individualmente desde el backend
   const [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes] = await Promise.all([
     apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=cpu_percent&from=${range.from}&to=${range.to}`),
     apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=io_percent&from=${range.from}&to=${range.to}`),
@@ -1011,7 +764,6 @@ export async function getPerfSeries(
   const sessionsPoints = sessionsRes.source === 'backend' && sessionsRes.data ? sessionsRes.data.points : []
   const latencyPoints = latencyRes.source === 'backend' && latencyRes.data ? latencyRes.data.points : []
 
-  // Combinar por timestamp_utc
   const pointMap = new Map<string, any>()
 
   cpuPoints.forEach((p, i) => {
@@ -1030,167 +782,92 @@ export async function getPerfSeries(
 
   ioPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
-    if (existing) {
-      existing.io = +p.avg.toFixed(1)
-    } else {
-      pointMap.set(p.timestamp_utc, {
-        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        idx: 0,
-        p50: null,
-        p95: null,
-        p99: null,
-        io: +p.avg.toFixed(1),
-        memory: null,
-        sessions: null,
-        latency: null,
-      })
-    }
+    if (existing) existing.io = +p.avg.toFixed(1)
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: +p.avg.toFixed(1), memory: null, sessions: null, latency: null })
   })
 
   memoryPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
-    if (existing) {
-      existing.memory = +p.avg.toFixed(1)
-    } else {
-      pointMap.set(p.timestamp_utc, {
-        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        idx: 0,
-        p50: null,
-        p95: null,
-        p99: null,
-        io: null,
-        memory: +p.avg.toFixed(1),
-        sessions: null,
-        latency: null,
-      })
-    }
+    if (existing) existing.memory = +p.avg.toFixed(1)
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: +p.avg.toFixed(1), sessions: null, latency: null })
   })
 
   sessionsPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
-    if (existing) {
-      existing.sessions = Math.round(p.avg)
-    } else {
-      pointMap.set(p.timestamp_utc, {
-        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        idx: 0,
-        p50: null,
-        p95: null,
-        p99: null,
-        io: null,
-        memory: null,
-        sessions: Math.round(p.avg),
-        latency: null,
-      })
-    }
+    if (existing) existing.sessions = Math.round(p.avg)
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: Math.round(p.avg), latency: null })
   })
 
   latencyPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
-    if (existing) {
-      existing.latency = +p.avg.toFixed(1)
-    } else {
-      pointMap.set(p.timestamp_utc, {
-        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        idx: 0,
-        p50: null,
-        p95: null,
-        p99: null,
-        io: null,
-        memory: null,
-        sessions: null,
-        latency: +p.avg.toFixed(1),
-      })
-    }
+    if (existing) existing.latency = +p.avg.toFixed(1)
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: null, latency: +p.avg.toFixed(1) })
   })
 
-  return {
-    data: Array.from(pointMap.values()),
-    source: 'backend',
-    error: null,
-  }
+  return { data: Array.from(pointMap.values()), source: 'backend', error: null }
 }
 
 export async function getPerfSummary(): Promise<ServiceResult<any[]>> {
-  return { data: perfSummary, source: 'mock', error: null }
+  return { data: perfSummary, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getReliabilityEvents(): Promise<ServiceResult<any[]>> {
-  return { data: reliabilityEvents, source: 'mock', error: null }
+  return { data: reliabilityEvents, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getRecommendationSummary(): Promise<ServiceResult<RecommendationItem>> {
   const uid = getSelectedResourceUid()
   if (uid) {
-    const singleRes = await getRecommendation(uid)
-    if (singleRes.source === 'backend' && singleRes.data) {
-      return singleRes
-    }
+    const single = await getRecommendation(uid)
+    if (single.source === 'backend' && single.data) return single
   }
-  const recsRes = await getRecommendations()
-  if (recsRes.source === 'backend' && recsRes.data && recsRes.data.length > 0) {
-    return { data: recsRes.data[0], source: 'backend', error: null }
-  }
-  return { data: recommendation, source: 'mock', error: recsRes.error }
+  const recs = await getRecommendations()
+  if (recs.source === 'backend' && recs.data && recs.data.length > 0) return { data: recs.data[0], source: 'backend', error: null }
+  return { data: recommendation, source: 'mock', error: recs.error }
 }
 
 export async function getScenarios(): Promise<ServiceResult<ScenarioItem[]>> {
-  return { data: scenarios, source: 'mock', error: null }
+  return { data: scenarios, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getForecastSeries(): Promise<ServiceResult<any[]>> {
-  return { data: forecastSeries, source: 'mock', error: null }
+  return { data: forecastSeries, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getForecastMeta(): Promise<ServiceResult<any>> {
-  return { data: forecastMeta, source: 'mock', error: null }
+  return { data: forecastMeta, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getWorkloadHourly(): Promise<ServiceResult<any[]>> {
-  return { data: workloadHourly, source: 'mock', error: null }
+  return { data: workloadHourly, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getWorkloadClassification(): Promise<ServiceResult<WorkloadClassificationItem>> {
-  return { data: workloadClassification, source: 'mock', error: null }
+  return { data: workloadClassification, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getWorkloadPatterns(): Promise<ServiceResult<string[]>> {
-  return { data: workloadPatterns, source: 'mock', error: null }
+  return { data: workloadPatterns, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getTopQueries(): Promise<ServiceResult<any[]>> {
-  return { data: topQueries, source: 'mock', error: null }
+  return { data: topQueries, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getWaitCategories(): Promise<ServiceResult<any[]>> {
-  return { data: waitCategories, source: 'mock', error: null }
+  return { data: waitCategories, source: 'mock', status: 'ready', error: null }
 }
 
 export async function getHistory(): Promise<ServiceResult<HistoryItem[]>> {
   const recsRes = await getRecommendations()
   if (recsRes.source === 'backend' && recsRes.data && recsRes.data.length > 0) {
-    return {
-      data: recsRes.data.map((r) => ({
-        id: r.id,
-        date: r.generated,
-        resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus',
-        current: r.from,
-        proposed: r.to,
-        savings: `${r.savingsPct}%`,
-        risk: r.risk,
-        confidence: r.confidence,
-        status: 'New' as HistoryStatus,
-        version: r.modelVersion,
-      })),
-      source: 'backend',
-      error: null,
-    }
+    return { data: recsRes.data.map(r => ({ id: r.id, date: r.generated, resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus', current: r.from, proposed: r.to, savings: `${r.savingsPct}%`, risk: r.risk, confidence: r.confidence, status: 'New' as HistoryStatus, version: r.modelVersion })), source: 'backend', error: null }
   }
   return { data: history, source: 'mock', error: recsRes.error }
 }
 
 export async function getDataQuality(): Promise<ServiceResult<DataQuality>> {
-  return { data: dataQuality, source: 'mock', error: null }
+  return { data: dataQuality, source: 'mock', status: 'ready', error: null }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1222,12 +899,7 @@ export interface ReportResponse {
   created_at: number
   requested_by: string
   project_id: string
-  artifact?: {
-    uid: string
-    storage_uri: string
-    mime_type: string
-    file_size_bytes?: number
-  }
+  artifact?: { uid: string; storage_uri: string; mime_type: string; file_size_bytes?: number }
 }
 
 export interface ReportJob {
@@ -1242,64 +914,18 @@ export interface ReportJob {
   report_type: string
 }
 
-export async function generateOptimizationReport(
-  request: ReportRequest
-): Promise<ServiceResult<ReportResponse | null>> {
+export async function generateOptimizationReport(request: ReportRequest): Promise<ServiceResult<ReportResponse | null>> {
   const uid = request.resource_uid || getSelectedResourceUid()
-  const range = request.from && request.to
-    ? { from: request.from, to: request.to }
-    : getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
-
-  return tryBackend(() =>
-    apiJson<ReportResponse>('/api/v1/reports/optimization', {
-      method: 'POST',
-      body: JSON.stringify({
-        resource_uid: uid,
-        from: range.from,
-        to: range.to,
-        format: request.format,
-        recommendation_uids: request.recommendation_uids,
-        include_audit: request.include_audit,
-        include_trace: request.include_trace,
-        include_evidence: request.include_evidence,
-        include_risks: request.include_risks,
-        include_metrics: request.include_metrics,
-        title: request.title,
-        parameters: request.parameters,
-      }),
-    })
-  )
+  const range = request.from && request.to ? { from: request.from, to: request.to } : getTimeRange()
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  return tryBackend(() => apiJson<ReportResponse>('/api/v1/reports/optimization', { method: 'POST', body: JSON.stringify({ resource_uid: uid, from: range.from, to: range.to, format: request.format, recommendation_uids: request.recommendation_uids, include_audit: request.include_audit, include_trace: request.include_trace, include_evidence: request.include_evidence, include_risks: request.include_risks, include_metrics: request.include_metrics, title: request.title, parameters: request.parameters }) }))
 }
 
-export async function queueOptimizationReport(
-  request: ReportRequest
-): Promise<ServiceResult<ReportJob | null>> {
+export async function queueOptimizationReport(request: ReportRequest): Promise<ServiceResult<ReportJob | null>> {
   const uid = request.resource_uid || getSelectedResourceUid()
-  const range = request.from && request.to
-    ? { from: request.from, to: request.to }
-    : getTimeRange()
-  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
-
-  return tryBackend(() =>
-    apiJson<ReportJob>('/api/v1/reports', {
-      method: 'POST',
-      body: JSON.stringify({
-        resource_uid: uid,
-        from: range.from,
-        to: range.to,
-        format: request.format,
-        recommendation_uids: request.recommendation_uids,
-        include_audit: request.include_audit,
-        include_trace: request.include_trace,
-        include_evidence: request.include_evidence,
-        include_risks: request.include_risks,
-        include_metrics: request.include_metrics,
-        title: request.title,
-        parameters: request.parameters,
-      }),
-    })
-  )
+  const range = request.from && request.to ? { from: request.from, to: request.to } : getTimeRange()
+  if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  return tryBackend(() => apiJson<ReportJob>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ resource_uid: uid, from: range.from, to: range.to, format: request.format, recommendation_uids: request.recommendation_uids, include_audit: request.include_audit, include_trace: request.include_trace, include_evidence: request.include_evidence, include_risks: request.include_risks, include_metrics: request.include_metrics, title: request.title, parameters: request.parameters }) }))
 }
 
 export async function getReport(uid: string): Promise<ServiceResult<ReportResponse | null>> {
@@ -1311,28 +937,54 @@ export async function getReportStatus(uid: string): Promise<ServiceResult<Report
 }
 
 export async function cancelReport(uid: string): Promise<ServiceResult<{ job_uid: string; status: string } | null>> {
-  return tryBackend(() =>
-    apiJson<{ job_uid: string; status: string }>(
-      `/api/v1/reports/${uid}/cancel`,
-      { method: 'POST', body: JSON.stringify({}) }
-    )
-  )
+  return tryBackend(() => apiJson<{ job_uid: string; status: string }>(`/api/v1/reports/${uid}/cancel`, { method: 'POST', body: JSON.stringify({}) }))
 }
 
 export async function downloadReportArtifact(uid: string): Promise<ServiceResult<Blob | null>> {
   const reportRes = await getReport(uid)
   if (reportRes.source !== 'backend' || !reportRes.data?.artifact?.storage_uri) {
-    return { data: null, source: 'mock', error: 'no artifact available' }
+    return { data: null, source: 'mock', status: 'empty', error: 'no artifact available' }
   }
-
   return tryBackend(async () => {
-    const res = await fetch(`/api/v1/reports/${uid}/artifact`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${getToken()}`,
-      },
-    })
-    if (!res.ok) return { data: null, source: 'mock', error: res.statusText }
+    const res = await fetch(`/api/v1/reports/${uid}/artifact`, { method: 'GET', headers: { Authorization: `Bearer ${getToken()}` } })
+    if (!res.ok) return { data: null, source: 'mock', status: 'error', error: res.statusText }
     return await res.blob()
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session state: resource_uid, time_range
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SESSION_RESOURCE_UID = 'cco_resource_uid'
+const SESSION_TIME_RANGE = 'cco_time_range'
+
+export function getSelectedResourceUid(): string | null {
+  if (typeof window === 'undefined') return null
+  return sessionStorage.getItem(SESSION_RESOURCE_UID) ?? null
+}
+
+export function setSelectedResourceUid(uid: string | null): void {
+  if (typeof window === 'undefined') return
+  if (uid) {
+    sessionStorage.setItem(SESSION_RESOURCE_UID, uid)
+  } else {
+    sessionStorage.removeItem(SESSION_RESOURCE_UID)
+  }
+}
+
+export function getTimeRange(): { from: string; to: string } | null {
+  if (typeof window === 'undefined') return null
+  const raw = sessionStorage.getItem(SESSION_TIME_RANGE)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+export function setTimeRange(from: string, to: string): void {
+  if (typeof window === 'undefined') return
+  sessionStorage.setItem(SESSION_TIME_RANGE, JSON.stringify({ from, to }))
 }

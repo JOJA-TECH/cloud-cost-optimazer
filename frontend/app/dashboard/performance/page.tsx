@@ -37,16 +37,21 @@ type PerfPoint = {
   latency: number
 }
 
+type DataResult<T> = {
+  data: T | null
+  source: 'backend' | 'mock' | null
+  status: 'loading' | 'ready' | 'empty' | 'error'
+  error: string | null
+}
+
 export default function PerformancePage() {
   const [hours, setHours] = useState(72)
   const [active, setActive] = useState<Record<string, boolean>>({ p50: true, p95: true, p99: true })
-  const [data, setData] = useState<PerfPoint[]>([])
-  const [perfSummary, setPerfSummary] = useState<any[]>(perfSummaryMock)
-  const [reliabilityEvents, setReliabilityEvents] = useState<any[]>(reliabilityEventsMock)
+  const [dataResult, setDataResult] = useState<DataResult<PerfPoint[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [perfSummaryResult, setPerfSummaryResult] = useState<DataResult<any[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [reliabilityEventsResult, setReliabilityEventsResult] = useState<DataResult<any[]>>({ data: null, source: null, status: 'loading', error: null })
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
-  const [metricsLoaded, setMetricsLoaded] = useState(false)
-  const [perfSource, setPerfSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -59,23 +64,14 @@ export default function PerformancePage() {
     if (!resourceUid || !timeRange) return
 
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
-      .then((res) => {
-        setData(res.data ?? [])
-        const hasRealData = res.source === 'backend' && res.data && res.data.length > 0
-        setMetricsLoaded(hasRealData)
-        setPerfSource(res.source)
-      })
-      .catch(() => setMetricsLoaded(false))
+      .then((res) => setDataResult(res))
+      .catch((err) => setDataResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error desconocido' }))
 
-    getPerfSummary().then((res) => {
-      setPerfSummary(res.data ?? perfSummaryMock)
-    })
-    getReliabilityEvents().then((res) => {
-      setReliabilityEvents(res.data ?? reliabilityEventsMock)
-    })
+    getPerfSummary().then((res) => setPerfSummaryResult(res))
+    getReliabilityEvents().then((res) => setReliabilityEventsResult(res))
   }, [resourceUid, timeRange])
 
-  const shownData = metricsLoaded ? data.slice(-hours) : []
+  const shownData = dataResult.data ? dataResult.data.slice(-hours) : []
 
   return (
     <div>
@@ -87,10 +83,12 @@ export default function PerformancePage() {
             {ranges.map((r) => (
               <button
                 key={r.label}
-                onClick={() => setHours(r.hours)}
+                onClick={() => setActive((s) => ({ ...s, [r.label]: !s[r.label] }))}
                 className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  hours === r.hours ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                  'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                  active[r.label]
+                    ? 'border-border bg-background text-foreground'
+                    : 'border-transparent text-muted-foreground opacity-50',
                 )}
               >
                 {r.label}
@@ -100,18 +98,20 @@ export default function PerformancePage() {
         }
       />
 
-      {!metricsLoaded ? (
+      {!dataResult.data || dataResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">Datos insuficientes</p>
-          <p className="text-xs text-muted-foreground">
-            No hay métricas disponibles para el recurso y ventana seleccionados. Verifique que exista
-            datos en cco_data y que CCO_DATA_DSN esté configurado en el backend.
-          </p>
+          {dataResult.status === 'loading' ? (
+            <div className="text-xs text-muted-foreground">Cargando datos de rendimiento...</div>
+          ) : dataResult.status === 'empty' ? (
+            <p className="text-sm text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>
+          )}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-            {perfSummary.map((m: any) => (
+            {perfSummaryResult.data?.map((m: any) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-3 shadow-sm">
                 <p className="text-[11px] text-muted-foreground">{m.label}</p>
                 <p className={cn('mt-1 text-base font-semibold tabular-nums', toneText(m.tone))}>
@@ -126,11 +126,7 @@ export default function PerformancePage() {
             description="Toggle percentiles · threshold lines mark warning and critical"
             className="mt-4"
             note="Observed telemetry at 5-minute resolution. The average is intentionally not the headline metric."
-            action={
-              perfSource === 'backend' ? (
-                <Badge variant="outline" className="text-[9px]">{perfSource}</Badge>
-              ) : undefined
-            }
+            action={perfSource === 'backend' ? <Badge variant="outline" className="text-[9px]">{perfSource}</Badge> : undefined}
           >
             <MultiLine
               data={shownData}
@@ -138,7 +134,7 @@ export default function PerformancePage() {
               yDomain={[0, 100]}
               unit="%"
               height={300}
-              lines={shownLines.length ? shownLines : cpuLines}
+              lines={shownLines.length ? shownData : cpuLines}
               thresholds={[
                 { y: 75, color: 'var(--warning)', label: 'warning' },
                 { y: 90, color: 'var(--danger)', label: 'critical' },
@@ -164,7 +160,7 @@ export default function PerformancePage() {
             </Panel>
             <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={perfLoaded ? <Badge variant="outline" className="text-[9px]">{perfSource}</Badge> : undefined}>
               <div className="grid grid-cols-2 gap-3">
-                {reliabilityEvents.map((e: any) => (
+                {reliabilityEventsResult.data?.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">{e.label}</p>

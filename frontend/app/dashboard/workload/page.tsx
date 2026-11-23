@@ -23,7 +23,7 @@ type WorkloadClassification = {
 
 export default function WorkloadPage() {
   const [workloadHourly, setWorkloadHourly] = useState<{ hour: string; intensity: number; concurrency: number; reads: number; writes: number }[]>([])
-  const [cls, setCls] = useState<WorkloadClassification>(workloadClassificationMock)
+  const [cls, setCls] = setClassificationState(workloadClassificationMock)
   const [workloadPatterns, setWorkloadPatterns] = useState<string[]>(workloadPatternsMock)
   const [patternLoaded, setPatternLoaded] = useState(false)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
@@ -38,7 +38,6 @@ export default function WorkloadPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
-
     getWorkloadHourly()
       .then(setWorkloadHourly)
       .catch(() => setWorkloadHourly([]))
@@ -68,6 +67,11 @@ export default function WorkloadPage() {
       <PageHeader
         title="Workload analysis"
         description="How demand actually behaves over time — the central intelligence behind every optimization. Classification, peaks, variability, and trend drive the recommendation."
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'Demo'}</Badge>
+          </div>
+        }
       />
 
       {!patternLoaded ? (
@@ -81,7 +85,7 @@ export default function WorkloadPage() {
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Panel className="lg:col-span-1" title="Workload pattern" description="Classified from 30 days of telemetry" action={<Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'mock'}</Badge>}>
+            <Panel className="lg:col-span-1" title="Workload pattern" description="Classified from 30 days of telemetry">
               <div className="rounded-xl border border-primary/25 bg-primary/[0.05] p-4">
                 <div className="flex items-center gap-2">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -117,7 +121,7 @@ export default function WorkloadPage() {
               </div>
             </Panel>
 
-            <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day" action={<Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'mock'}</Badge>}>
+            <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day">
               <AreaTrend data={workloadHourly} dataKey="intensity" xKey="hour" unit="%" height={200} color="var(--chart-1)" />
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {cls.metrics.map((m: any) => (
@@ -131,7 +135,7 @@ export default function WorkloadPage() {
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Panel title="Concurrency by hour" description="Peak concurrent sessions during business windows" action={<Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'mock'}</Badge>}>
+            <Panel title="Concurrency by hour" description="Peak concurrent sessions during business windows">
               <Bars
                 data={workloadHourly}
                 xKey="hour"
@@ -139,7 +143,7 @@ export default function WorkloadPage() {
                 bars={[{ key: 'concurrency', color: 'var(--chart-2)', name: 'Concurrency' }]}
               />
             </Panel>
-            <Panel title="Read / write mix" description="Share of operations by hour (%)" action={<Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'mock'}</Badge>}>
+            <Panel title="Read / write mix" description="Share of operations by hour (%)">
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <Legend color="var(--chart-1)" label="Reads" />
                 <Legend color="var(--chart-4)" label="Writes" />
@@ -170,6 +174,10 @@ function Legend({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   )
+}
+
+function setClassificationState(_: any) {
+  return useState<any>(workloadClassificationMock)
 }
 
 const workloadClassificationMock: WorkloadClassification = {

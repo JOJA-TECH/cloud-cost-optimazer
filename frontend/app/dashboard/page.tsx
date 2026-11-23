@@ -38,19 +38,19 @@ type PerfPoint = {
   latency: number
 }
 
+type DataResult<T> = {
+  data: T | null
+  source: 'backend' | 'mock' | null
+  status: 'loading' | 'ready' | 'empty' | 'error'
+  error: string | null
+}
+
 export default function OverviewPage() {
-  const [kpis, setKpis] = useState<any>(kpisMock)
-  const [kpisSource, setKpisSource] = useState<'mock' | 'backend'>('mock')
-  const [costDaily, setCostDaily] = useState<CostDay[]>([])
-  const [costsLoaded, setCostsLoaded] = useState(false)
-  const [costsSource, setCostsSource] = useState<'mock' | 'backend'>('mock')
-  const [perfSeries, setPerfSeries] = useState<PerfPoint[]>([])
-  const [perfLoaded, setPerfLoaded] = useState(false)
-  const [perfSource, setPerfSource] = useState<'mock' | 'backend'>('mock')
-  const [dataQuality, setDataQuality] = useState<any>(dataQualityMock)
-  const [dataQualitySource, setDataQualitySource] = useState<'mock' | 'backend'>('mock')
-  const [rec, setRec] = useState<any>(recMock)
-  const [recSource, setRecSource] = useState<'mock' | 'backend'>('mock')
+  const [kpisResult, setKpisResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
+  const [costDailyResult, setCostDailyResult] = useState<DataResult<CostDay[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [perfSeriesResult, setPerfSeriesResult] = useState<DataResult<PerfPoint[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [dataQualityResult, setDataQualityResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
+  const [recResult, setRecResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
@@ -64,36 +64,20 @@ export default function OverviewPage() {
   useEffect(() => {
     if (!resourceUid || !timeRange) return
 
-    getCostDaily(resourceUid, timeRange.from, timeRange.to).then((res) => {
-      setCostDaily(res.data ?? [])
-      setCostsLoaded(!!res.data && res.data.length > 0)
-      setCostsSource(res.source)
-    })
+    getCostDaily(resourceUid, timeRange.from, timeRange.to)
+      .then((res) => setCostDailyResult(res))
+      .catch((err) => setCostDailyResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error cargando costos' }))
+
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
-      .then((res) => {
-        setPerfSeries(res.data ?? [])
-        setPerfLoaded(!!res.data && res.data.length > 0)
-        setPerfSource(res.source)
-      })
+      .then((res) => setPerfSeriesResult(res))
+      .catch((err) => setPerfSeriesResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error cargando rendimiento' }))
   }, [resourceUid, timeRange])
 
   useEffect(() => {
-    getKpis().then((res) => {
-      setKpis(res.data ?? kpisMock)
-      setKpisSource(res.source)
-    })
-    getDataQuality().then((res) => {
-      setDataQuality(res.data ?? dataQualityMock)
-      setDataQualitySource(res.source)
-    })
-    getRecommendationSummary().then((res) => {
-      setRec(res.data ?? recMock)
-      setRecSource(res.source)
-    })
+    getKpis().then((res) => setKpisResult(res))
+    getDataQuality().then((res) => setDataQualityResult(res))
+    getRecommendationSummary().then((res) => setRecResult(res))
   }, [])
-
-  const anyDataLoaded = costsLoaded || perfLoaded
-  const anyDataReal = costsSource === 'backend' || perfSource === 'backend'
 
   return (
     <div>
@@ -104,23 +88,24 @@ export default function OverviewPage() {
           <div className="flex items-center gap-2">
             <Badge variant="success" className="h-7 px-2.5">
               <CheckCircle2 className="size-3.5" />
-              {kpis.status}
+              {kpisResult.data?.status || kpisResult.data?.status === 'Healthy' ? kpisResult.data?.status : 'Loading...'}
             </Badge>
+            <Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>
           </div>
         }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Resource status" value="Healthy" sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
-        <KpiCard label="Current cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="/ month" delta={kpis.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
-        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="simulated / mo" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
-        <KpiCard label="Estimated savings" value={`${kpis.savingsPct}%`} sub={`$${kpis.estimatedSavings.toFixed(2)} / mo`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
-        <KpiCard label="Risk" value={kpis.risk} sub="within constraints" tone="success" icon={ShieldCheck} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
-        <KpiCard label="Confidence" value={`${kpis.confidence}%`} sub="high coverage" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Resource status" value="Healthy" sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Current cost" value={`$${kpisResult.data?.currentCost.toFixed(2)}`} sub="/ month" delta={kpisResult.data?.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Estimated cost" value={`$${kpisResult.data?.estimatedCost.toFixed(2)}`} sub="simulated / mo" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Estimated savings" value={`${kpisResult.data?.savingsPct}%`} sub={`$${kpisResult.data?.estimatedSavings.toFixed(2)} / mo`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Risk" value={kpisResult.data?.risk ?? '—'} sub="within constraints" tone="success" icon={ShieldCheck} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Confidence" value={`${kpisResult.data?.confidence}%`} sub="high coverage" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
       </div>
 
       <div className="mt-4">
-        <RecommendationSummary rec={rec} />
+        <RecommendationSummary rec={recResult.data ?? recMock} recSource={recResult.source} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -128,14 +113,15 @@ export default function OverviewPage() {
           title="Cumulative cost"
           description="Billed usage across the analysis window"
           className="lg:col-span-2"
-          action={costsLoaded ? <Badge variant="outline" className="text-[9px]">{costsSource}</Badge> : undefined}
+          action={<Badge variant="outline" className="text-[9px]">{costDailyResult.source === 'backend' ? costsSource : 'mock'}</Badge>}
         >
-          {!costsLoaded ? (
+          {!costDailyResult.data || costDailyResult.status !== 'ready' ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
-              No hay datos de costo disponibles para el recurso seleccionado.
+              {costDailyResult.status === 'empty' && <p className="text-xs text-muted-foreground">No hay datos de costo disponibles para el recurso seleccionado.</p>}
+              {costDailyResult.status === 'error' && <p className="text-xs text-muted-foreground">{costDailyResult.error}</p>}
             </div>
           ) : (
-            <AreaTrend data={costDaily} dataKey="cumulative" prefix="$" height={230} />
+            <AreaTrend data={costDailyResult.data} dataKey="cumulative" prefix="$" height={230} />
           )}
         </Panel>
 
@@ -143,10 +129,10 @@ export default function OverviewPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
               <span className="text-xs text-muted-foreground">Global confidence</span>
-              <Badge variant="success">{dataQuality.globalConfidence}</Badge>
-              <Badge variant="outline" className="text-[9px]">{dataQualitySource}</Badge>
+              <Badge variant="success">{dataQualityResult.data?.globalConfidence}</Badge>
+              <Badge variant="outline" className="text-[9px]">{dataQualityResult.source}</Badge>
             </div>
-            {dataQuality.items.slice(0, 5).map((item: any) => (
+            {dataQualityResult.data?.items.slice(0, 5).map((item: any) => (
               <div key={item.label} className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">{item.label}</span>
                 <span className="font-medium tabular-nums text-foreground">{item.value}</span>
@@ -166,20 +152,22 @@ export default function OverviewPage() {
           description="Average alone does not drive the decision — peaks do"
           className="lg:col-span-2"
           note="Observed telemetry sampled at 5-minute resolution over the last 72 hours."
-          action={<Badge variant="outline" className="text-[9px]">{perfSource}</Badge>}
+          action={perfSeriesResult.data ? <Badge variant="outline" className="text-[9px]">{perfSeriesResult.source}</Badge> : undefined}
         >
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Legend color="var(--chart-3)" label="p50" />
             <Legend color="var(--chart-2)" label="p95" />
             <Legend color="var(--chart-1)" label="p99" />
           </div>
-          {!perfLoaded ? (
+          {!perfSeriesResult.data || perfSeriesResult.status !== 'ready' ? (
             <div className="h-[230px] flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
-              No hay datos de rendimiento disponibles para el recurso seleccionado.
+              {!perfSeriesResult.data && perfSeriesResult.status === 'loading' && <p className="text-xs text-muted-foreground">Cargando datos de rendimiento...</p>}
+              {perfSeriesResult.status === 'empty' && <p className="text-xs text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>}
+              {perfSeriesResult.status === 'error' && <p className="text-xs text-muted-foreground">{perfSeriesResult.error}</p>}
             </div>
           ) : (
             <MultiLine
-              data={perfSeries}
+              data={perfSeriesResult.data}
               xKey="t"
               yDomain={[0, 100]}
               unit="%"
@@ -194,7 +182,7 @@ export default function OverviewPage() {
           )}
         </Panel>
 
-        <Panel title="Opportunity snapshot" description="What a right-size would change" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
+        <Panel title="Opportunity snapshot" description="What a right-size would change">
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">Compute</p>
@@ -202,7 +190,7 @@ export default function OverviewPage() {
                 8 vCores <ArrowRight className="size-3.5 text-primary" /> <span className="text-primary">4 vCores</span>
               </p>
             </div>
-            <ConfidenceBar value={rec.confidence} />
+            <ConfidenceBar value={recResult.data?.confidence ?? 91} badge={<Badge variant="outline" className="text-[9px]">{recResult.source}</Badge>} />
             <div className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
               Projected CPU p99 at target capacity stays near 58% — below saturation, with headroom
               for observed peaks.
