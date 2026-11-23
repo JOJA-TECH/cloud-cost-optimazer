@@ -703,6 +703,110 @@ export async function getRecommendationTrace(uid: string): Promise<Recommendatio
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Audit & Traceability (requieren CCO_DATA_DSN → 503 sin él)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AuditActor {
+  user_id: string | null
+  actor_type: string
+  auth_method: string | null
+  principal_id: string | null
+}
+
+export interface AuditResource {
+  type: string | null
+  id: string | null
+  external_id: string | null
+}
+
+export interface AuditTrace {
+  request_id: string
+  correlation_id: string
+  operation_id: string | null
+}
+
+export interface AuditEvent {
+  event_id: number
+  organization_id: string | null
+  actor: AuditActor
+  action: string
+  resource: AuditResource
+  occurred_at: string
+  trace: AuditTrace
+  metadata: Record<string, any> | null
+  ip_address: string | null
+  user_agent: string | null
+}
+
+export interface AuditEventsResponse {
+  items: AuditEvent[]
+  count: number
+}
+
+export async function getAuditEvents(
+  params?: {
+    action?: string
+    entity_type?: string
+    entity_id?: string
+    correlation_id?: string
+    operation_id?: string
+    user_id?: string
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+  }
+): Promise<AuditEventsResponse | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+
+  const query = new URLSearchParams()
+  query.set('resource_uid', uid)
+  query.set('from', range.from)
+  query.set('to', range.to)
+  if (params?.action) query.set('action', params.action)
+  if (params?.entity_type) query.set('entity_type', params.entity_type)
+  if (params?.entity_id) query.set('entity_id', params.entity_id)
+  if (params?.correlation_id) query.set('correlation_id', params.correlation_id)
+  if (params?.operation_id) query.set('operation_id', params.operation_id)
+  if (params?.user_id) query.set('user_id', params.user_id)
+  if (params?.limit) query.set('limit', String(params.limit))
+  if (params?.offset) query.set('offset', String(params.offset))
+
+  return tryBackend(() =>
+    apiJson<AuditEventsResponse>(`/api/v1/audit/events?${query.toString()}`)
+  )
+}
+
+export async function getAuditEvent(eventId: number): Promise<AuditEvent | null> {
+  return tryBackend(() =>
+    apiJson<AuditEvent>(`/api/v1/audit/events/${eventId}`)
+  )
+}
+
+export async function getAuditCorrelationHistory(
+  correlationId: string
+): Promise<AuditEventsResponse | null> {
+  return tryBackend(() =>
+    apiJson<AuditEventsResponse>(
+      `/api/v1/audit/correlations/${correlationId}`
+    )
+  )
+}
+
+export async function getAuditResourceHistory(
+  entityType: string,
+  entityId: string
+): Promise<AuditEventsResponse | null> {
+  return tryBackend(() =>
+    apiJson<AuditEventsResponse>(
+      `/api/v1/audit/resources/${entityType}/${entityId}/history`
+    )
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Servicios con fallback automático a mock-data
 // ─────────────────────────────────────────────────────────────────────────────
 
