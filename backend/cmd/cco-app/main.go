@@ -166,9 +166,12 @@ func main() {
 	}
 
 	db, err := database.Open(database.Config{
-		Driver:   driver,
-		DSN:      dsn,
-		LogLevel: 0,
+		Driver:          driver,
+		DSN:             dsn,
+		LogLevel:        0,
+		MaxOpenConns:    envInt("CCO_DB_MAX_OPEN_CONNS", 0),
+		MaxIdleConns:    envInt("CCO_DB_MAX_IDLE_CONNS", 0),
+		ConnMaxLifetime: envSeconds("CCO_DB_CONN_MAX_LIFETIME_SECONDS", 0),
 	})
 	if err != nil {
 		log.Fatalf("open database: %v", err)
@@ -192,7 +195,7 @@ func main() {
 	// ── Jobs (durable queue, Fase 3 del roadmap) ─────────────────────────
 	jobRepo := jobs.NewRepository(db)
 	jsvc := jobs.NewService(jobRepo)
-	jw := jobs.NewWorker(jobRepo, 5*time.Second)
+	jw := jobs.NewWorker(jobRepo, envInt("CCO_JOBS_WORKERS", 4), 5*time.Second)
 
 	// ── Logging ───────────────────────────────────────────────────────────
 	// Stdout es la interfaz hacia cualquier colector externo (Loki, ELK,
@@ -285,7 +288,13 @@ func main() {
 	var recommendationSvc *recommendation.Service
 	var mlClient analytics.MLPort
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
-		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
+		dataDB, err := database.Open(database.Config{
+			Driver:          database.DriverPostgres,
+			DSN:             dataDSN,
+			MaxOpenConns:    envInt("CCO_DB_MAX_OPEN_CONNS", 0),
+			MaxIdleConns:    envInt("CCO_DB_MAX_IDLE_CONNS", 0),
+			ConnMaxLifetime: envSeconds("CCO_DB_CONN_MAX_LIFETIME_SECONDS", 0),
+		})
 		if err != nil {
 			log.Fatalf("open cco_data database: %v", err)
 		}
@@ -789,17 +798,17 @@ func main() {
 			out := make([]map[string]any, 0, len(models))
 			for _, m := range models {
 				out = append(out, map[string]any{
-					"model_version_id":  m.ModelVersionID,
-					"training_run_id":   m.TrainingRunID,
-					"model_name":        m.ModelName,
-					"version":           m.Version,
-					"framework":         ptrStr(m.Framework),
-					"stage":             m.Stage,
-					"params":            ptrStr(m.Params),
-					"metrics_summary":   ptrStr(m.MetricsSummary),
-					"promoted_at":       ptrTime(m.PromotedAt),
-					"created_at":        m.CreatedAt.UTC(),
-					"algorithm":         ptrStr(m.Algorithm),
+					"model_version_id": m.ModelVersionID,
+					"training_run_id":  m.TrainingRunID,
+					"model_name":       m.ModelName,
+					"version":          m.Version,
+					"framework":        ptrStr(m.Framework),
+					"stage":            m.Stage,
+					"params":           ptrStr(m.Params),
+					"metrics_summary":  ptrStr(m.MetricsSummary),
+					"promoted_at":      ptrTime(m.PromotedAt),
+					"created_at":       m.CreatedAt.UTC(),
+					"algorithm":        ptrStr(m.Algorithm),
 				})
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"items": out, "count": len(out)})
@@ -1274,6 +1283,17 @@ func envDays(name string, def time.Duration) time.Duration {
 	if v := os.Getenv(name); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return time.Duration(n) * 24 * time.Hour
+		}
+	}
+	return def
+}
+
+// envInt lee un entero positivo de la variable de entorno, con def de
+// respaldo para valores faltantes o inválidos.
+func envInt(name string, def int) int {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
 		}
 	}
 	return def
