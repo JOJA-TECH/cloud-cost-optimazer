@@ -61,7 +61,8 @@ export default function PerformancePage() {
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
       .then((res) => {
         setData(res.data ?? [])
-        setMetricsLoaded(!!res.data && res.data.length > 0)
+        const hasRealData = res.source === 'backend' && res.data && res.data.length > 0
+        setMetricsLoaded(hasRealData)
         setPerfSource(res.source)
       })
       .catch(() => setMetricsLoaded(false))
@@ -126,23 +127,9 @@ export default function PerformancePage() {
             className="mt-4"
             note="Observed telemetry at 5-minute resolution. The average is intentionally not the headline metric."
             action={
-              <div className="flex items-center gap-1">
-                {cpuLines.map((l) => (
-                  <button
-                    key={l.key}
-                    onClick={() => setActive((s) => ({ ...s, [l.key]: !s[l.key] }))}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                      active[l.key]
-                        ? 'border-border bg-background text-foreground'
-                        : 'border-transparent text-muted-foreground opacity-50',
-                    )}
-                  >
-                    <span className="size-2 rounded-full" style={{ background: l.color }} />
-                    {l.name.replace('CPU ', '')}
-                  </button>
-                ))}
-              </div>
+              perfSource === 'backend' ? (
+                <Badge variant="outline" className="text-[9px]">{perfSource}</Badge>
+              ) : undefined
             }
           >
             <MultiLine
@@ -175,7 +162,7 @@ export default function PerformancePage() {
             <Panel title="Memory utilization" description="Working set as percent of provisioned">
               <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
             </Panel>
-            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{perfSource}</Badge>}>
+            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={perfLoaded ? <Badge variant="outline" className="text-[9px]">{perfSource}</Badge> : undefined}>
               <div className="grid grid-cols-2 gap-3">
                 {reliabilityEvents.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3">

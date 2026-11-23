@@ -48,18 +48,10 @@ export default function DiagnosticsPage() {
       <PageHeader
         title="Diagnostics"
         description="Technical detail supporting the recommendation — top operations and wait categories. Denser than the executive views, but kept readable."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="neutral">Query Store · last 30 days</Badge>
-            <Badge variant="outline" className="text-[9px]">
-              {topQueriesLoaded || waitCategoriesLoaded ? 'Datos reales' : 'Demo'}
-            </Badge>
-          </div>
-        }
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">{topQueriesLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
+        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">{topQueriesLoaded ? 'Datos reales' : 'mock'}</Badge>}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -97,7 +89,7 @@ export default function DiagnosticsPage() {
           </div>
         </Panel>
 
-        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">{waitCategoriesLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
+        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">{waitCategoriesLoaded ? 'Datos reales' : 'mock'}</Badge>}>
           <div className="relative">
             <Donut data={waitCategories} height={180} />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

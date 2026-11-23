@@ -119,7 +119,7 @@ export default function RecommendationsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Main detail */}
         <div className="space-y-4 lg:col-span-2">
-          <Panel>
+          <Panel title="Recommended configuration" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success">
@@ -143,7 +143,7 @@ export default function RecommendationsPage() {
           </Panel>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Panel title="Constraints evaluated" description="All must pass for feasibility">
+            <Panel title="Constraints evaluated" description="All must pass for feasibility" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
               <ul className="space-y-2.5">
                 {r.constraints.map((c: any) => (
                   <li key={c.label} className="flex items-start gap-2 text-sm">
@@ -156,7 +156,7 @@ export default function RecommendationsPage() {
               </ul>
             </Panel>
 
-            <Panel title="Evidence" description="Calculated from observed telemetry">
+            <Panel title="Evidence" description="Calculated from observed telemetry" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
               <ul className="space-y-2.5">
                 {evidence.map((e) => (
                   <li key={e.label} className="flex items-center gap-2 text-sm">
@@ -170,7 +170,9 @@ export default function RecommendationsPage() {
 
             <Panel
               title="Why this recommendation?"
-              action={
+              action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
                 <button
                   onClick={() => setShowWhy((v) => !v)}
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary"
@@ -178,8 +180,6 @@ export default function RecommendationsPage() {
                   {showWhy ? 'Hide' : 'Show'}
                   <ChevronDown className={cn('size-4 transition-transform', showWhy && 'rotate-180')} />
                 </button>
-              }
-            >
               {showWhy && (
                 <div className="space-y-3">
                   <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
@@ -191,9 +191,10 @@ export default function RecommendationsPage() {
                   </div>
                 </div>
               )}
+              </div>
             </Panel>
 
-            <Panel title="Limitations" description="Stated explicitly with every recommendation">
+            <Panel title="Limitations" description="Stated explicitly with every recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
               <ul className="space-y-2">
                 {r.limitations.map((l: string) => (
                   <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -206,7 +207,7 @@ export default function RecommendationsPage() {
           </div>
 
           {/* Decision actions */}
-          <Panel title="Decision actions" description="Record your decision on this recommendation">
+          <Panel title="Decision actions" description="Record your decision on this recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
             <div className="grid grid-cols-2 gap-3">
               <Button
                 size="sm"
@@ -257,7 +258,7 @@ export default function RecommendationsPage() {
 
         {/* Sidebar: risk/confidence + AI + no-rec */}
         <div className="space-y-4">
-          <Panel title="Risk & confidence" description="Evaluated independently">
+          <Panel title="Risk & confidence" description="Evaluated independently" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                 <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -282,7 +283,7 @@ export default function RecommendationsPage() {
 
           <AssistantPanel recSource={recSource} />
 
-          <Panel title="Other outcomes are valid" description="The system can decline to recommend">
+          <Panel title="Other outcomes are valid" description="The system can decline to recommend" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
             <div className="space-y-3">
               <div className="rounded-lg border border-border bg-background p-3">
                 <div className="mb-1 flex items-center gap-2">
@@ -307,7 +308,7 @@ export default function RecommendationsPage() {
           </Panel>
 
           {traceLoaded && trace && (
-            <Panel title="Audit trace" description="Recommendation decision lineage">
+            <Panel title="Audit trace" description="Recommendation decision lineage" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
               <div className="space-y-3">
                 {trace.decision_traces.map((dt: any, i: number) => (
                   <div key={i} className="border-b border-border pb-3 last:border-0">

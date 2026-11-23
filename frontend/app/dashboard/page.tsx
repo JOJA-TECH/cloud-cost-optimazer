@@ -128,7 +128,7 @@ export default function OverviewPage() {
           title="Cumulative cost"
           description="Billed usage across the analysis window"
           className="lg:col-span-2"
-          action={<Badge variant="outline" className="text-[9px]">{costsLoaded ? costsSource : 'Demo'}</Badge>}
+          action={costsLoaded ? <Badge variant="outline" className="text-[9px]">{costsSource}</Badge> : undefined}
         >
           {!costsLoaded ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
@@ -166,6 +166,7 @@ export default function OverviewPage() {
           description="Average alone does not drive the decision — peaks do"
           className="lg:col-span-2"
           note="Observed telemetry sampled at 5-minute resolution over the last 72 hours."
+          action={<Badge variant="outline" className="text-[9px]">{perfSource}</Badge>}
         >
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Legend color="var(--chart-3)" label="p50" />
@@ -193,7 +194,7 @@ export default function OverviewPage() {
           )}
         </Panel>
 
-        <Panel title="Opportunity snapshot" description="What a right-size would change">
+        <Panel title="Opportunity snapshot" description="What a right-size would change" action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}>
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">Compute</p>

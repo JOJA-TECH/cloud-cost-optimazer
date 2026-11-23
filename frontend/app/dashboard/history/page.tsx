@@ -110,7 +110,7 @@ export default function HistoryPage() {
         title="Historial de recomendaciones"
         description="Cada recomendación generada con su configuración, ahorro, riesgo, confianza y estado."
         className="mb-4"
-        action={<Badge variant="outline" className="text-[9px]">{historyLoaded ? 'Datos reales' : 'Demo'}</Badge>}
+        action={<Badge variant="outline" className="text-[9px]">{historyLoaded ? 'Datos reales' : 'mock'}</Badge>}
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
@@ -187,7 +187,7 @@ export default function HistoryPage() {
         title="Traza de auditoría (Audit Trail)"
         description="Eventos de auditoría registrados para decisiones de recomendación: quién, cuándo, qué acción y evidencia asociada."
         className="mt-4"
-        action={<Badge variant="outline" className="text-[9px]">{auditLoaded ? 'Datos reales' : 'Demo'}</Badge>}
+        action={<Badge variant="outline" className="text-[9px]">{auditLoaded ? 'Datos reales' : 'mock'}</Badge>}
       >
         {!auditLoaded ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
