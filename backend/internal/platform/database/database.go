@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -21,6 +22,11 @@ type Config struct {
 	Driver   Driver
 	DSN      string
 	LogLevel int
+	// Pool configura el pool de conexiones del driver subyacente (database/sql).
+	// Cualquier valor <=0 se ignora y el driver conserva sus propios defaults.
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 }
 
 func Open(cfg Config) (*gorm.DB, error) {
@@ -37,7 +43,24 @@ func Open(cfg Config) (*gorm.DB, error) {
 	default:
 		return nil, fmt.Errorf("unsupported database driver %q", cfg.Driver)
 	}
-	return gorm.Open(dialector, gormCfg)
+	db, err := gorm.Open(dialector, gormCfg)
+	if err != nil {
+		return nil, err
+	}
+	// database/sql ya administra el pool de conexiones (está dentro de GORM);
+	// estos knobs solo lo tunnean. Valores <=0 dejan los defaults del driver.
+	if sqlDB, err := db.DB(); err == nil {
+		if cfg.MaxOpenConns > 0 {
+			sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+		}
+		if cfg.MaxIdleConns > 0 {
+			sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+		}
+		if cfg.ConnMaxLifetime > 0 {
+			sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+		}
+	}
+	return db, nil
 }
 
 // TableName qualifies schemas only on PostgreSQL. SQLite has no schemas, so

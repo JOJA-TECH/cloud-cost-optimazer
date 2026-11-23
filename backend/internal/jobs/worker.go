@@ -20,17 +20,24 @@ type worker struct {
 	mu           sync.RWMutex
 	handlers     map[string]HandlerFunc
 	pollInterval time.Duration
+	concurrency  int
 }
 
-// NewWorker construye un worker que reclama jobs de la tabla duradera.
-func NewWorker(repo Repository, pollInterval time.Duration) Worker {
+// NewWorker construye un pool de N workers que reclaman jobs de la tabla
+// duradera. Cada worker ejecuta un job a la vez; Claim usa FOR UPDATE SKIP
+// LOCKED, así que varios workers no chocan por la misma fila.
+func NewWorker(repo Repository, concurrency int, pollInterval time.Duration) Worker {
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
+	}
+	if concurrency <= 0 {
+		concurrency = 1
 	}
 	return &worker{
 		repo:         repo,
 		handlers:     make(map[string]HandlerFunc),
 		pollInterval: pollInterval,
+		concurrency:  concurrency,
 	}
 }
 
@@ -41,20 +48,30 @@ func (w *worker) RegisterHandler(jobType string, fn HandlerFunc) {
 	w.handlers[jobType] = fn
 }
 
-// Run bloquea reclamando y ejecutando jobs hasta que ctx se cancele.
+// Run lanza `concurrency` goroutines que reclaman y ejecutan jobs hasta que
+// ctx se cancele; espera a que termino los en curso antes de devolver.
 func (w *worker) Run(ctx context.Context) error {
-	ticker := time.NewTicker(w.pollInterval)
-	defer ticker.Stop()
-	slog.Info("jobs worker started", "poll_interval", w.pollInterval.String())
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("jobs worker stopped")
-			return ctx.Err()
-		case <-ticker.C:
-			w.processOnce(ctx)
-		}
+	slog.Info("jobs worker started", "workers", w.concurrency, "poll_interval", w.pollInterval.String())
+	var wg sync.WaitGroup
+	for i := 0; i < w.concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(w.pollInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					w.processOnce(ctx)
+				}
+			}
+		}()
 	}
+	wg.Wait()
+	slog.Info("jobs worker stopped")
+	return ctx.Err()
 }
 
 func (w *worker) processOnce(ctx context.Context) {
