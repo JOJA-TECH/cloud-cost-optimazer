@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 // Migrate creates the cco_app persistence model through GORM and applies
@@ -38,8 +39,9 @@ func Migrate(db *gorm.DB) error {
 	}
 	for _, group := range groups {
 		for _, model := range group.models {
-			if err := db.Table(TableName(db, group.schema, modelTable(model))).AutoMigrate(model); err != nil {
-				return fmt.Errorf("migrate %s.%s: %w", group.schema, modelTable(model), err)
+			tableName := TableName(db, group.schema, tablerName(model))
+			if err := db.Table(tableName).AutoMigrate(model); err != nil {
+				return fmt.Errorf("migrate %s.%s: %w", group.schema, tableName, err)
 			}
 		}
 	}
@@ -60,8 +62,8 @@ func Migrate(db *gorm.DB) error {
 	return nil
 }
 
-// schemaMigration records one applied migration in the schema_migrations table.
-type schemaMigration struct {
+// schemaMigrationEntry records one applied migration in the schema_migrations table.
+type schemaMigrationEntry struct {
 	Version   string    `gorm:"column:version;primaryKey"`
 	Checksum  string    `gorm:"column:checksum"`
 	AppliedAt time.Time `gorm:"column:applied_at"`
@@ -124,7 +126,7 @@ const jobsTableSQL = `CREATE TABLE IF NOT EXISTS app.jobs (
 	last_error text,
 	duration_ms bigint,
 	created_at timestamptz NOT NULL DEFAULT now(),
-	updated_at timestamptz NOT NULL DEFAULT now()
+	updated_at timestamptz NOT NULL DEFAULT NOW()
 )`
 
 // runSchemaMigrations applies versioned migrations idempotently. It creates
@@ -137,7 +139,8 @@ func runSchemaMigrations(db *gorm.DB) error {
 			version    varchar(64) PRIMARY KEY,
 			checksum   varchar(64) NOT NULL,
 			applied_at timestamptz NOT NULL DEFAULT now()
-		)`, schemaMigrationTableName(db),
+		)`,
+		schemaMigrationTableName(db),
 	)).Error; err != nil {
 		return fmt.Errorf("create schema_migrations table: %w", err)
 	}
@@ -182,113 +185,14 @@ func runSchemaMigrations(db *gorm.DB) error {
 	return nil
 }
 
-// SchemaMigrationOK reports whether all registered versioned migrations have
-// been applied with matching checksums. Intended for use by /readyz.
-func SchemaMigrationOK(db *gorm.DB) bool {
-	if db == nil {
-		return false
-	}
-	ordered := make([]struct {
-		version  string
-		checksum string
-	}, len(schemaMigrations))
-	for i, m := range schemaMigrations {
-		ordered[i].version = m.version
-		ordered[i].checksum = m.checksum
-	}
-	sort.Slice(ordered, func(i, j int) bool {
-		return ordered[i].version < ordered[j].version
-	})
-	for _, m := range ordered {
-		var existing string
-		err := db.Raw(fmt.Sprintf(
-			"SELECT checksum FROM %s WHERE version = ?",
-			schemaMigrationTableName(db),
-		), m.version).Scan(&existing).Error
-		if err != nil || existing != m.checksum {
-			return false
-		}
-	}
-	return true
-}
-
-// migrateJobsTable crea la tabla duradera de jobs (Fase 3 del roadmap) en el
-// schema app de cco_app. Es idempotente: seguro reejecutar sobre bases
-// desplegadas. La PK uuid se genera en el lado de la aplicación (Go), por lo
-// que no depende de la extensión pgcrypto.
-func migrateJobsTable(db *gorm.DB) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS app.jobs (
-			id uuid PRIMARY KEY,
-			job_type text NOT NULL,
-			organization_id uuid,
-			project_id uuid,
-			status text NOT NULL DEFAULT 'queued',
-			attempts int NOT NULL DEFAULT 0,
-			max_attempts int NOT NULL DEFAULT 5,
-			payload text,
-			idempotency_key text UNIQUE,
-			scheduled_at timestamptz,
-			started_at timestamptz,
-			finished_at timestamptz,
-			last_error text,
-			duration_ms bigint,
-			created_at timestamptz NOT NULL DEFAULT now(),
-			updated_at timestamptz NOT NULL DEFAULT now()
-		)`,
-		`CREATE INDEX IF NOT EXISTS ix_app_jobs_status_scheduled
-			ON app.jobs (status, scheduled_at) WHERE status = 'queued'`,
-		`CREATE INDEX IF NOT EXISTS ix_app_jobs_type ON app.jobs (type)`,
-		`CREATE INDEX IF NOT EXISTS ix_app_jobs_org
-			ON app.jobs (organization_id) WHERE organization_id IS NOT NULL`,
-	}
-	for _, sql := range statements {
-		if err := db.Exec(sql).Error; err != nil {
-			return fmt.Errorf("migrate jobs table: %w", err)
-		}
-	}
-	return nil
-}
-
-// migratePermissionIndexes crea los índices únicos que requieren los seeds
-// de permisos (ON CONFLICT permission_code). Es idempotente: seguro ejecutar
-// sobre bases de datos ya desplegadas antes de que existiera el índice.
-func migratePermissionIndexes(db *gorm.DB) error {
-	statements := []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS ix_iam_permissions_permission_code
-			ON iam.permissions (permission_code)`,
-	}
-	for _, sql := range statements {
-		if err := db.Exec(sql).Error; err != nil {
-			return fmt.Errorf("create permission index: %w", err)
-		}
-	}
-	return nil
-}
-
+// migrateAuditEvents creates audit-specific indexes and constraints.
 func migrateAuditEvents(db *gorm.DB) error {
 	statements := []struct {
 		name string
 		sql  string
 	}{
 		{
-			name: "event action constraint",
-			sql: `DO $$
-BEGIN
-	IF NOT EXISTS (
-		SELECT 1 FROM pg_constraint
-		WHERE conname = 'ck_audit_action_not_blank'
-			AND conrelid = 'audit.events'::regclass
-	) THEN
-		ALTER TABLE audit.events
-			ADD CONSTRAINT ck_audit_action_not_blank
-			CHECK (length(trim(action)) > 0);
-	END IF;
-END;
-$$;`,
-		},
-		{
-			name: "actor type constraint",
+			name: "audit_actor_type_constraint",
 			sql: `DO $$
 BEGIN
 	IF NOT EXISTS (
@@ -307,151 +211,110 @@ END;
 $$;`,
 		},
 		{
-			name: "correlation index",
-			sql: `CREATE INDEX IF NOT EXISTS ix_audit_correlation_time
+			name: "audit_idx_correlation",
+			sql: `CREATE INDEX IF NOT EXISTS idx_audit_correlation_time
 				ON audit.events (correlation_id, occurred_at DESC)
 				WHERE correlation_id IS NOT NULL`,
 		},
 		{
-			name: "operation index",
-			sql: `CREATE INDEX IF NOT EXISTS ix_audit_operation_time
+			name: "audit_idx_operation",
+			sql: `CREATE INDEX IF NOT EXISTS idx_audit_operation_time
 				ON audit.events (operation_id, occurred_at DESC)
 				WHERE operation_id IS NOT NULL`,
 		},
 		{
-			name: "recommendation index",
-			sql: `CREATE INDEX IF NOT EXISTS ix_audit_recommendation
+			name: "audit_idx_recommendation",
+			sql: `CREATE INDEX IF NOT EXISTS idx_audit_recommendation
 				ON audit.events ((metadata->>'recommendation_uid'), occurred_at DESC)
 				WHERE metadata ? 'recommendation_uid'`,
 		},
-		{
-			name: "append-only trigger function",
-			sql: `CREATE OR REPLACE FUNCTION audit.reject_event_mutation() RETURNS trigger
-				LANGUAGE plpgsql
-				AS $$
-				BEGIN
-					RAISE EXCEPTION 'audit.events is append-only';
-					RETURN NULL;
-				END;
-				$$`,
-		},
-		{
-			name: "append-only row triggers",
-			sql: `DO $$
-BEGIN
-	IF NOT EXISTS (
-		SELECT 1 FROM pg_trigger
-		WHERE tgname = 'trg_audit_events_no_row_mutation'
-			AND tgrelid = 'audit.events'::regclass
-			AND NOT tgisinternal
-	) THEN
-		CREATE TRIGGER trg_audit_events_no_row_mutation
-			BEFORE UPDATE OR DELETE ON audit.events
-			FOR EACH ROW EXECUTE FUNCTION audit.reject_event_mutation();
-	END IF;
-	IF NOT EXISTS (
-		SELECT 1 FROM pg_trigger
-		WHERE tgname = 'trg_audit_events_no_truncate'
-			AND tgrelid = 'audit.events'::regclass
-			AND NOT tgisinternal
-	) THEN
-		CREATE TRIGGER trg_audit_events_no_truncate
-			BEFORE TRUNCATE ON audit.events
-			FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_event_mutation();
-	END IF;
-END;
-$$;`,
-		},
-		{
-			name: "system event insert policy",
-			sql: `DO $$
-BEGIN
-	IF EXISTS (
-		SELECT 1 FROM pg_policies
-		WHERE schemaname = 'audit'
-			AND tablename = 'events'
-			AND policyname = 'audit_insert_own_context'
-	) THEN
-		ALTER POLICY audit_insert_own_context ON audit.events
-			WITH CHECK (
-				(
-					actor_type = 'system'
-					AND user_id IS NULL
-					AND app.is_platform_admin()
-				)
-				OR (
-					actor_type <> 'system'
-					AND (
-						app.is_platform_admin()
-						OR (
-							user_id = app.current_user_id()
-							AND (organization_id IS NULL OR app.is_org_member(organization_id))
-						)
-					)
-				)
-			);
-	END IF;
-END;
-$$;`,
-		},
 	}
-	for _, statement := range statements {
-		if err := db.Exec(statement.sql).Error; err != nil {
-			return fmt.Errorf("migrate audit.events %s: %w", statement.name, err)
+	for _, stmt := range statements {
+		if err := db.Exec(stmt.sql).Error; err != nil {
+			return fmt.Errorf("migrate audit.events %s: %w", stmt.name, err)
 		}
 	}
 	return nil
 }
 
-func modelTable(model any) string {
-	switch model.(type) {
-	case *UserModel:
-		return "users"
-	case *ExternalIdentityModel:
-		return "external_identities"
-	case *RoleModel:
-		return "roles"
-	case *PermissionModel:
-		return "permissions"
-	case *RolePermissionModel:
-		return "role_permissions"
-	case *UserRoleModel:
-		return "user_roles"
-	case *RefreshTokenModel:
-		return "refresh_tokens"
-	case *OrganizationModel:
-		return "organizations"
-	case *MemberModel:
-		return "members"
-	case *ProjectModel:
-		return "projects"
-	case *CloudAccountModel:
-		return "accounts"
-	case *AccountProjectModel:
-		return "account_projects"
-	case *ResourceBindingModel:
-		return "resource_bindings"
-	case *ResourceModel:
-		return "resources"
-	case *DashboardPreferenceModel:
-		return "dashboard_preferences"
-	case *NotificationModel:
-		return "notifications"
-	case *NotificationDeliveryModel:
-		return "notification_deliveries"
-	case *SavedViewModel:
-		return "saved_views"
-	case *UserPreferenceModel:
-		return "user_preferences"
-	case *RecommendationInteractionModel:
-		return "recommendation_interactions"
-	case *ReportRequestModel:
-		return "report_requests"
-	case *ReportArtifactModel:
-		return "report_artifacts"
-	case *AuditEventModel:
-		return "events"
-	default:
-		panic("unknown persistence model")
+// migratePermissionIndexes creates idempotent permission indexes.
+func migratePermissionIndexes(db *gorm.DB) error {
+	statements := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "ix_iam_permissions_permission_code",
+			sql: `CREATE UNIQUE INDEX IF NOT EXISTS ix_iam_permissions_permission_code
+				ON iam.permissions (permission_code)`,
+		},
 	}
+	for _, stmt := range statements {
+		if err := db.Exec(stmt.sql).Error; err != nil {
+			return fmt.Errorf("migrate permission index %s: %w", stmt.name, err)
+		}
+	}
+	return nil
+}
+
+// migrateJobsTable creates the durable job queue table (app.jobs on cco_app).
+func migrateJobsTable(db *gorm.DB) error {
+	statements := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "jobs_table",
+			sql: `CREATE TABLE IF NOT EXISTS app.jobs (
+				id uuid PRIMARY KEY,
+				job_type text NOT NULL,
+				organization_id uuid,
+				project_id uuid,
+				status text NOT NULL DEFAULT 'queued',
+				attempts int NOT NULL DEFAULT 0,
+				max_attempts int NOT NULL DEFAULT 5,
+				payload text,
+				idempotency_key text UNIQUE,
+				scheduled_at timestamptz,
+				started_at timestamptz,
+				finished_at timestamptz,
+				last_error text,
+				duration_ms bigint,
+				created_at timestamptz NOT NULL DEFAULT now(),
+				updated_at timestamptz NOT NULL DEFAULT NOW()
+			)`,
+		},
+		{
+			name: "ix_jobs_status_scheduled",
+			sql: `CREATE INDEX IF NOT EXISTS ix_app_jobs_status_scheduled
+				ON app.jobs (status, scheduled_at) WHERE status = 'queued'`,
+		},
+		{
+			name: "ix_jobs_type",
+			sql: `CREATE INDEX IF NOT EXISTS ix_app_jobs_job_type
+				ON app.jobs (job_type)`,
+		},
+		{
+			name: "ix_jobs_org",
+			sql: `CREATE INDEX IF NOT EXISTS ix_app_jobs_org
+				ON app.jobs (organization_id) WHERE organization_id IS NOT NULL`,
+		},
+	}
+	for _, stmt := range statements {
+		if err := db.Exec(stmt.sql).Error; err != nil {
+			return fmt.Errorf("migrate jobs table %s: %w", stmt.name, err)
+		}
+	}
+	return nil
+}
+
+// tablerName returns the table name for a GORM model, using the Tabler
+// interface if the model implements it, otherwise falling back to the
+// struct name.
+func tablerName(model any) string {
+	if tabler, ok := any(model).(schema.Tabler); ok {
+		return tabler.TableName()
+	}
+	// Fallback: use the type name
+	return fmt.Sprintf("%T", model)
 }
