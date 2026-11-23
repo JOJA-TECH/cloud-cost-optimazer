@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
 	"github.com/google/uuid"
 )
 
-// FakeMLClient implements analytics.MLPort for dev/tests.
+// FakeMLClient implements ai.MLPort for dev/tests.
 // Returns a deterministic forecast_uid without calling a real ML service.
 type FakeMLClient struct{}
 
@@ -16,7 +16,7 @@ func NewFakeMLClient() *FakeMLClient {
 	return &FakeMLClient{}
 }
 
-func (f *FakeMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
+func (f *FakeMLClient) Forecast(ctx context.Context, req ai.ForecastRequest) (uuid.UUID, error) {
 	// Deterministic UUID based on request params
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(req.ResourceUID.String()+req.TargetMetric)), nil
 }
@@ -35,7 +35,7 @@ func NewNotAvailableMLClient() *notAvailableMLClient {
 	return &notAvailableMLClient{}
 }
 
-func (n *notAvailableMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
+func (n *notAvailableMLClient) Forecast(ctx context.Context, req ai.ForecastRequest) (uuid.UUID, error) {
 	return uuid.Nil, errors.New("ML service not available")
 }
 

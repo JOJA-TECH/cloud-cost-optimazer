@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
 	forecastv1 "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// GrpcMLClient implements analytics.MLPort over gRPC against the external
+// GrpcMLClient implements ai.MLPort over gRPC against the external
 // Python ML service (Module 6). It translates the Go forecast contract into
 // the server's PredictRequest and returns the forecast_uid that the Python
 // service persists in ml.forecast. The returned forecast_uid is the shared
@@ -59,7 +59,7 @@ func (c *GrpcMLClient) Close() error {
 // ValidateContract confirms the ML service is reachable and serving a model.
 func (c *GrpcMLClient) ValidateContract(ctx context.Context) error {
 	if _, err := c.client.GetModelInfo(ctx, &forecastv1.GetModelInfoRequest{}); err != nil {
-		return analytics.NewError(analytics.CodeMLUnavailable, "ML contract not ready: "+err.Error(), analytics.ErrMLUnavailable)
+		return ai.NewError(ai.CodeMLUnavailable, "ML contract not ready: "+err.Error(), ai.ErrMLUnavailable)
 	}
 	return nil
 }
@@ -67,33 +67,33 @@ func (c *GrpcMLClient) ValidateContract(ctx context.Context) error {
 // Forecast asks the Python ML service for a prediction and returns a
 // forecast_uid. The server validates target/horizon/model itself; this adapter
 // maps canonical Go names to the server's target names and translates gRPC
-// status codes into typed analytics errors.
-func (c *GrpcMLClient) Forecast(ctx context.Context, req analytics.ForecastRequest) (uuid.UUID, error) {
+// status codes into typed ai errors.
+func (c *GrpcMLClient) Forecast(ctx context.Context, req ai.ForecastRequest) (uuid.UUID, error) {
 	if req.ResourceUID == uuid.Nil {
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, "resource_uid required", analytics.ErrInvalidQuery)
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery, "resource_uid required", ai.ErrInvalidQuery)
 	}
 	if req.TargetMetric == "" {
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, "target_metric required", analytics.ErrInvalidQuery)
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery, "target_metric required", ai.ErrInvalidQuery)
 	}
 	if req.HorizonSteps <= 0 {
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, "horizon_steps required", analytics.ErrInvalidQuery)
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery, "horizon_steps required", ai.ErrInvalidQuery)
 	}
 
 	target, err := targetToServer(req.TargetMetric)
 	if err != nil {
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, err.Error(), analytics.ErrInvalidQuery)
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery, err.Error(), ai.ErrInvalidQuery)
 	}
 	horizon, err := horizonToServer(req.HorizonSteps, req.StepUnit)
 	if err != nil {
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery, err.Error(), analytics.ErrInvalidQuery)
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery, err.Error(), ai.ErrInvalidQuery)
 	}
 
 	if req.ModelVersionID != nil {
 		// The Python server resolves model versions by semver string, not by the
 		// ml.model_version surrogate id. An explicit id cannot be resolved yet.
-		return uuid.Nil, analytics.NewError(analytics.CodeInvalidQuery,
+		return uuid.Nil, ai.NewError(ai.CodeInvalidQuery,
 			"explicit model_version_id not supported by the ML server; request champion (nil)",
-			analytics.ErrInvalidQuery,
+			ai.ErrInvalidQuery,
 		)
 	}
 
@@ -117,24 +117,24 @@ func (c *GrpcMLClient) Forecast(ctx context.Context, req analytics.ForecastReque
 	}
 
 	if resp.Status != "ok" {
-		return uuid.Nil, analytics.NewError(analytics.CodeMLUnavailable,
+		return uuid.Nil, ai.NewError(ai.CodeMLUnavailable,
 			fmt.Sprintf("ML service returned status %q for resource %s", resp.Status, req.ResourceUID),
-			analytics.ErrMLUnavailable,
+			ai.ErrMLUnavailable,
 		)
 	}
 
 	if resp.ForecastUid == "" {
-		return uuid.Nil, analytics.NewError(analytics.CodeMLUnavailable,
+		return uuid.Nil, ai.NewError(ai.CodeMLUnavailable,
 			fmt.Sprintf("ML service did not persist a forecast for resource %s", req.ResourceUID),
-			analytics.ErrMLUnavailable,
+			ai.ErrMLUnavailable,
 		)
 	}
 
 	forecastUID, err := uuid.Parse(resp.ForecastUid)
 	if err != nil {
-		return uuid.Nil, analytics.NewError(analytics.CodeMLUnavailable,
+		return uuid.Nil, ai.NewError(ai.CodeMLUnavailable,
 			fmt.Sprintf("ML service returned invalid forecast_uid %q: %v", resp.ForecastUid, err),
-			analytics.ErrMLUnavailable,
+			ai.ErrMLUnavailable,
 		)
 	}
 
@@ -153,7 +153,7 @@ func (c *GrpcMLClient) Train(
 ) (*forecastv1.TrainResponse, error) {
 	targetServer, err := targetToServer(target)
 	if err != nil {
-		return nil, analytics.NewError(analytics.CodeInvalidQuery, err.Error(), analytics.ErrInvalidQuery)
+		return nil, ai.NewError(ai.CodeInvalidQuery, err.Error(), ai.ErrInvalidQuery)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -201,18 +201,18 @@ func (c *GrpcMLClient) mapGrpcError(err error) error {
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
 		case codes.InvalidArgument:
-			return analytics.NewError(analytics.CodeInvalidQuery, st.Message(), analytics.ErrInvalidQuery)
+			return ai.NewError(ai.CodeInvalidQuery, st.Message(), ai.ErrInvalidQuery)
 		case codes.NotFound:
-			return analytics.NewError(analytics.CodeNotFound, st.Message(), analytics.ErrNotFound)
+			return ai.NewError(ai.CodeNotFound, st.Message(), ai.ErrNotFound)
 		case codes.FailedPrecondition:
-			return analytics.NewError(analytics.CodeMLUnavailable, st.Message(), analytics.ErrMLUnavailable)
+			return ai.NewError(ai.CodeMLUnavailable, st.Message(), ai.ErrMLUnavailable)
 		case codes.Unavailable:
-			return analytics.NewError(analytics.CodeMLUnavailable, st.Message(), analytics.ErrMLUnavailable)
+			return ai.NewError(ai.CodeMLUnavailable, st.Message(), ai.ErrMLUnavailable)
 		case codes.DeadlineExceeded:
-			return analytics.NewError(analytics.CodeMLUnavailable, "ML request timeout", err)
+			return ai.NewError(ai.CodeMLUnavailable, "ML request timeout", err)
 		default:
-			return analytics.NewError(analytics.CodeMLUnavailable, st.Message(), err)
+			return ai.NewError(ai.CodeMLUnavailable, st.Message(), err)
 		}
 	}
-	return analytics.NewError(analytics.CodeMLUnavailable, err.Error(), err)
+	return ai.NewError(ai.CodeMLUnavailable, err.Error(), err)
 }

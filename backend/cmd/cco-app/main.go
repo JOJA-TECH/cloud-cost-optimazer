@@ -18,8 +18,9 @@ import (
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition"
 	acqadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/adapters"
 	acqrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/acquisition/repositories"
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
+	aiadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai/adapters"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics"
-	analyticsadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/adapters"
 	analyticsrepos "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/analytics/repositories"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit"
 	auditadapters "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/audit/adapters"
@@ -283,7 +284,7 @@ func main() {
 	var analyticsRepo *analyticsrepos.AnalyticsRepository
 	var analyticsSvc *analytics.Service
 	var recommendationSvc *recommendation.Service
-	var mlClient analytics.MLPort
+	var mlClient ai.MLPort
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
 		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
 		if err != nil {
@@ -300,15 +301,15 @@ func main() {
 		switch mlMode {
 		case "baseline":
 			// Deterministic baseline (fake client) for local/dev validation.
-			mlClient = analyticsadapters.NewFakeMLClient()
+			mlClient = aiadapters.NewFakeMLClient()
 		case "not_available":
 			// Explicitly not available: never present a fake forecast as productive.
-			mlClient = analyticsadapters.NewNotAvailableMLClient()
+			mlClient = aiadapters.NewNotAvailableMLClient()
 		case "grpc":
 			// Productive gRPC client to the external Python ML service (Module 6).
 			mlEndpoint := os.Getenv("CCO_ML_ENDPOINT")
 			mlTimeout := envSeconds("CCO_ML_REQUEST_TIMEOUT_SECONDS", 10*time.Second)
-			grpcClient, err := analyticsadapters.NewGRPCMLClient(mlEndpoint, mlTimeout)
+			grpcClient, err := aiadapters.NewGRPCMLClient(mlEndpoint, mlTimeout)
 			if err != nil {
 				log.Fatalf("connect ML endpoint: %v", err)
 			}
@@ -316,7 +317,7 @@ func main() {
 			mlClient = grpcClient
 		default:
 			// Default (dev/unset): fake client.
-			mlClient = analyticsadapters.NewFakeMLClient()
+			mlClient = aiadapters.NewFakeMLClient()
 		}
 		analyticsSvc = analytics.NewService(analyticsRepo, dataRepo, dataRepo, dataRepo, mlClient, 4)
 
@@ -534,7 +535,7 @@ func main() {
 		if analyticsSvc == nil {
 			return errors.New("analytics service not configured (CCO_DATA_DSN missing)")
 		}
-		mlMgmt, ok := mlClient.(*analyticsadapters.GrpcMLClient)
+		mlMgmt, ok := mlClient.(*aiadapters.GrpcMLClient)
 		if !ok {
 			return errors.New("ML client is not a gRPC client; set CCO_ML_MODE=grpc")
 		}
