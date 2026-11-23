@@ -1,13 +1,14 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react'
-import { login as loginApi, logout as logoutApi, getToken, getUserName, getUserEmail } from '@/lib/auth'
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
+import { login as loginApi, logout as logoutApi, getToken, getUserName, getUserEmail, isTokenExpiringSoon, refreshToken } from '@/lib/auth'
 
 interface AuthContextType {
   token: string | null
   userName: string | null
   userEmail: string | null
   isAuthenticated: boolean
+  isClient: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -15,9 +16,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(getToken())
-  const [userName, setUserName] = useState<string | null>(getUserName())
-  const [userEmail, setUserEmail] = useState<string | null>(getUserEmail())
+  const [token, setToken] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isClient, setIsClient] = useState(false)
+
+  // Solo leer de sessionStorage después de la hidratación
+  useEffect(() => {
+    setToken(getToken())
+    setUserName(getUserName())
+    setUserEmail(getUserEmail())
+    setIsClient(true)
+  }, [])
 
   const doLogin = useCallback(
     async (email: string, password: string) => {
@@ -35,6 +45,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserName(null)
     setUserEmail(null)
   }, [])
+
+  // Auto-refresh del token antes de que expire (cada 30 segundos verificar)
+  useEffect(() => {
+    if (!token || !isClient) return
+
+    const interval = setInterval(async () => {
+      if (isTokenExpiringSoon(2 * 60 * 1000)) {
+        const success = await refreshToken()
+        if (success) {
+          setToken(getToken())
+        }
+      }
+    }, 30 * 1000)
+
+    return () => clearInterval(interval)
+  }, [token, isClient])
+
+  // Durante la hidratación inicial, no renderizar nada para evitar mismatch
+  if (!isClient) {
+    return null
+  }
 
   return (
     <AuthContext.Provider
