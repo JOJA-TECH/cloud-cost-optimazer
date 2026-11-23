@@ -1,15 +1,25 @@
-# v0 sandbox internal files
-__v0_runtime_loader.js
-__v0_devtools.tsx
-__v0_jsx-dev-runtime.ts
-.snowflake/
-.v0-trash/
-.vercel/
+# Dependencias
+node_modules/
 
-# Environment variables
-.env*.local
-
-# Common ignores
-node_modules
+# Build de Next.js
 .next/
+out/
+
+# Archivos generados por el build (Next.js 16)
+AGENTS.md
+CLAUDE.md
+
+# Variables de entorno locales
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
 .DS_Store
+Thumbs.db
