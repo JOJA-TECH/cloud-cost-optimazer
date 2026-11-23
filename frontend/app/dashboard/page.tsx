@@ -8,19 +8,64 @@ import { RecommendationSummary } from '@/components/dashboard/recommendation-sum
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AreaTrend, MultiLine } from '@/components/charts'
-import { getKpis, getCostDaily, getPerfSeries, getDataQuality, getRecommendationSummary } from '@/lib/api-services'
+import { getKpis, getCostDaily, getPerfSeries, getDataQuality, getRecommendationSummary, getSelectedResourceUid, getTimeRange } from '@/lib/api-services'
+
+type CostDay = {
+  day: string
+  billed: number
+  estimated: number
+  reference: number
+  cumulative: number
+}
+
+type PerfPoint = {
+  t: string
+  idx: number
+  p50: number
+  p95: number
+  p99: number
+  io: number
+  memory: number
+  sessions: number
+  latency: number
+}
 
 export default function OverviewPage() {
   const [kpis, setKpis] = useState(kpisMock)
-  const [costDaily, setCostDaily] = useState(costDailyMock)
-  const [perfSeries, setPerfSeries] = useState(perfSeriesMock)
+  const [costDaily, setCostDaily] = useState<CostDay[]>([])
+  const [perfSeries, setPerfSeries] = useState<PerfPoint[]>([])
   const [dataQuality, setDataQuality] = useState(dataQualityMock)
   const [rec, setRec] = useState(recMock)
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
+  const [costsLoaded, setCostsLoaded] = useState(false)
+  const [perfLoaded, setPerfLoaded] = useState(false)
+
+  useEffect(() => {
+    const uid = getSelectedResourceUid()
+    const range = getTimeRange()
+    setResourceUid(uid)
+    setTimeRangeState(range)
+  }, [])
+
+  useEffect(() => {
+    if (!resourceUid || !timeRange) return
+    getCostDaily(resourceUid, timeRange.from, timeRange.to)
+      .then((d) => {
+        setCostDaily(d)
+        setCostsLoaded(d.length > 0)
+      })
+      .catch(() => setCostsLoaded(false))
+    getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
+      .then((d) => {
+        setPerfSeries(d)
+        setPerfLoaded(d.length > 0)
+      })
+      .catch(() => setPerfLoaded(false))
+  }, [resourceUid, timeRange])
 
   useEffect(() => {
     getKpis().then(setKpis)
-    getCostDaily().then(setCostDaily)
-    getPerfSeries().then(setPerfSeries)
     getDataQuality().then(setDataQuality)
     getRecommendationSummary().then(setRec)
   }, [])
@@ -37,7 +82,7 @@ export default function OverviewPage() {
               {kpis.status}
             </Badge>
             <Badge variant="outline" className="h-7 px-2.5 text-[10px]">
-              Demo — Test data
+              {costsLoaded || perfLoaded ? 'Datos reales' : 'Demo'}
             </Badge>
           </div>
         }
@@ -63,7 +108,13 @@ export default function OverviewPage() {
           className="lg:col-span-2"
           action={<Badge variant="neutral">Billed</Badge>}
         >
-          <AreaTrend data={costDaily} dataKey="cumulative" prefix="$" height={230} />
+          {!costsLoaded ? (
+            <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
+              No hay datos de costo disponibles para el recurso seleccionado.
+            </div>
+          ) : (
+            <AreaTrend data={costDaily} dataKey="cumulative" prefix="$" height={230} />
+          )}
         </Panel>
 
         <Panel title="Data quality" description="Signals feeding the analysis">
@@ -98,19 +149,25 @@ export default function OverviewPage() {
             <Legend color="var(--chart-2)" label="p95" />
             <Legend color="var(--chart-1)" label="p99" />
           </div>
-          <MultiLine
-            data={perfSeries}
-            xKey="t"
-            yDomain={[0, 100]}
-            unit="%"
-            height={230}
-            thresholds={[{ y: 85, color: 'var(--warning)', label: 'warning' }]}
-            lines={[
-              { key: 'p50', color: 'var(--chart-3)', name: 'CPU p50' },
-              { key: 'p95', color: 'var(--chart-2)', name: 'CPU p95' },
-              { key: 'p99', color: 'var(--chart-1)', name: 'CPU p99' },
-            ]}
-          />
+          {!perfLoaded ? (
+            <div className="h-[230px] flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
+              No hay datos de rendimiento disponibles para el recurso seleccionado.
+            </div>
+          ) : (
+            <MultiLine
+              data={perfSeries}
+              xKey="t"
+              yDomain={[0, 100]}
+              unit="%"
+              height={230}
+              thresholds={[{ y: 85, color: 'var(--warning)', label: 'warning' }]}
+              lines={[
+                { key: 'p50', color: 'var(--chart-3)', name: 'CPU p50' },
+                { key: 'p95', color: 'var(--chart-2)', name: 'CPU p95' },
+                { key: 'p99', color: 'var(--chart-1)', name: 'CPU p99' },
+              ]}
+            />
+          )}
         </Panel>
 
         <Panel title="Opportunity snapshot" description="What a right-size would change">
@@ -158,11 +215,11 @@ const kpisMock = {
   confidence: 91,
 }
 
-const costDailyMock = [
+const costDailyMock: CostDay[] = [
   { day: 'Aug 1', billed: 16.8, estimated: 12.7, reference: 17.1, cumulative: 16.8 },
 ]
 
-const perfSeriesMock = [
+const perfSeriesMock: PerfPoint[] = [
   { t: '00:00', idx: 0, p50: 12, p95: 21, p99: 26, io: 24, memory: 58, sessions: 180, latency: 4.2 },
 ]
 
