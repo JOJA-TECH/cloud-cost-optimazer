@@ -1,4 +1,5 @@
 import { apiJson } from './api'
+import { getToken } from './auth'
 import {
   kpis,
   resources,
@@ -952,4 +953,146 @@ export async function getHistory(): Promise<HistoryItem[]> {
 
 export async function getDataQuality(): Promise<DataQuality> {
   return dataQuality
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reporting (generar, consultar, cancelar y descargar reportes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReportRequest {
+  resource_uid: string
+  from: string
+  to: string
+  format: 'json' | 'csv' | 'html'
+  recommendation_uids?: string[]
+  include_audit?: boolean
+  include_trace?: boolean
+  include_evidence?: boolean
+  include_risks?: boolean
+  include_metrics?: boolean
+  title?: string
+  parameters?: Record<string, any>
+}
+
+export interface ReportResponse {
+  report_uid: string
+  status: string
+  format: string
+  resource_uid: string
+  from: string
+  to: string
+  created_at: number
+  requested_by: string
+  project_id: string
+  artifact?: {
+    uid: string
+    storage_uri: string
+    mime_type: string
+    file_size_bytes?: number
+  }
+}
+
+export interface ReportJob {
+  job_uid: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  report_uid: string | null
+  artifact_uid: string | null
+  created_at: number
+  started_at: number | null
+  completed_at: number | null
+  error_message: string | null
+  report_type: string
+}
+
+export async function generateOptimizationReport(
+  request: ReportRequest
+): Promise<ReportResponse | null> {
+  const uid = request.resource_uid || getSelectedResourceUid()
+  const range = request.from && request.to
+    ? { from: request.from, to: request.to }
+    : getTimeRange()
+  if (!uid) return null
+
+  return tryBackend(() =>
+    apiJson<ReportResponse>('/api/v1/reports/optimization', {
+      method: 'POST',
+      body: JSON.stringify({
+        resource_uid: uid,
+        from: range.from,
+        to: range.to,
+        format: request.format,
+        recommendation_uids: request.recommendation_uids,
+        include_audit: request.include_audit,
+        include_trace: request.include_trace,
+        include_evidence: request.include_evidence,
+        include_risks: request.include_risks,
+        include_metrics: request.include_metrics,
+        title: request.title,
+        parameters: request.parameters,
+      }),
+    })
+  )
+}
+
+export async function queueOptimizationReport(
+  request: ReportRequest
+): Promise<ReportJob | null> {
+  const uid = request.resource_uid || getSelectedResourceUid()
+  const range = request.from && request.to
+    ? { from: request.from, to: request.to }
+    : getTimeRange()
+  if (!uid) return null
+
+  return tryBackend(() =>
+    apiJson<ReportJob>('/api/v1/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        resource_uid: uid,
+        from: range.from,
+        to: range.to,
+        format: request.format,
+        recommendation_uids: request.recommendation_uids,
+        include_audit: request.include_audit,
+        include_trace: request.include_trace,
+        include_evidence: request.include_evidence,
+        include_risks: request.include_risks,
+        include_metrics: request.include_metrics,
+        title: request.title,
+        parameters: request.parameters,
+      }),
+    })
+  )
+}
+
+export async function getReport(uid: string): Promise<ReportResponse | null> {
+  return tryBackend(() => apiJson<ReportResponse>(`/api/v1/reports/${uid}`))
+}
+
+export async function getReportStatus(uid: string): Promise<ReportJob | null> {
+  return tryBackend(() => apiJson<ReportJob>(`/api/v1/reports/${uid}/status`))
+}
+
+export async function cancelReport(uid: string): Promise<{ job_uid: string; status: string } | null> {
+  return tryBackend(() =>
+    apiJson<{ job_uid: string; status: string }>(
+      `/api/v1/reports/${uid}/cancel`,
+      { method: 'POST', body: JSON.stringify({}) }
+    )
+  )
+}
+
+export async function downloadReportArtifact(uid: string): Promise<Blob | null> {
+  const report = await getReport(uid)
+  if (!report?.artifact?.storage_uri) return null
+
+  return tryBackend(async () => {
+    const res = await fetch(`/api/v1/reports/${uid}/artifact`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${getToken()}`,
+      },
+    })
+    if (!res.ok) return null
+    return await res.blob()
+  })
 }

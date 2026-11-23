@@ -10,6 +10,7 @@ import {
   History,
   Settings,
   BrainCircuit,
+  FileText,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -30,5 +31,6 @@ export const navItems: NavItem[] = [
   { label: 'Forecasting', href: '/dashboard/forecasting', icon: TrendingUp },
   { label: 'Diagnostics', href: '/dashboard/diagnostics', icon: Stethoscope },
   { label: 'History', href: '/dashboard/history', icon: History },
+  { label: 'Reports', href: '/dashboard/reports', icon: FileText },
   { label: 'Configuration', href: '/dashboard/configuration', icon: Settings },
 ]
