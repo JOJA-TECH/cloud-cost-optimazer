@@ -535,9 +535,9 @@ func main() {
 		if analyticsSvc == nil {
 			return errors.New("analytics service not configured (CCO_DATA_DSN missing)")
 		}
-		mlMgmt, ok := mlClient.(*aiadapters.GrpcMLClient)
+		mlMgmt, ok := mlClient.(ai.MLManagement)
 		if !ok {
-			return errors.New("ML client is not a gRPC client; set CCO_ML_MODE=grpc")
+			return errors.New("ML client does not support training; set CCO_ML_MODE=grpc")
 		}
 		var parsed struct {
 			ResourceUID  string `json:"resource_uid"`

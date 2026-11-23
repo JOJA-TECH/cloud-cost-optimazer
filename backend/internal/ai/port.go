@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	forecastv1 "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai/forecast/v1"
 	"github.com/google/uuid"
 )
 
@@ -74,4 +75,14 @@ type EvidencePack struct {
 	Assumptions       string    `json:"assumptions"`
 	Limitations       string    `json:"limitations"`
 	RequestID         string    `json:"request_id,omitempty"`
+}
+
+// MLManagement is the contract for ML lifecycle operations (training,
+// promotion) that are not part of the inference-only MLPort. It lets callers
+// (e.g. the jobs worker in cmd/cco-app) train models without depending on the
+// concrete gRPC client type.
+type MLManagement interface {
+	// Train requests the ML service to train a new candidate model for a
+	// resource/target and register it in ml.training_run / ml.model_version.
+	Train(ctx context.Context, resourceUID uuid.UUID, target, modelName, modelVersion, algorithm string, hours int32) (*forecastv1.TrainResponse, error)
 }

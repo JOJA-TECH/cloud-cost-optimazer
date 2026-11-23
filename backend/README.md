@@ -15,7 +15,15 @@ backend/
 │   ├── acquisition/        # Module 3 — Adquisición y Monitoreo de Datos (implementado)
 │   ├── data/               # Module 4 — Gestión de Datos (implementado)
 │   ├── analytics/          # Module 5 — Analítica y Optimización (implementado)
-│   ├── recommendation/     # Module 7 — Motor de Recomendaciones (implementado)
+│   ├── ai/                 # Module 6 — Integración con ML/LLM/IA (implementado, punto único)
+│   │   ├── port.go         # MLPort (forecast), LLMPort (explicación), MLManagement (entrenamiento)
+│   │   ├── service.go      # AIService: entrada única a capacidades de IA
+│   │   ├── errors.go       # errores propios de ai (frontera diferenciable de analytics)
+│   │   └── adapters/
+│   │       ├── grpc_ml_client.go   # cliente gRPC productivo al servicio Python
+│   │       ├── fake.go             # fakes para dev / not_available
+│   │       └── llm_deterministic.go# explicador determinista (siempre disponible)
+│   │   └── forecast/v1/      # protos generados del servicio Python (forecast.v1)
 │   ├── recommendation/     # Module 7 — Motor de Recomendaciones (implementado)
 │   ├── audit/              # Module 8 — Auditoría y Trazabilidad (implementado)
 │   ├── jobs/               # Module 9 — Jobs duraderos y worker (implementado, Fase 3)
@@ -38,7 +46,7 @@ El catálogo de módulos y sus límites está en [`docs/04-architecture/MODULES.
 | Adquisición y Monitoreo de Datos | `internal/acquisition` | Implementado | Ciclos de adquisición, Azure Monitor, DMVs SQL, Query Store, costos diarios |
 | Gestión de Datos | `internal/data` | Implementado | Lectura de métricas/costos/configuración y contratos de escritura en `cco_data` |
 | Analítica y Optimización | `internal/analytics` | Implementado | Snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts |
-| Integración con ML | `internal/analytics` (contrato) | Parcial | Contrato `MLPort`; proveedor productivo pendiente |
+| Integración con ML/LLM/IA | `internal/ai` | Implementado | `MLPort` (forecast vía gRPC al servicio Python), `LLMPort` (explicación determinista), `MLManagement` (entrenamiento); punto único de conexión a capacidades de IA |
 | Motor de Recomendaciones | `internal/recommendation` | Implementado | Generación, persistencia versionada, trazas y transiciones explícitas |
 | Auditoría y Trazabilidad | `internal/audit` | Implementado | Eventos append-only, consultas protegidas y propagación de trazas |
 | Jobs (cola duradera y worker) | `internal/jobs` | Implementado | Tabla `app.jobs`, reclamación con `FOR UPDATE SKIP LOCKED`, reintentos con backoff+jitter, idempotencia, cancelación; endpoints `/api/v1/jobs/*` y encolado asíncrono de adquisición, reportes, analítica y recomendaciones pesadas |
@@ -49,21 +57,23 @@ El catálogo de módulos y sus límites está en [`docs/04-architecture/MODULES.
 
 ```
 iam (transversal) ◄── cloud ◄── acquisition ──► data ──► analytics ──┐
-                                                │       forecasts    │
-                                                └────────────────────┤
+                                                │                    │
+                                                └──────────► ai ◄────┘       │
+                                  MLPort/LLMPort/MLManagement               │
                                                                      ▼
                                                           recommendation
                                                                      │
                                                                cco_data.opt
-iam ──► cloud ──► acquisition ──► data ──► analytics ──► recommendation ──► audit
- └────────────────────────────────────────────────────────────────────────► audit
+iam ──► cloud ──► acquisition ──► data ──► analytics ──► ai ──► recommendation ──► audit
+ └───────────────────────────────────────────────────────────────────────────► audit
 ```
 
 - `iam` no depende de ningún módulo de negocio; todos los demás dependen de `iam` para autenticación y autorización.
 - `cloud` depende de `iam` y de sus propios adaptadores de proveedor.
 - `acquisition` depende de `cloud` (credenciales), `iam` y escribe en `cco_data` mediante los contratos de `data` (no toca `cco_data` directamente).
 - `data` expone contratos de lectura/escritura sobre `cco_data` y aplica los permisos de IAM correspondientes.
-- `analytics` depende de `data` (lectura), `iam` y `MLPort` (Module 6, futuro).
+- `analytics` depende de `data` (lectura), `iam` y consume `ai.MLPort` (frontera de forecast); `analytics` mapea errores de `ai` a los suyos (`fromAIError`) para mantener fronteras diferenciables.
+- `ai` no depende de `analytics` ni de ningún módulo de negocio; solo de `ai/forecast/v1` (protos del servicio Python) y de `jobs` para encolar trabajo (sin crear una nueva cola).
 - `recommendation` usa contratos de Data/Analytics y persiste decisiones en `cco_data`; integra auditoría mediante el contrato genérico de `audit`.
 - El dominio de `audit` no depende de Recommendation, Analytics, Cloud ni GORM. Su repositorio GORM y adapter de `slog` están separados del dominio.
 - Los repositorios de infraestructura pueden usar `platform/database`; las entidades y servicios de dominio dependen de interfaces y DTOs.
@@ -104,6 +114,9 @@ La decisión de Recommendation se confirma primero en `cco_data` y luego se audi
 | `CCO_ACQ_COST_LOOKBACK_DAYS` | `3` | Lookback de costos (días) |
 | `CCO_ACQ_SQL_USER` | — | Credencial SQL para DMVs/Query Store |
 | `CCO_ACQ_SQL_PASSWORD` | — | Contraseña SQL para DMVs/Query Store |
+| `CCO_ML_MODE` | `baseline` | Modo del cliente ML: `baseline` (fake determinista), `not_available` (nunca simula), `grpc` (cliente gRPC productivo al servicio Python) |
+| `CCO_ML_ENDPOINT` | `127.0.0.1:50051` | Endpoint del servicio Python `forecast.v1` (solo usado cuando `CCO_ML_MODE=grpc`) |
+| `CCO_ML_REQUEST_TIMEOUT_SECONDS` | `10` | Timeout de las solicitudes gRPC al servicio ML |
 
 Lista completa en [`API.md`](API.md), sección 1.
 
