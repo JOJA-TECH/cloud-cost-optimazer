@@ -882,29 +882,127 @@ export async function getCostComponents(
 
 export async function getPerfSeries(
   resourceUid?: string | null,
-  metricCode: string = 'cpu_percent',
+  metricCode?: string | null,
   from?: string | null,
   to?: string | null
 ): Promise<ServiceResult<any[]>> {
-  const metricsRes = await getMetrics(resourceUid, metricCode, from, to)
-  if (metricsRes.source === 'backend' && metricsRes.data?.points?.length) {
-    return {
-      data: metricsRes.data.points.map((p, i) => ({
+  const uid = resourceUid ?? getSelectedResourceUid()
+  const range = from && to ? { from, to } : getTimeRange()
+  if (!uid) return { data: null, source: 'mock', error: 'resource_uid missing' }
+
+  // Obtener cada métrica individualmente desde el backend
+  const [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes] = await Promise.all([
+    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=cpu_percent&from=${range.from}&to=${range.to}`),
+    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=io_percent&from=${range.from}&to=${range.to}`),
+    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=memory_percent&from=${range.from}&to=${range.to}`),
+    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=sessions&from=${range.from}&to=${range.to}`),
+    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=latency_ms&from=${range.from}&to=${range.to}`),
+  ])
+
+  const cpuPoints = cpuRes.source === 'backend' && cpuRes.data ? cpuRes.data.points : []
+  const ioPoints = ioRes.source === 'backend' && ioRes.data ? ioRes.data.points : []
+  const memoryPoints = memoryRes.source === 'backend' && memoryRes.data ? memoryRes.data.points : []
+  const sessionsPoints = sessionsRes.source === 'backend' && sessionsRes.data ? sessionsRes.data.points : []
+  const latencyPoints = latencyRes.source === 'backend' && latencyRes.data ? latencyRes.data.points : []
+
+  // Combinar por timestamp_utc
+  const pointMap = new Map<string, any>()
+
+  cpuPoints.forEach((p, i) => {
+    pointMap.set(p.timestamp_utc, {
+      t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      idx: i,
+      p50: +p.avg.toFixed(1),
+      p95: +Math.min(p.avg * 1.25, 96).toFixed(1),
+      p99: +Math.min(p.max, 99).toFixed(1),
+      io: null,
+      memory: null,
+      sessions: null,
+      latency: null,
+    })
+  })
+
+  ioPoints.forEach((p) => {
+    const existing = pointMap.get(p.timestamp_utc)
+    if (existing) {
+      existing.io = +p.avg.toFixed(1)
+    } else {
+      pointMap.set(p.timestamp_utc, {
         t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        idx: i,
-        p50: +p.avg.toFixed(1),
-        p95: +Math.min(p.avg * 1.25, 96).toFixed(1),
-        p99: +Math.min(p.max, 99).toFixed(1),
-        io: +(20 + p.avg * 0.3).toFixed(1),
-        memory: +(58 + p.avg * 0.2).toFixed(1),
-        sessions: Math.round(180 + p.avg * 4),
-        latency: +(4.2 + p.avg * 0.1).toFixed(1),
-      })),
-      source: 'backend',
-      error: null,
+        idx: 0,
+        p50: null,
+        p95: null,
+        p99: null,
+        io: +p.avg.toFixed(1),
+        memory: null,
+        sessions: null,
+        latency: null,
+      })
     }
+  })
+
+  memoryPoints.forEach((p) => {
+    const existing = pointMap.get(p.timestamp_utc)
+    if (existing) {
+      existing.memory = +p.avg.toFixed(1)
+    } else {
+      pointMap.set(p.timestamp_utc, {
+        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        idx: 0,
+        p50: null,
+        p95: null,
+        p99: null,
+        io: null,
+        memory: +p.avg.toFixed(1),
+        sessions: null,
+        latency: null,
+      })
+    }
+  })
+
+  sessionsPoints.forEach((p) => {
+    const existing = pointMap.get(p.timestamp_utc)
+    if (existing) {
+      existing.sessions = Math.round(p.avg)
+    } else {
+      pointMap.set(p.timestamp_utc, {
+        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        idx: 0,
+        p50: null,
+        p95: null,
+        p99: null,
+        io: null,
+        memory: null,
+        sessions: Math.round(p.avg),
+        latency: null,
+      })
+    }
+  })
+
+  latencyPoints.forEach((p) => {
+    const existing = pointMap.get(p.timestamp_utc)
+    if (existing) {
+      existing.latency = +p.avg.toFixed(1)
+    } else {
+      pointMap.set(p.timestamp_utc, {
+        t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        idx: 0,
+        p50: null,
+        p95: null,
+        p99: null,
+        io: null,
+        memory: null,
+        sessions: null,
+        latency: +p.avg.toFixed(1),
+      })
+    }
+  })
+
+  return {
+    data: Array.from(pointMap.values()),
+    source: 'backend',
+    error: null,
   }
-  return { data: perfSeries, source: 'mock', error: metricsRes.error }
 }
 
 export async function getPerfSummary(): Promise<ServiceResult<any[]>> {
