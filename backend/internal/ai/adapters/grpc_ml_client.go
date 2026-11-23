@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
-	forecastv1 "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/forecast/v1"
+	forecastv1 "github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai/forecast/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
