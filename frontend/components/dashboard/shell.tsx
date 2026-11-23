@@ -14,12 +14,24 @@ import {
   RefreshCw,
   Menu,
   X,
+  ChevronDown as ChevronDownIcon,
 } from 'lucide-react'
 import { navItems } from './nav'
 import { LogoMark } from '@/components/logo'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { getDashboardResource } from '@/lib/api-services'
+import {
+  getDashboardResource,
+  getCloudAccounts,
+  getCloudResources,
+  setSelectedResourceUid,
+  getSelectedResourceUid,
+  getTimeRange,
+  setTimeRange,
+  type DashboardResource,
+  type CloudAccount,
+  type CloudResource,
+} from '@/lib/api-services'
 import { useAuth } from '@/components/auth-provider'
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -28,12 +40,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [resource, setResource] = useState({
-    name: 'Cargando...',
-    region: '',
-  } as { name: string; region: string })
+  const [resource, setResource] = useState<DashboardResource | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<CloudAccount[]>([])
+  const [cloudResources, setCloudResourcesState] = useState<CloudResource[]>([])
+  const [resourceDropdownOpen, setResourceDropdownOpen] = useState(false)
+  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string }>(getTimeRange())
 
   // Verificar autenticación: si no hay token, redirigir al login
   useEffect(() => {
@@ -45,21 +58,17 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [token])
 
-  // Verificar en cada cambio de ruta (incluye botón atrás/adelante)
+  // Cargar cuentas y recursos al montar y en cada cambio de ruta
   useEffect(() => {
     if (!token) {
       router.push('/login')
       return
     }
+    loadAccountsAndResources()
     if (typeof window !== 'undefined') {
       setUserName(sessionStorage.getItem('cco_user_name') ?? null)
       setUserEmail(sessionStorage.getItem('cco_user_email') ?? null)
     }
-    getDashboardResource()
-      .then((r) => setResource({ name: r.name, region: r.region }))
-      .catch(() => {
-        // Si falla el backend, dejar valores por defecto
-      })
   }, [token, router, pathname])
 
   // Escuchar popstate (botón atrás/adelante del navegador)
@@ -77,6 +86,58 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [token, router])
+
+  async function loadAccountsAndResources() {
+    try {
+      const accts = await getCloudAccounts()
+      setAccounts(accts)
+      if (accts.length > 0) {
+        const res = await getCloudResources(accts[0].cloud_account_id)
+        setCloudResourcesState(res)
+        if (res.length > 0) {
+          const currentUid = getSelectedResourceUid()
+          const selected = res.find((r) => r.resource_uid === currentUid) ?? res[0]
+          setSelectedResourceUid(selected.resource_uid)
+          const dashboardRes = await getDashboardResource()
+          setResource(dashboardRes ?? null)
+        }
+      }
+    } catch {
+      // Si falla el backend, dejar valores por defecto
+    }
+  }
+
+  function handleResourceChange(uid: string) {
+    setSelectedResourceUid(uid)
+    const selected = cloudResources.find((r) => r.resource_uid === uid)
+    if (selected) {
+      setResource({
+        resource_uid: selected.resource_uid,
+        name: selected.database_name,
+        server: selected.server_name,
+        service: 'Azure SQL Database',
+        tier: 'General Purpose',
+        computeModel: 'Provisioned',
+        vCores: 8,
+        memoryGb: 40.8,
+        region: selected.region_code,
+        storageUsedGb: 214,
+        storageLimitGb: 512,
+        redundancy: 'Zone-redundant',
+        state: selected.lifecycle_status,
+        lastSyncMinutes: 8,
+        collation: 'SQL_Latin1_General_CP1_CI_AS',
+        maxWorkers: 800,
+        maxSessions: 2400,
+      })
+    }
+    setResourceDropdownOpen(false)
+  }
+
+  function handleTimeRangeChange(from: string, to: string) {
+    setTimeRange(from, to)
+    setTimeRangeState({ from, to })
+  }
 
   if (!token) return null
 
@@ -116,7 +177,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onMenu={() => setMobileOpen(true)} resource={resource} userName={userName ?? 'Usuario'} />
+        <TopBar
+          onMenu={() => setMobileOpen(true)}
+          resource={resource ?? { name: 'Cargando...', region: '', resource_uid: '' }}
+          userName={userName ?? 'Usuario'}
+          accounts={accounts}
+          cloudResources={cloudResources}
+          selectedResourceUid={getSelectedResourceUid() ?? ''}
+          timeRange={timeRange}
+          onResourceChange={handleResourceChange}
+          onTimeRangeChange={handleTimeRangeChange}
+          resourceDropdownOpen={resourceDropdownOpen}
+          setResourceDropdownOpen={setResourceDropdownOpen}
+        />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 pb-24 sm:px-6 md:pb-6">
           {children}
         </main>
@@ -220,7 +293,33 @@ function SidebarContent({
   )
 }
 
-function TopBar({ onMenu, resource, userName }: { onMenu: () => void; resource: { name: string; region: string }; userName: string }) {
+function TopBar({
+  onMenu,
+  resource,
+  userName,
+  accounts,
+  cloudResources,
+  selectedResourceUid,
+  timeRange,
+  onResourceChange,
+  onTimeRangeChange,
+  resourceDropdownOpen,
+  setResourceDropdownOpen,
+}: {
+  onMenu: () => void
+  resource: DashboardResource
+  userName: string
+  accounts: CloudAccount[]
+  cloudResources: CloudResource[]
+  selectedResourceUid: string
+  timeRange: { from: string; to: string }
+  onResourceChange: (uid: string) => void
+  onTimeRangeChange: (from: string, to: string) => void
+  resourceDropdownOpen: boolean
+  setResourceDropdownOpen: (open: boolean) => void
+}) {
+  const selectedResource = cloudResources.find((r) => r.resource_uid === selectedResourceUid)
+
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-6">
       <button
@@ -231,30 +330,89 @@ function TopBar({ onMenu, resource, userName }: { onMenu: () => void; resource: 
         <Menu className="size-5" />
       </button>
 
-      <button className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted">
+      {/* Selector de recurso */}
+      <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted">
         <Database className="size-4 text-primary" />
-        <span className="max-w-[9rem] truncate sm:max-w-none">{resource.name}</span>
-        <ChevronDown className="size-3.5 text-muted-foreground" />
-      </button>
+        <div className="flex flex-col items-start">
+          <span className="max-w-[12rem] truncate sm:max-w-none font-semibold">
+            {resource.name}
+          </span>
+          {cloudResources.length > 1 && (
+            <span className="text-[10px] text-muted-foreground truncate max-w-[12rem]">
+              {selectedResource?.region_code ?? resource.region}
+            </span>
+          )}
+        </div>
+        <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+        {cloudResources.length > 1 && (
+          <div
+            className={cn(
+              'absolute right-0 mt-2 w-64 bg-card border border-border rounded-md shadow-lg z-50',
+              resourceDropdownOpen ? '' : 'hidden',
+            )}
+          >
+            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Recurso
+            </div>
+            <div className="py-1 overflow-y-auto max-h-48">
+              {cloudResources.map((r) => (
+                <button
+                  key={r.resource_uid}
+                  onClick={() => onResourceChange(r.resource_uid)}
+                  className={cn(
+                    'flex w-full items-center gap-3 px-3 py-2 text-sm transition-colors',
+                    r.resource_uid === selectedResourceUid
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-foreground hover:bg-muted',
+                  )}
+                >
+                  <span className="truncate max-w-[10rem]">{r.database_name}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">
+                    {r.region_code}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <Badge variant="neutral" className="hidden lg:inline-flex">
         Azure SQL
       </Badge>
-      <span className="hidden items-center gap-1 text-xs text-muted-foreground lg:flex">
-        <MapPin className="size-3.5" />
-        {resource.region}
-      </span>
+
+      {/* Selector de ventana temporal */}
+      <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
+        <Calendar className="size-4 text-primary" />
+        <span className="ml-1 text-xs font-medium text-foreground hidden sm:inline">
+          Desde:
+        </span>
+        <input
+          type="datetime-local"
+          className="text-xs bg-transparent border-none focus:ring-0 w-[130px]"
+          value={timeRange.from.slice(0, 16)}
+          onChange={(e) => {
+            const from = new Date(e.target.value).toISOString()
+            onTimeRangeChange(from, timeRange.to)
+          }}
+        />
+        <span className="mx-1 text-xs text-muted-foreground hidden sm:inline">Hasta:</span>
+        <input
+          type="datetime-local"
+          className="text-xs bg-transparent border-none focus:ring-0 w-[130px]"
+          value={timeRange.to.slice(0, 16)}
+          onChange={(e) => {
+            const to = new Date(e.target.value).toISOString()
+            onTimeRangeChange(timeRange.from, to)
+          }}
+        />
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         <button className="hidden items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted sm:flex">
-          <Calendar className="size-3.5 text-muted-foreground" />
-          Last 30 days
-          <ChevronDown className="size-3 text-muted-foreground" />
-        </button>
-        <span className="hidden items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground sm:flex">
           <RefreshCw className="size-3" />
           8 min ago
-        </span>
+        </button>
         <span className="flex size-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
           {getInitials(userName)}
         </span>

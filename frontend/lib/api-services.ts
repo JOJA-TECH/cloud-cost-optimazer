@@ -180,6 +180,65 @@ async function tryBackend<T>(fn: () => Promise<T>): Promise<T | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Contexto de sesión: recurso seleccionado y ventana temporal
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TimeRange {
+  from: string
+  to: string
+}
+
+const SESSION_RESOURCE_UID = 'cco_selected_resource_uid'
+const SESSION_TIME_RANGE = 'cco_selected_time_range'
+
+// Ventana por defecto: últimos 30 días
+function defaultTimeRange(): TimeRange {
+  const to = new Date()
+  const from = new Date(to)
+  from.setDate(to.getDate() - 30)
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  }
+}
+
+export function getSelectedResourceUid(): string | null {
+  if (typeof window === 'undefined') return null
+  return sessionStorage.getItem(SESSION_RESOURCE_UID) ?? null
+}
+
+export function setSelectedResourceUid(uid: string | null): void {
+  if (typeof window === 'undefined') return
+  if (uid) {
+    sessionStorage.setItem(SESSION_RESOURCE_UID, uid)
+  } else {
+    sessionStorage.removeItem(SESSION_RESOURCE_UID)
+  }
+}
+
+export function getTimeRange(): TimeRange {
+  if (typeof window === 'undefined') return defaultTimeRange()
+  const raw = sessionStorage.getItem(SESSION_TIME_RANGE)
+  if (!raw) return defaultTimeRange()
+  try {
+    const parsed = JSON.parse(raw) as TimeRange
+    if (parsed.from && parsed.to) return parsed
+  } catch {}
+  return defaultTimeRange()
+}
+
+export function setTimeRange(from: string, to: string): void {
+  if (typeof window === 'undefined') return
+  sessionStorage.setItem(SESSION_TIME_RANGE, JSON.stringify({ from, to }))
+}
+
+// Formatea una fecha a RFC3339 UTC para enviar al backend
+export function toRfc3339(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  return d.toISOString()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cloud accounts / resources (funcionan con solo SQLite)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -200,12 +259,33 @@ export async function getCloudResources(accountId?: string): Promise<CloudResour
   return data?.resources ?? []
 }
 
-export async function getDashboardResource(): Promise<typeof mockResource> {
+export interface DashboardResource {
+  resource_uid: string
+  name: string
+  server: string
+  service: string
+  tier: string
+  computeModel: string
+  vCores: number
+  memoryGb: number
+  region: string
+  storageUsedGb: number
+  storageLimitGb: number
+  redundancy: string
+  state: string
+  lastSyncMinutes: number
+  collation: string
+  maxWorkers: number
+  maxSessions: number
+}
+
+export async function getDashboardResource(): Promise<DashboardResource | null> {
   try {
     const cloudResources = await getCloudResources()
     if (cloudResources.length > 0) {
       const r = cloudResources[0]
-      return {
+      const resource: DashboardResource = {
+        resource_uid: r.resource_uid,
         name: r.database_name,
         server: r.server_name,
         service: 'Azure SQL Database',
@@ -223,9 +303,12 @@ export async function getDashboardResource(): Promise<typeof mockResource> {
         maxWorkers: 800,
         maxSessions: 2400,
       }
+      // Guardar el resource_uid seleccionado en sesión para que las páginas lo usen
+      setSelectedResourceUid(r.resource_uid)
+      return resource
     }
   } catch {}
-  return mockResource
+  return null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,36 +316,44 @@ export async function getDashboardResource(): Promise<typeof mockResource> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getMetrics(
-  resourceUid: string,
-  metricCode: string,
-  from: string,
-  to: string
+  resourceUid?: string | null,
+  metricCode?: string | null,
+  from?: string | null,
+  to?: string | null
 ): Promise<MetricsResponse | null> {
+  const uid = resourceUid ?? getSelectedResourceUid()
+  const range = from && to ? { from, to } : getTimeRange()
+  if (!uid || !metricCode) return null
   return tryBackend(() =>
     apiJson<MetricsResponse>(
-      `/api/v1/data/metrics?resource_uid=${resourceUid}&metric_code=${metricCode}&from=${from}&to=${to}`
+      `/api/v1/data/metrics?resource_uid=${uid}&metric_code=${metricCode}&from=${range.from}&to=${range.to}`
     )
   )
 }
 
 export async function getCosts(
-  resourceUid: string,
-  from: string,
-  to: string
+  resourceUid?: string | null,
+  from?: string | null,
+  to?: string | null
 ): Promise<CostRecord[]> {
+  const uid = resourceUid ?? getSelectedResourceUid()
+  const range = from && to ? { from, to } : getTimeRange()
+  if (!uid) return []
   const data = await tryBackend(() =>
     apiJson<CostRecord[]>(
-      `/api/v1/data/costs?resource_uid=${resourceUid}&from=${from}&to=${to}`
+      `/api/v1/data/costs?resource_uid=${uid}&from=${range.from}&to=${range.to}`
     )
   )
   return data ?? []
 }
 
 export async function getConfigSnapshots(
-  resourceUid: string
+  resourceUid?: string | null
 ): Promise<ConfigSnapshot[]> {
+  const uid = resourceUid ?? getSelectedResourceUid()
+  if (!uid) return []
   const data = await tryBackend(() =>
-    apiJson<ConfigSnapshot[]>(`/api/v1/data/config-snapshots?resource_uid=${resourceUid}`)
+    apiJson<ConfigSnapshot[]>(`/api/v1/data/config-snapshots?resource_uid=${uid}`)
   )
   return data ?? []
 }
@@ -288,8 +379,12 @@ export async function getKpis() {
   return kpis
 }
 
-export async function getCostDaily() {
-  const costs = await getCosts('mock-resource', '', '')
+export async function getCostDaily(
+  resourceUid?: string | null,
+  from?: string | null,
+  to?: string | null
+) {
+  const costs = await getCosts(resourceUid, from, to)
   if (costs.length > 0) {
     // Mapear registros de costo al formato de costDaily
     return costs.map((c) => ({
@@ -303,8 +398,12 @@ export async function getCostDaily() {
   return costDaily
 }
 
-export async function getCostComponents() {
-  const costs = await getCosts('mock-resource', '', '')
+export async function getCostComponents(
+  resourceUid?: string | null,
+  from?: string | null,
+  to?: string | null
+) {
+  const costs = await getCosts(resourceUid, from, to)
   if (costs.length > 0) {
     const byService = new Map<string, number>()
     for (const c of costs) {
@@ -322,9 +421,14 @@ export async function getCostComponents() {
   return costComponents
 }
 
-export async function getPerfSeries() {
+export async function getPerfSeries(
+  resourceUid?: string | null,
+  metricCode: string = 'cpu_percent',
+  from?: string | null,
+  to?: string | null
+) {
   // Intenta obtener métricas reales del backend
-  const metrics = await getMetrics('mock-resource', 'cpu_percent', '', '')
+  const metrics = await getMetrics(resourceUid, metricCode, from, to)
   if (metrics?.points.length) {
     return metrics.points.map((p, i) => ({
       t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
@@ -395,7 +499,7 @@ export async function getHistory(): Promise<HistoryItem[]> {
     return data.map((r) => ({
       id: r.id,
       date: r.generated,
-      resource: 'sql-prod-orders-eastus',
+      resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus',
       current: r.from,
       proposed: r.to,
       savings: `${r.savingsPct}%`,
