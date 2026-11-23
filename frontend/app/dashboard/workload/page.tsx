@@ -38,6 +38,7 @@ export default function WorkloadPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
+
     getWorkloadHourly()
       .then(setWorkloadHourly)
       .catch(() => setWorkloadHourly([]))
@@ -49,11 +50,11 @@ export default function WorkloadPage() {
       .catch(() => setWorkloadPatterns(workloadPatternsMock))
     getWorkloadPattern()
       .then((p) => {
-        if (p) {
+        if (p && p.data) {
           setCls({
-            pattern: p.pattern,
-            confidence: p.confidence,
-            evidence: p.evidence,
+            pattern: p.data.pattern,
+            confidence: p.data.confidence,
+            evidence: p.data.evidence,
             metrics: cls.metrics,
           })
           setPatternLoaded(true)
@@ -100,7 +101,7 @@ export default function WorkloadPage() {
                   </Badge>
                 </div>
                 <ul className="mt-4 space-y-2">
-                  {cls.evidence.map((e) => (
+                  {cls.evidence.map((e: string) => (
                     <li key={e} className="flex items-start gap-2 text-xs text-muted-foreground">
                       <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" />
                       {e}
@@ -112,7 +113,7 @@ export default function WorkloadPage() {
               <div className="mt-4">
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Supported classifications</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {workloadPatterns.map((p) => (
+                  {workloadPatterns.map((p: string) => (
                     <Badge key={p} variant={p === cls.pattern ? 'solid' : 'neutral'}>
                       {p}
                     </Badge>
@@ -124,7 +125,7 @@ export default function WorkloadPage() {
             <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day">
               <AreaTrend data={workloadHourly} dataKey="intensity" xKey="hour" unit="%" height={200} color="var(--chart-1)" />
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {cls.metrics.map((m) => (
+                {cls.metrics.map((m: any) => (
                   <div key={m.label} className="rounded-lg border border-border bg-background p-3">
                     <p className="text-[11px] text-muted-foreground">{m.label}</p>
                     <p className="mt-0.5 text-sm font-semibold text-foreground">{m.value}</p>

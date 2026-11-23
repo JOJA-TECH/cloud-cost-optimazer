@@ -58,8 +58,6 @@ export default function ReportsPage() {
   async function loadReports() {
     setLoadingReports(true)
     try {
-      // No hay endpoint para listar todos los reports, así que mostramos
-      // un estado vacío o simulamos desde localStorage si es necesario
       setReports([])
     } catch {
       // Ignorar errores al cargar
@@ -87,20 +85,20 @@ export default function ReportsPage() {
       }
 
       const result = await generateOptimizationReport(request)
-      if (result) {
+      if (result.source === 'backend' && result.data) {
         setReports((prev) => [
           {
-            job_uid: result.report_uid,
-            status: result.status,
-            report_uid: result.report_uid,
-            artifact_uid: result.artifact?.uid ?? null,
-            created_at: result.created_at,
+            job_uid: result.data.report_uid,
+            status: result.data.status,
+            report_uid: result.data.report_uid,
+            artifact_uid: result.data.artifact?.uid ?? null,
+            created_at: result.data.created_at,
             started_at: null,
             completed_at: null,
             error_message: null,
-            report_type: result.format,
-            format: result.format,
-            downloadable: !!result.artifact?.storage_uri,
+            report_type: result.data.format,
+            format: result.data.format,
+            downloadable: !!result.data.artifact?.storage_uri,
           },
           ...prev,
         ])
@@ -131,20 +129,20 @@ export default function ReportsPage() {
       }
 
       const job = await queueOptimizationReport(request)
-      if (job) {
+      if (job.source === 'backend' && job.data) {
         setReports((prev) => [
           {
-            job_uid: job.job_uid,
-            status: job.status,
-            report_uid: job.report_uid ?? null,
-            artifact_uid: job.artifact_uid ?? null,
-            created_at: job.created_at,
-            started_at: job.started_at ?? null,
-            completed_at: job.completed_at ?? null,
-            error_message: job.error_message ?? null,
-            report_type: job.report_type,
-            format,
-            downloadable: !!job.artifact_uid,
+            job_uid: job.data.job_uid,
+            status: job.data.status,
+            report_uid: job.data.report_uid ?? null,
+            artifact_uid: job.data.artifact_uid ?? null,
+            created_at: job.data.created_at,
+            started_at: job.data.started_at ?? null,
+            completed_at: job.data.completed_at ?? null,
+            error_message: job.data.error_message ?? null,
+            report_type: job.data.report_type,
+            format: format,
+            downloadable: !!job.data.artifact_uid,
           },
           ...prev,
         ])
@@ -158,18 +156,18 @@ export default function ReportsPage() {
 
   async function handleRefreshStatus(jobUid: string) {
     const job = await getReportStatus(jobUid)
-    if (job) {
+    if (job.source === 'backend' && job.data) {
       setReports((prev) =>
         prev.map((r) =>
           r.job_uid === jobUid
             ? {
                 ...r,
-                status: job.status,
-                report_uid: job.report_uid ?? r.report_uid,
-                artifact_uid: job.artifact_uid ?? r.artifact_uid,
-                completed_at: job.completed_at ?? r.completed_at,
-                error_message: job.error_message ?? r.error_message,
-                downloadable: !!job.artifact_uid,
+                status: job.data.status,
+                report_uid: job.data.report_uid ?? r.report_uid,
+                artifact_uid: job.data.artifact_uid ?? r.artifact_uid,
+                completed_at: job.data.completed_at ?? r.completed_at,
+                error_message: job.data.error_message ?? r.error_message,
+                downloadable: !!job.data.artifact_uid,
               }
             : r
         )
@@ -179,11 +177,11 @@ export default function ReportsPage() {
 
   async function handleCancel(jobUid: string) {
     const result = await cancelReport(jobUid)
-    if (result) {
+    if (result && result.source === 'backend' && result.data) {
       setReports((prev) =>
         prev.map((r) =>
           r.job_uid === jobUid
-            ? { ...r, status: result.status }
+            ? { ...r, status: result.data.status }
             : r
         )
       )
@@ -244,7 +242,6 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
-          {/* Formulario de generación de reporte */}
           <Panel title="Generar reporte de optimización" className="mb-4">
             <form onSubmit={handleGenerateReport} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
@@ -332,7 +329,6 @@ export default function ReportsPage() {
             </form>
           </Panel>
 
-          {/* Lista de jobs/reportes */}
           <Panel title="Reportes y jobs" className="mt-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-foreground">

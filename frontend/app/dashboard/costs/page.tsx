@@ -5,7 +5,13 @@ import { DollarSign, Tag, Calculator, TrendingDown } from 'lucide-react'
 import { PageHeader, KpiCard, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { AreaTrend, Bars, Donut } from '@/components/charts'
-import { getKpis, getCostDaily, getCostComponents, getSelectedResourceUid, getTimeRange } from '@/lib/api-services'
+import {
+  getKpis,
+  getCostDaily,
+  getCostComponents,
+  getSelectedResourceUid,
+  getTimeRange,
+} from '@/lib/api-services'
 
 const valueTypes = [
   { label: 'Billed cost', desc: 'Actual usage billed by Azure', color: 'var(--chart-1)' },
@@ -30,12 +36,13 @@ type CostComponent = {
 }
 
 export default function CostsPage() {
-  const [kpis, setKpis] = useState(kpisMock)
+  const [kpis, setKpis] = useState<any>(kpisMock)
   const [costDaily, setCostDaily] = useState<CostDay[]>([])
   const [costComponents, setCostComponents] = useState<CostComponent[]>([])
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
   const [costsLoaded, setCostsLoaded] = useState(false)
+  const [costsSource, setCostsSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -46,15 +53,24 @@ export default function CostsPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
+
     getCostDaily(resourceUid, timeRange.from, timeRange.to)
-      .then((d) => {
-        setCostDaily(d)
-        setCostsLoaded(d.length > 0)
+      .then((res) => {
+        setCostDaily(res.data ?? [])
+        setCostsLoaded(!!res.data && res.data.length > 0)
+        setCostsSource(res.source)
       })
       .catch(() => setCostsLoaded(false))
+
     getCostComponents(resourceUid, timeRange.from, timeRange.to)
-      .then((c) => setCostComponents(c))
-      .catch(() => setCostComponents([]))
+      .then((res) => {
+        setCostComponents(res.data ?? costComponentsMock)
+      })
+      .catch(() => setCostComponents(costComponentsMock))
+
+    getKpis().then((res) => {
+      setKpis(res.data ?? kpisMock)
+    })
   }, [resourceUid, timeRange])
 
   const donutData = costComponents.map((c) => ({ name: c.name, value: c.current, color: c.color }))
@@ -73,7 +89,7 @@ export default function CostsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Last 30 days</Badge>
-            <Badge variant="outline" className="text-[9px]">{costsLoaded ? 'Datos reales' : 'Demo'}</Badge>
+            <Badge variant="outline" className="text-[9px]">{costsSource}</Badge>
           </div>
         }
       />
@@ -202,7 +218,7 @@ const kpisMock = {
   estimatedCost: 368.4,
   estimatedSavings: 117.8,
   savingsPct: 24.2,
-  risk: 'Low' as const,
+  risk: 'Low',
   confidence: 91,
 }
 

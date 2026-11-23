@@ -67,8 +67,9 @@ export default function IntelligencePage() {
       try {
         const cloudResources = await getCloudResources()
         if (!active) return
-        setResources(cloudResources)
-        const selected = cloudResources[0]?.resource_uid ?? ''
+        const data = cloudResources.source === 'backend' ? cloudResources.data : []
+        setResources(data)
+        const selected = data[0]?.resource_uid ?? ''
         setResourceUID(selected)
         if (!selected) setPageError('No hay recursos cloud accesibles. Verifica el módulo Cloud, el binding de datos y el permiso resources:read.')
       } catch (error) {

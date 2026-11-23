@@ -32,6 +32,7 @@ export default function ForecastingPage() {
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
   const [forecastLoaded, setForecastLoaded] = useState(false)
+  const [forecastSource, setForecastSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -42,10 +43,11 @@ export default function ForecastingPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
+
     getAnalyticsForecasts('cpu_percent')
-      .then((forecast) => {
-        if (forecast && forecast.points.length > 0) {
-          const series: ForecastPoint[] = forecast.points.map((p) => ({
+      .then((forecastRes) => {
+        if (forecastRes.source === 'backend' && forecastRes.data && forecastRes.data.points?.length > 0) {
+          const series: ForecastPoint[] = forecastRes.data.points.map((p) => ({
             t: p.timestamp_utc,
             observed: null,
             forecast: p.forecast,
@@ -54,8 +56,10 @@ export default function ForecastingPage() {
           }))
           setForecastSeries(series)
           setForecastLoaded(true)
+          setForecastSource('backend')
         } else {
           setForecastLoaded(false)
+          setForecastSource('mock')
         }
       })
       .catch(() => setForecastLoaded(false))
@@ -69,7 +73,7 @@ export default function ForecastingPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Horizon: {forecastMeta.horizonDays} days</Badge>
-            <Badge variant="outline" className="text-[9px]">{forecastLoaded ? 'Datos reales' : 'Demo'}</Badge>
+            <Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>
           </div>
         }
       />
@@ -107,7 +111,7 @@ export default function ForecastingPage() {
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <Panel title="Model error" description="Backtested accuracy over the window">
               <div className="grid grid-cols-3 gap-3">
-                {forecastMeta.errors.map((e) => (
+                {forecastMeta.errors.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3 text-center">
                     <p className="text-lg font-semibold tabular-nums text-foreground">{e.value}</p>
                     <p className="text-[11px] text-muted-foreground">{e.label}</p>

@@ -8,7 +8,15 @@ import { RecommendationSummary } from '@/components/dashboard/recommendation-sum
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AreaTrend, MultiLine } from '@/components/charts'
-import { getKpis, getCostDaily, getPerfSeries, getDataQuality, getRecommendationSummary, getSelectedResourceUid, getTimeRange } from '@/lib/api-services'
+import {
+  getKpis,
+  getCostDaily,
+  getPerfSeries,
+  getDataQuality,
+  getRecommendationSummary,
+  getSelectedResourceUid,
+  getTimeRange,
+} from '@/lib/api-services'
 
 type CostDay = {
   day: string
@@ -31,15 +39,20 @@ type PerfPoint = {
 }
 
 export default function OverviewPage() {
-  const [kpis, setKpis] = useState(kpisMock)
+  const [kpis, setKpis] = useState<any>(kpisMock)
+  const [kpisSource, setKpisSource] = useState<'mock' | 'backend'>('mock')
   const [costDaily, setCostDaily] = useState<CostDay[]>([])
+  const [costsLoaded, setCostsLoaded] = useState(false)
+  const [costsSource, setCostsSource] = useState<'mock' | 'backend'>('mock')
   const [perfSeries, setPerfSeries] = useState<PerfPoint[]>([])
-  const [dataQuality, setDataQuality] = useState(dataQualityMock)
-  const [rec, setRec] = useState(recMock)
+  const [perfLoaded, setPerfLoaded] = useState(false)
+  const [perfSource, setPerfSource] = useState<'mock' | 'backend'>('mock')
+  const [dataQuality, setDataQuality] = useState<any>(dataQualityMock)
+  const [dataQualitySource, setDataQualitySource] = useState<'mock' | 'backend'>('mock')
+  const [rec, setRec] = useState<any>(recMock)
+  const [recSource, setRecSource] = useState<'mock' | 'backend'>('mock')
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
-  const [costsLoaded, setCostsLoaded] = useState(false)
-  const [perfLoaded, setPerfLoaded] = useState(false)
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -50,25 +63,37 @@ export default function OverviewPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
-    getCostDaily(resourceUid, timeRange.from, timeRange.to)
-      .then((d) => {
-        setCostDaily(d)
-        setCostsLoaded(d.length > 0)
-      })
-      .catch(() => setCostsLoaded(false))
+
+    getCostDaily(resourceUid, timeRange.from, timeRange.to).then((res) => {
+      setCostDaily(res.data ?? [])
+      setCostsLoaded(!!res.data && res.data.length > 0)
+      setCostsSource(res.source)
+    })
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
-      .then((d) => {
-        setPerfSeries(d)
-        setPerfLoaded(d.length > 0)
+      .then((res) => {
+        setPerfSeries(res.data ?? [])
+        setPerfLoaded(!!res.data && res.data.length > 0)
+        setPerfSource(res.source)
       })
-      .catch(() => setPerfLoaded(false))
   }, [resourceUid, timeRange])
 
   useEffect(() => {
-    getKpis().then(setKpis)
-    getDataQuality().then(setDataQuality)
-    getRecommendationSummary().then(setRec)
+    getKpis().then((res) => {
+      setKpis(res.data ?? kpisMock)
+      setKpisSource(res.source)
+    })
+    getDataQuality().then((res) => {
+      setDataQuality(res.data ?? dataQualityMock)
+      setDataQualitySource(res.source)
+    })
+    getRecommendationSummary().then((res) => {
+      setRec(res.data ?? recMock)
+      setRecSource(res.source)
+    })
   }, [])
+
+  const anyDataLoaded = costsLoaded || perfLoaded
+  const anyDataReal = costsSource === 'backend' || perfSource === 'backend'
 
   return (
     <div>
@@ -82,7 +107,7 @@ export default function OverviewPage() {
               {kpis.status}
             </Badge>
             <Badge variant="outline" className="h-7 px-2.5 text-[10px]">
-              {costsLoaded || perfLoaded ? 'Datos reales' : 'Demo'}
+              {anyDataReal ? 'Datos reales' : 'Demo'}
             </Badge>
           </div>
         }
@@ -122,8 +147,9 @@ export default function OverviewPage() {
             <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
               <span className="text-xs text-muted-foreground">Global confidence</span>
               <Badge variant="success">{dataQuality.globalConfidence}</Badge>
+              <Badge variant="outline" className="text-[9px]">{dataQualitySource}</Badge>
             </div>
-            {dataQuality.items.slice(0, 5).map((item) => (
+            {dataQuality.items.slice(0, 5).map((item: any) => (
               <div key={item.label} className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">{item.label}</span>
                 <span className="font-medium tabular-nums text-foreground">{item.value}</span>
@@ -211,7 +237,7 @@ const kpisMock = {
   estimatedCost: 368.4,
   estimatedSavings: 117.8,
   savingsPct: 24.2,
-  risk: 'Low' as const,
+  risk: 'Low',
   confidence: 91,
 }
 
@@ -226,11 +252,11 @@ const perfSeriesMock: PerfPoint[] = [
 const dataQualityMock = {
   globalConfidence: 'High',
   items: [
-    { label: 'Last collected', value: '8 min ago', info: '', tone: 'good' as const },
-    { label: 'Historical duration', value: '30 days', info: '', tone: 'good' as const },
-    { label: 'Sampling interval', value: '5 min', info: '', tone: 'good' as const },
-    { label: 'Coverage', value: '96%', info: '', tone: 'good' as const },
-    { label: 'Missing metrics', value: 'None', info: '', tone: 'good' as const },
+    { label: 'Last collected', value: '8 min ago', info: '', tone: 'good' },
+    { label: 'Historical duration', value: '30 days', info: '', tone: 'good' },
+    { label: 'Sampling interval', value: '5 min', info: '', tone: 'good' },
+    { label: 'Coverage', value: '96%', info: '', tone: 'good' },
+    { label: 'Missing metrics', value: 'None', info: '', tone: 'good' },
   ],
 }
 
@@ -241,19 +267,19 @@ const recMock = {
   to: '4 vCores',
   savingsPct: 24.2,
   savingsAbs: 117.8,
-  risk: 'Low' as const,
+  risk: 'Low',
   confidence: 91,
   latencyImpact: 2.1,
   analysisPeriod: 'Last 30 days',
   generated: 'Today, 14:32',
   modelVersion: 'rightsizer v1.4.2 · ruleset 2024.11',
   evidence: [
-    { label: 'CPU p95', value: '28%', tone: 'good' as const },
-    { label: 'CPU p99', value: '41%', tone: 'good' as const },
-    { label: 'I/O p95', value: 'Below threshold', tone: 'good' as const },
-    { label: 'Workload trend', value: 'Stable', tone: 'good' as const },
-    { label: 'Headroom', value: 'Sufficient', tone: 'good' as const },
-    { label: 'SLA (30d)', value: '99.97%', tone: 'good' as const },
+    { label: 'CPU p95', value: '28%', tone: 'good' },
+    { label: 'CPU p99', value: '41%', tone: 'good' },
+    { label: 'I/O p95', value: 'Below threshold', tone: 'good' },
+    { label: 'Workload trend', value: 'Stable', tone: 'good' },
+    { label: 'Headroom', value: 'Sufficient', tone: 'good' },
+    { label: 'SLA (30d)', value: '99.97%', tone: 'good' },
   ],
   constraints: [
     { label: 'p95 latency within threshold', pass: true },

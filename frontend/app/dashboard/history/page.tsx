@@ -43,25 +43,25 @@ export default function HistoryPage() {
   useEffect(() => {
     if (!resourceUid || !timeRange) return
 
-    // Cargar historial de recomendaciones
-    getHistory().then((h) => {
-      setRows(h)
-      setHistoryLoaded(true)
-      if (!open || !h.find((x) => x.id === open)) {
-        setOpen(h[0]?.id ?? null)
+    getHistory().then((hRes) => {
+      if (hRes.source === 'backend' && hRes.data) {
+        setRows(hRes.data)
+        setHistoryLoaded(true)
+        if (!open || !hRes.data.find((x) => x.id === open)) {
+          setOpen(hRes.data[0]?.id ?? null)
+        }
       }
     })
 
-    // Cargar eventos de audit para este recurso
     getAuditEvents({
       entity_type: 'recommendation',
       from: timeRange.from,
       to: timeRange.to,
       limit: 50,
     }).then((res) => {
-      if (res) {
+      if (res.source === 'backend' && res.data) {
         setAuditEvents(
-          res.items.map((e) => ({
+          res.data.items.map((e) => ({
             event_id: e.event_id,
             occurred_at: e.occurred_at,
             action: e.action,
@@ -89,7 +89,6 @@ export default function HistoryPage() {
         description="Historial de recomendaciones y traza de auditoría. El historial muestra decisiones de right-sizing generadas; la traza de auditoría registra quién tomó cada decisión y cuándo."
       />
 
-      {/* Filtro de estado */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {statuses.map((s) => (
           <button
@@ -107,7 +106,6 @@ export default function HistoryPage() {
         ))}
       </div>
 
-      {/* Sección 1: Historial de recomendaciones */}
       <Panel
         title="Historial de recomendaciones"
         description="Cada recomendación generada con su configuración, ahorro, riesgo, confianza y estado."
@@ -185,7 +183,6 @@ export default function HistoryPage() {
         </div>
       </Panel>
 
-      {/* Sección 2: Traza de auditoría */}
       <Panel
         title="Traza de auditoría (Audit Trail)"
         description="Eventos de auditoría registrados para decisiones de recomendación: quién, cuándo, qué acción y evidencia asociada."

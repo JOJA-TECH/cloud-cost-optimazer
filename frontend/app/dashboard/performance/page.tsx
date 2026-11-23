@@ -5,7 +5,13 @@ import { PageHeader, Panel, toneText } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { AreaTrend, MultiLine } from '@/components/charts'
-import { getPerfSeries, getPerfSummary, getReliabilityEvents, getSelectedResourceUid, getTimeRange } from '@/lib/api-services'
+import {
+  getPerfSeries,
+  getPerfSummary,
+  getReliabilityEvents,
+  getSelectedResourceUid,
+  getTimeRange,
+} from '@/lib/api-services'
 
 const ranges = [
   { label: '24h', hours: 24 },
@@ -35,11 +41,12 @@ export default function PerformancePage() {
   const [hours, setHours] = useState(72)
   const [active, setActive] = useState<Record<string, boolean>>({ p50: true, p95: true, p99: true })
   const [data, setData] = useState<PerfPoint[]>([])
-  const [perfSummary, setPerfSummary] = useState(perfSummaryMock)
-  const [reliabilityEvents, setReliabilityEvents] = useState(reliabilityEventsMock)
+  const [perfSummary, setPerfSummary] = useState<any[]>(perfSummaryMock)
+  const [reliabilityEvents, setReliabilityEvents] = useState<any[]>(reliabilityEventsMock)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
   const [metricsLoaded, setMetricsLoaded] = useState(false)
+  const [perfSource, setPerfSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -50,14 +57,21 @@ export default function PerformancePage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) return
+
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
-      .then((d) => {
-        setData(d)
-        setMetricsLoaded(d.length > 0)
+      .then((res) => {
+        setData(res.data ?? [])
+        setMetricsLoaded(!!res.data && res.data.length > 0)
+        setPerfSource(res.source)
       })
       .catch(() => setMetricsLoaded(false))
-    getPerfSummary().then(setPerfSummary)
-    getReliabilityEvents().then(setReliabilityEvents)
+
+    getPerfSummary().then((res) => {
+      setPerfSummary(res.data ?? perfSummaryMock)
+    })
+    getReliabilityEvents().then((res) => {
+      setReliabilityEvents(res.data ?? reliabilityEventsMock)
+    })
   }, [resourceUid, timeRange])
 
   const shownData = metricsLoaded ? data.slice(-hours) : []
@@ -96,7 +110,7 @@ export default function PerformancePage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-            {perfSummary.map((m) => (
+            {perfSummary.map((m: any) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-3 shadow-sm">
                 <p className="text-[11px] text-muted-foreground">{m.label}</p>
                 <p className={cn('mt-1 text-base font-semibold tabular-nums', toneText(m.tone))}>
@@ -161,9 +175,9 @@ export default function PerformancePage() {
             <Panel title="Memory utilization" description="Working set as percent of provisioned">
               <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
             </Panel>
-            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
+            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{perfSource}</Badge>}>
               <div className="grid grid-cols-2 gap-3">
-                {reliabilityEvents.map((e) => (
+                {reliabilityEvents.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">{e.label}</p>
@@ -185,24 +199,24 @@ export default function PerformancePage() {
   )
 }
 
-const perfSeriesMock = [
+const perfSeriesMock: PerfPoint[] = [
   { t: '00:00', idx: 0, p50: 12, p95: 21, p99: 26, io: 24, memory: 58, sessions: 180, latency: 4.2 },
 ]
 
 const perfSummaryMock = [
-  { label: 'CPU p50', value: '18%', tone: 'good' as const },
-  { label: 'CPU p95', value: '28%', tone: 'good' as const },
-  { label: 'CPU p99', value: '41%', tone: 'good' as const },
-  { label: 'I/O p95', value: '52%', tone: 'good' as const },
-  { label: 'Memory', value: '68%', tone: 'warn' as const },
-  { label: 'Peak sessions', value: '820 / 2400', tone: 'good' as const },
-  { label: 'Avg latency', value: '5.1 ms', tone: 'good' as const },
-  { label: 'SLA compliance', value: '99.97%', tone: 'good' as const },
+  { label: 'CPU p50', value: '18%', tone: 'good' },
+  { label: 'CPU p95', value: '28%', tone: 'good' },
+  { label: 'CPU p99', value: '41%', tone: 'good' },
+  { label: 'I/O p95', value: '52%', tone: 'good' },
+  { label: 'Memory', value: '68%', tone: 'warn' },
+  { label: 'Peak sessions', value: '820 / 2400', tone: 'good' },
+  { label: 'Avg latency', value: '5.1 ms', tone: 'good' },
+  { label: 'SLA compliance', value: '99.97%', tone: 'good' },
 ]
 
 const reliabilityEventsMock = [
-  { label: 'Deadlocks (30d)', value: 3, tone: 'good' as const },
-  { label: 'Timeouts (30d)', value: 11, tone: 'warn' as const },
-  { label: 'Errors (30d)', value: 0, tone: 'good' as const },
-  { label: 'Throttling events', value: 0, tone: 'good' as const },
+  { label: 'Deadlocks (30d)', value: 3, tone: 'good' },
+  { label: 'Timeouts (30d)', value: 11, tone: 'warn' },
+  { label: 'Errors (30d)', value: 0, tone: 'good' },
+  { label: 'Throttling events', value: 0, tone: 'good' },
 ]

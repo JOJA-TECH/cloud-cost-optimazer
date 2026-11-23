@@ -29,7 +29,7 @@ type ConfigSnapshot = {
 export default function ConfigurationPage() {
   const [showTech, setShowTech] = useState(false)
   const [resource, setResource] = useState<DashboardResource | null>(null)
-  const [dataQuality, setDataQuality] = useState(dataQualityMock)
+  const [dataQuality, setDataQuality] = useState<any>(dataQualityMock)
   const [configSnapshots, setConfigSnapshots] = useState<ConfigSnapshot[]>([])
   const [configLoaded, setConfigLoaded] = useState(false)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
@@ -37,15 +37,21 @@ export default function ConfigurationPage() {
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
-    getDashboardResource().then((r) => {
-      if (r) setResource(r)
+    getDashboardResource().then((res) => {
+      if (res.source === 'backend' && res.data) {
+        setResource(res.data)
+      }
     })
-    getDataQuality().then(setDataQuality)
+    getDataQuality().then((res) => {
+      setDataQuality(res.data ?? dataQualityMock)
+    })
     if (uid) {
       getConfigSnapshots(uid)
-        .then((s) => {
-          setConfigSnapshots(s)
-          setConfigLoaded(s.length > 0)
+        .then((sRes) => {
+          if (sRes.source === 'backend' && sRes.data) {
+            setConfigSnapshots(sRes.data)
+            setConfigLoaded(true)
+          }
         })
         .catch(() => setConfigLoaded(false))
     }
@@ -140,7 +146,7 @@ export default function ConfigurationPage() {
                 <Badge variant="success">{dataQuality.globalConfidence}</Badge>
               </div>
               <ul className="space-y-1">
-                {dataQuality.items.map((item) => (
+                {dataQuality.items.map((item: any) => (
                   <li key={item.label} className="group flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/60">
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={item.info}>
                       {item.label}
@@ -222,12 +228,12 @@ const resourceMock: DashboardResource = {
 const dataQualityMock = {
   globalConfidence: 'High',
   items: [
-    { label: 'Last collected', value: '8 min ago', info: 'Most recent successful metric collection.', tone: 'good' as const },
-    { label: 'Historical duration', value: '30 days', info: 'Length of observed history feeding the analysis.', tone: 'good' as const },
-    { label: 'Sampling interval', value: '5 min', info: 'Resolution of collected telemetry.', tone: 'good' as const },
-    { label: 'Coverage', value: '96%', info: 'Share of expected samples actually collected.', tone: 'good' as const },
-    { label: 'Missing metrics', value: 'None', info: 'Required signals with no data in the window.', tone: 'good' as const },
-    { label: 'Cost source', value: 'Billed', info: 'Cost derived from billed usage, not list price.', tone: 'good' as const },
-    { label: 'Experimental validation', value: 'Available', info: 'A controlled scenario replay validated the estimate.', tone: 'good' as const },
+    { label: 'Last collected', value: '8 min ago', info: 'Most recent successful metric collection.', tone: 'good' },
+    { label: 'Historical duration', value: '30 days', info: 'Length of observed history feeding the analysis.', tone: 'good' },
+    { label: 'Sampling interval', value: '5 min', info: 'Resolution of collected telemetry.', tone: 'good' },
+    { label: 'Coverage', value: '96%', info: 'Share of expected samples actually collected.', tone: 'good' },
+    { label: 'Missing metrics', value: 'None', info: 'Required signals with no data in the window.', tone: 'good' },
+    { label: 'Cost source', value: 'Billed', info: 'Cost derived from billed usage, not list price.', tone: 'good' },
+    { label: 'Experimental validation', value: 'Available', info: 'A controlled scenario replay validated the estimate.', tone: 'good' },
   ],
 }

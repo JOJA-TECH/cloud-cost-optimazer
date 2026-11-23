@@ -4,27 +4,62 @@ import { PageHeader, Panel } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { Donut } from '@/components/charts'
 import { useEffect, useState } from 'react'
-import { getTopQueries, getWaitCategories } from '@/lib/api-services'
+import {
+  getTopQueries,
+  getWaitCategories,
+  getSelectedResourceUid,
+  getTimeRange,
+} from '@/lib/api-services'
 
 export default function DiagnosticsPage() {
-  const [topQueries, setTopQueries] = useState(topQueriesMock)
-  const [waitCategories, setWaitCategories] = useState(waitCategoriesMock)
+  const [topQueries, setTopQueries] = useState<{ id: string; text: string; execs: number; avgCpuMs: number; avgDurMs: number; reads: number }[]>(topQueriesMock)
+  const [waitCategories, setWaitCategories] = useState<{ name: string; pct: number; color: string }[]>(waitCategoriesMock)
+  const [topQueriesLoaded, setTopQueriesLoaded] = useState(false)
+  const [waitCategoriesLoaded, setWaitCategoriesLoaded] = useState(false)
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
   useEffect(() => {
-    getTopQueries().then(setTopQueries)
-    getWaitCategories().then(setWaitCategories)
+    const uid = getSelectedResourceUid()
+    const range = getTimeRange()
+    setResourceUid(uid)
+    setTimeRangeState(range)
   }, [])
+
+  useEffect(() => {
+    if (!resourceUid || !timeRange) return
+
+    getTopQueries().then((res) => {
+      if (res.source === 'backend' && res.data) {
+        setTopQueries(res.data)
+        setTopQueriesLoaded(true)
+      }
+    })
+    getWaitCategories().then((res) => {
+      if (res.source === 'backend' && res.data) {
+        setWaitCategories(res.data)
+        setWaitCategoriesLoaded(true)
+      }
+    })
+  }, [resourceUid, timeRange])
 
   return (
     <div>
       <PageHeader
         title="Diagnostics"
         description="Technical detail supporting the recommendation — top operations and wait categories. Denser than the executive views, but kept readable."
-        actions={<Badge variant="neutral">Query Store · last 30 days</Badge>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral">Query Store · last 30 days</Badge>
+            <Badge variant="outline" className="text-[9px]">
+              {topQueriesLoaded || waitCategoriesLoaded ? 'Datos reales' : 'Demo'}
+            </Badge>
+          </div>
+        }
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
+        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">{topQueriesLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -62,11 +97,11 @@ export default function DiagnosticsPage() {
           </div>
         </Panel>
 
-        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
+        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">{waitCategoriesLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
           <div className="relative">
             <Donut data={waitCategories} height={180} />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-lg font-semibold tabular-nums text-foreground">34%</span>
+              <span className="text-lg font-semibold tabular-nums text-foreground">{waitCategories[0]?.pct ?? 34}%</span>
               <span className="text-[11px] text-muted-foreground">CPU-bound</span>
             </div>
           </div>
@@ -82,11 +117,7 @@ export default function DiagnosticsPage() {
         </Panel>
       </div>
 
-      <Panel
-        title="How diagnostics support the recommendation"
-        className="mt-4"
-        note="This technical detail explains the recommendation; it does not, on its own, trigger a capacity change."
-      >
+      <Panel title="How diagnostics support the recommendation" className="mt-4" note="This technical detail explains the recommendation; it does not, on its own, trigger a capacity change.">
         <div className="grid gap-3 sm:grid-cols-3">
           <Insight title="CPU-bound, not I/O-bound" body="34% of waits are CPU, 22% PAGEIOLATCH. vCore reduction stays viable because I/O is not the bottleneck at peak." />
           <Insight title="Concentrated cost" body="Q3 and Q4 dominate CPU per execution. Their pattern is periodic, matching the workload classification." />

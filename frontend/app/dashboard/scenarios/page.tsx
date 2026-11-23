@@ -40,7 +40,11 @@ export default function ScenariosPage() {
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
-    getScenarios().then(setScenarios)
+    getScenarios().then((res) => {
+      if (res.source === 'backend' && res.data) {
+        setScenarios(res.data)
+      }
+    })
   }, [])
 
   async function handleSimulate() {
@@ -50,13 +54,17 @@ export default function ScenariosPage() {
     try {
       const result = await evaluateRecommendations(
         resourceUid,
-        null, // policy_uid
-        30, // horizon_days
-        '', // from (will use default from sessionStorage)
-        '', // to (will use default from sessionStorage)
+        null,
+        30,
+        '',
+        '',
         'USD'
       )
-      setSimulateResult(result)
+      if (result.source === 'backend') {
+        setSimulateResult(result.data)
+      } else {
+        setSimulateResult({ error: result.error || 'Error al evaluar' })
+      }
     } catch {
       // Error handled by tryBackend
     } finally {
