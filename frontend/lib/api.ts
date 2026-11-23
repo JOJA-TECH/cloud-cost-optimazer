@@ -1,4 +1,4 @@
-import { getToken, refreshToken, isTokenExpiringSoon } from './auth'
+import { getToken, refreshToken, isTokenExpiringSoon, getProjectId } from './auth'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
@@ -33,6 +33,7 @@ export async function apiFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const token = await getValidToken()
+  const projectId = getProjectId()
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -41,6 +42,10 @@ export async function apiFetch(
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
+  }
+
+  if (projectId) {
+    headers['X-Project-ID'] = projectId
   }
 
   const res = await fetch(`${API_URL}${input}`, {

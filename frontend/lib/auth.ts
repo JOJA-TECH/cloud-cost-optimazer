@@ -9,6 +9,7 @@ import { apiJson } from './api'
 const ACCESS_TOKEN_KEY = 'cco_access_token'
 const REFRESH_TOKEN_KEY = 'cco_refresh_token'
 const EXPIRES_AT_KEY = 'cco_expires_at'
+const PROJECT_ID_KEY = 'cco_project_id'
 
 let currentToken: string | null = null
 
@@ -119,6 +120,20 @@ export function getUserEmail(): string | null {
   return null
 }
 
+export function getProjectId(): string | null {
+  if (typeof window === 'undefined') return null
+  return sessionStorage.getItem(PROJECT_ID_KEY) ?? null
+}
+
+export function setProjectId(projectId: string | null): void {
+  if (typeof window === 'undefined') return
+  if (projectId) {
+    sessionStorage.setItem(PROJECT_ID_KEY, projectId)
+  } else {
+    sessionStorage.removeItem(PROJECT_ID_KEY)
+  }
+}
+
 export function isAuthenticated(): boolean {
   return !!getToken()
 }
@@ -129,6 +144,7 @@ export function logout() {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY)
     sessionStorage.removeItem(REFRESH_TOKEN_KEY)
     sessionStorage.removeItem(EXPIRES_AT_KEY)
+    sessionStorage.removeItem(PROJECT_ID_KEY)
     sessionStorage.removeItem('cco_user_name')
     sessionStorage.removeItem('cco_user_email')
     window.location.href = '/login'
