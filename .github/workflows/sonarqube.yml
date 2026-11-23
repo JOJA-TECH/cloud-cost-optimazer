@@ -3,13 +3,13 @@ name: SonarQube Cloud Analysis
 on:
   push:
     branches:
-      - main
       - develop
+      - main
 
   pull_request:
     branches:
-      - main
       - develop
+      - main
     types:
       - opened
       - synchronize
@@ -22,7 +22,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  sonarqube:
+  sonar-analysis:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
 
@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: SonarQube Scan
+      - name: Run SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
