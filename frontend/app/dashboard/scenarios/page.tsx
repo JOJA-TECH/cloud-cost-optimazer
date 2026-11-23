@@ -142,9 +142,9 @@ export default function ScenariosPage() {
                     <ArrowRight />
                   </Button>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" disabled className="opacity-50 cursor-not-allowed">
                       <Play />
-                      Simulate
+                      Simulate <span className="text-[10px] ml-1">Demo</span>
                     </Button>
                     <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
                       <FileSearch />

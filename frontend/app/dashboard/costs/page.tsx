@@ -38,7 +38,12 @@ export default function CostsPage() {
       <PageHeader
         title="Costs"
         description="Current and projected cost, cost components, and simulated savings. Billed, reference, estimated, and counterfactual values are kept distinct throughout."
-        actions={<Badge variant="neutral">Last 30 days</Badge>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="neutral">Last 30 days</Badge>
+            <Badge variant="outline" className="text-[9px]">Demo</Badge>
+          </div>
+        }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -24,7 +24,7 @@ export default function DiagnosticsPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0">
+        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -62,7 +62,7 @@ export default function DiagnosticsPage() {
           </div>
         </Panel>
 
-        <Panel title="Wait categories" description="Where time is actually spent">
+        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
           <div className="relative">
             <Donut data={waitCategories} height={180} />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

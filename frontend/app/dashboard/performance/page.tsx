@@ -65,6 +65,9 @@ export default function PerformancePage() {
             <p className={cn('mt-1 text-base font-semibold tabular-nums', toneText(m.tone))}>
               {m.value}
             </p>
+            <Badge variant="outline" className="mt-2 text-[9px] w-full justify-center">
+              Demo
+            </Badge>
           </div>
         ))}
       </div>
@@ -124,7 +127,7 @@ export default function PerformancePage() {
         <Panel title="Memory utilization" description="Working set as percent of provisioned">
           <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
         </Panel>
-        <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)">
+        <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
           <div className="grid grid-cols-2 gap-3">
             {reliabilityEvents.map((e) => (
               <div key={e.label} className="rounded-lg border border-border bg-background p-3">

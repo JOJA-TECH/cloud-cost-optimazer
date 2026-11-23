@@ -38,6 +38,7 @@ export default function ForecastingPage() {
               <span className="h-0.5 w-4 rounded border-t-2 border-dashed border-[var(--chart-2)]" />
               Forecast
             </span>
+            <Badge variant="outline" className="text-[9px]">Demo</Badge>
           </div>
         }
       >

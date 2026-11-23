@@ -208,7 +208,7 @@ function AssistantPanel() {
     <Panel
       title="Ask about this recommendation"
       description="Explanation layer over calculated evidence"
-      action={<Sparkles className="size-4 text-primary" />}
+      action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}
     >
       <div className="flex flex-col gap-2">
         {assistantSuggestionsMock.map((q) => (

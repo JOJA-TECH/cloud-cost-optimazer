@@ -43,10 +43,13 @@ export default function ConfigurationPage() {
         title="Configuration"
         description="The current operational configuration of the selected Azure SQL database. Executive summary first; deeper API-level detail is available on demand."
         actions={
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <RefreshCw className="size-3.5" />
-            Last updated: {resource.lastSyncMinutes} min ago
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <RefreshCw className="size-3.5" />
+              Last updated: {resource.lastSyncMinutes} min ago
+            </span>
+            <Badge variant="outline" className="text-[9px]">Demo</Badge>
+          </div>
         }
       />
 

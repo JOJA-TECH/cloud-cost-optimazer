@@ -1,7 +1,16 @@
-# Dependencias
-node_modules/
+# v0 sandbox internal files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/
 
-# Build de Next.js
+# Environment variables
+.env*.local
+
+# Common ignores
+node_modules
 .next/
 out/
 
@@ -22,4 +31,4 @@ yarn-error.log*
 
 # OS
 .DS_Store
-Thumbs.db
+

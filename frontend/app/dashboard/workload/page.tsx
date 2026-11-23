@@ -23,6 +23,7 @@ export default function WorkloadPage() {
       <PageHeader
         title="Workload analysis"
         description="How demand actually behaves over time — the central intelligence behind every optimization. Classification, peaks, variability, and trend drive the recommendation."
+        actions={<Badge variant="outline" className="text-[9px]">Demo</Badge>}
       />
 
       <div className="grid gap-4 lg:grid-cols-3">

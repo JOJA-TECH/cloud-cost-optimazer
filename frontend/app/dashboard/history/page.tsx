@@ -38,7 +38,7 @@ export default function HistoryPage() {
     <div>
       <PageHeader
         title="History"
-        description="Every recommendation is traceable and auditable — with the configuration, savings, risk, confidence, status, and the model/rule version used at the time."
+        description="Historial de recomendaciones (no traza de auditoría completa). Muestra configuración, ahorro, riesgo, confianza y estado de cada decisión generada."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -58,7 +58,7 @@ export default function HistoryPage() {
         ))}
       </div>
 
-      <Panel bodyClassName="p-0" className="overflow-hidden">
+      <Panel bodyClassName="p-0" className="overflow-hidden" action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>

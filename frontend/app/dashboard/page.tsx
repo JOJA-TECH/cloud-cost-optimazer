@@ -31,10 +31,15 @@ export default function OverviewPage() {
         title="Overview"
         description="Current state, cost, utilization, risk, and the optimization opportunity for the selected Azure SQL database — with the evidence behind it."
         actions={
-          <Badge variant="success" className="h-7 px-2.5">
-            <CheckCircle2 className="size-3.5" />
-            {kpis.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="success" className="h-7 px-2.5">
+              <CheckCircle2 className="size-3.5" />
+              {kpis.status}
+            </Badge>
+            <Badge variant="outline" className="h-7 px-2.5 text-[10px]">
+              Demo — Test data
+            </Badge>
+          </div>
         }
       />
 
