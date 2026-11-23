@@ -793,24 +793,24 @@ func (r *AnalyticsRepository) Forecasts(ctx context.Context, resourceUID uuid.UU
 // ---- Model versions (ML management) ----
 
 type modelVersionRow struct {
-	ModelVersionID  int64
-	TrainingRunID   *int64
-	ModelName       string
-	Version         int
-	Framework       *string
-	Stage           string
-	Params          *string
-	MetricsSummary  *string
-	PromotedAt      *time.Time
-	CreatedAt       time.Time
-	Algorithm       *string
+	ModelVersionID int64
+	TrainingRunID  *int64
+	ModelName      string
+	Version        int
+	Framework      *string
+	Stage          string
+	Params         *string
+	MetricsSummary *string
+	PromotedAt     *time.Time
+	CreatedAt      time.Time
+	Algorithm      *string
 }
 
 // ListModels returns model versions from ml.model_version (leaderboard).
 func (r *AnalyticsRepository) ListModels(ctx context.Context) ([]modelVersionRow, error) {
 	var rows []modelVersionRow
 	err := r.db.WithContext(ctx).
-		Table(database.TableName(r.db, "ml", "model_version")).
+		Table(database.TableName(r.db, "ml", "model_version") + " mv").
 		Select(`
 			mv.model_version_id, mv.training_run_id, mv.model_name, mv.version,
 			mv.framework, mv.stage, mv.params, mv.metrics_summary,

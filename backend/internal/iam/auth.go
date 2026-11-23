@@ -767,19 +767,27 @@ func (r *MembershipResolver) ResolveProjectRole(ctx context.Context, userID, pro
 	return r.ResolveOrgRole(ctx, userID, proj.OrganizationID)
 }
 
-// ResolvePermissions computes effective permissions for user in org/project context.
-func (r *MembershipResolver) ResolvePermissions(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, projectID *uuid.UUID) ([]string, error) {
-	// Get system roles
+// SystemRoles returns the codes of the system roles assigned to a user.
+func (r *MembershipResolver) SystemRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	userRoles, err := r.repo.ListUserRolesByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	var systemRoles []string
+	systemRoles := make([]string, 0, len(userRoles))
 	for _, ur := range userRoles {
-		role, err := r.repo.(RoleRepository).FindRoleByID(ctx, ur.RoleID)
+		role, err := r.repo.FindRoleByID(ctx, ur.RoleID)
 		if err == nil {
 			systemRoles = append(systemRoles, role.RoleCode)
 		}
+	}
+	return systemRoles, nil
+}
+
+// ResolvePermissions computes effective permissions for user in org/project context.
+func (r *MembershipResolver) ResolvePermissions(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, projectID *uuid.UUID) ([]string, error) {
+	systemRoles, err := r.SystemRoles(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get org membership role

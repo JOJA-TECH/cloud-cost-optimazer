@@ -1,0 +1,8 @@
+# Binarios y artefactos generados por el backend local
+/cco-app
+/cco-app.exe
+/cco_app.db
+/cco-app*.log
+
+# Reportes exportados en local
+/var/reports/
