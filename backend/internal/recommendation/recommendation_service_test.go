@@ -304,11 +304,11 @@ func TestGenerateRecommendationReturnsNoActionForNegativeSavings(t *testing.T) {
 
 func TestGenerateRecommendationRejectsInfeasibleCandidate(t *testing.T) {
 	service, _, policy, resourceUID := newTestEngine(t, nil)
+	now := time.Now().UTC()
 	service.forecasts = engineTestForecasts{{
 		ForecastUID: uuid.New(), ResourceUID: resourceUID, TargetMetric: "cpu_avg",
-		PeriodStartUTC: time.Now().UTC(), YPred: 100, YUpper: floatPtr(100),
+		PeriodStartUTC: now.Add(time.Hour), YPred: 100, YUpper: floatPtr(100),
 	}}
-	now := time.Now().UTC()
 
 	result, err := service.GenerateRecommendation(context.Background(),
 		testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
@@ -318,14 +318,95 @@ func TestGenerateRecommendationRejectsInfeasibleCandidate(t *testing.T) {
 	if result.Action.Type != ActionNoAction {
 		t.Fatalf("infeasible candidate produced action %q, want no_action", result.Action.Type)
 	}
-	foundFeasible := false
-	for _, simulation := range service.repository.(*engineTestRepository).persist.Simulations {
-		if simulation.Feasible != nil && *simulation.Feasible {
-			foundFeasible = true
+	persisted := service.repository.(*engineTestRepository).persist
+	foundUnvalidatedAlternative := false
+	for i, candidate := range persisted.Candidates {
+		if candidate.SKUName == "GP_Gen5_8" {
+			continue
+		}
+		foundUnvalidatedAlternative = true
+		simulation := persisted.Simulations[i]
+		if simulation.Feasible == nil || *simulation.Feasible || simulation.PredictedCPUP95 != nil || simulation.PredictedCPUP99 != nil ||
+			!containsString(simulation.ViolatedConstraints, "candidate_transfer_validation_unavailable") {
+			t.Fatalf("alternative SKU was not safely marked unevaluable: %+v", simulation)
 		}
 	}
-	if foundFeasible {
-		t.Fatal("at least one candidate simulation was feasible despite over-capacity forecasts")
+	if !foundUnvalidatedAlternative {
+		t.Fatal("test fixture did not produce a changed-SKU candidate")
+	}
+	foundAverageForecast := false
+	for _, evidence := range result.Evidence {
+		if evidence.Type == "forecast_cpu_avg" {
+			foundAverageForecast = true
+			if evidence.Context["used_as_p95_or_p99"] != false {
+				t.Fatalf("average forecast was not clearly separated from p95/p99: %+v", evidence)
+			}
+		}
+	}
+	if !foundAverageForecast {
+		t.Fatal("rationale omitted the cpu_avg forecast classification")
+	}
+}
+
+func TestGenerateRecommendationAbstainsBelowCoverageThreshold(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	policy.Constraints["min_cpu_p95_coverage_pct"] = 100.0
+	service.policyRepository = engineTestPolicyRepository{policy: policy}
+	analyticsReader := service.analytics.(engineTestAnalytics)
+	filtered := make([]PercentileStatistic, 0, len(analyticsReader.percentiles))
+	keptCPU95 := false
+	for _, row := range analyticsReader.percentiles {
+		if row.MetricCode == "cpu_percent" && row.Percentile == 95 {
+			if keptCPU95 {
+				continue
+			}
+			keptCPU95 = true
+		}
+		filtered = append(filtered, row)
+	}
+	analyticsReader.percentiles = filtered
+	service.analytics = analyticsReader
+	now := time.Now().UTC()
+	result, err := service.GenerateRecommendation(context.Background(), testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction || result.GenerationState != "insufficient_information" || result.Risk.Level != RiskLevelIndeterminate {
+		t.Fatalf("low coverage must abstain with indeterminate risk: action=%q state=%q risk=%q", result.Action.Type, result.GenerationState, result.Risk.Level)
+	}
+	if repository.persist.SelectedCandidateIndex != nil || result.EstimatedSaving.MonthlyAmount != 0 {
+		t.Fatalf("coverage-gated decision retained a candidate or savings: selected=%v saving=%+v", repository.persist.SelectedCandidateIndex, result.EstimatedSaving)
+	}
+	foundReason := false
+	for _, evidence := range result.Evidence {
+		if evidence.Type == "decision_reason" && evidence.Context["reason"] == "cpu_p95_coverage_below_policy_threshold" {
+			foundReason = true
+		}
+	}
+	if !foundReason {
+		t.Fatalf("missing explicit coverage abstention reason in evidence: %+v", result.Evidence)
+	}
+}
+
+func TestGenerateRecommendationAbstainsWithoutCoverageThreshold(t *testing.T) {
+	service, repository, policy, resourceUID := newTestEngine(t, nil)
+	delete(policy.Constraints, "min_cpu_p95_coverage_pct")
+	service.policyRepository = engineTestPolicyRepository{policy: policy}
+	now := time.Now().UTC()
+	result, err := service.GenerateRecommendation(context.Background(), testGenerationInput(resourceUID, policy.UID, now.Add(-30*24*time.Hour), now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action.Type != ActionNoAction || result.GenerationState != "insufficient_information" || result.Risk.Level != RiskLevelIndeterminate {
+		t.Fatalf("missing coverage threshold must abstain with indeterminate risk: action=%q state=%q risk=%q", result.Action.Type, result.GenerationState, result.Risk.Level)
+	}
+	if repository.persist.SelectedCandidateIndex != nil || result.EstimatedSaving.MonthlyAmount != 0 {
+		t.Fatalf("missing-threshold abstention retained candidate or savings: selected=%v saving=%+v", repository.persist.SelectedCandidateIndex, result.EstimatedSaving)
+	}
+	if result.ProposedConfiguration.SKUName != result.CurrentConfiguration.SKUName ||
+		result.ProposedConfiguration.ComputeModel != result.CurrentConfiguration.ComputeModel ||
+		derefFloat(result.ProposedConfiguration.CapacityVCores) != derefFloat(result.CurrentConfiguration.CapacityVCores) {
+		t.Fatalf("missing-threshold abstention must preserve current configuration: current=%+v proposed=%+v", result.CurrentConfiguration, result.ProposedConfiguration)
 	}
 }
 
@@ -428,8 +509,13 @@ func TestGenerateRecommendationSupportsScaleUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Action.Type != ActionResizeUp || result.ProposedConfiguration.SKUName != "GP_Gen5_8" {
-		t.Fatalf("got action=%q SKU=%q, want resize_up GP_Gen5_8", result.Action.Type, result.ProposedConfiguration.SKUName)
+	if result.Action.Type != ActionNoAction || result.GenerationState != "no_action" || result.Risk.Level != RiskLevelIndeterminate {
+		t.Fatalf("unvalidated scale-up should abstain with indeterminate risk, got action=%q state=%q risk=%q", result.Action.Type, result.GenerationState, result.Risk.Level)
+	}
+	if result.ProposedConfiguration.SKUName != result.CurrentConfiguration.SKUName ||
+		result.ProposedConfiguration.ComputeModel != result.CurrentConfiguration.ComputeModel ||
+		derefFloat(result.ProposedConfiguration.CapacityVCores) != derefFloat(result.CurrentConfiguration.CapacityVCores) {
+		t.Fatalf("no-action proposal must preserve the exact current configuration: current=%+v proposed=%+v", result.CurrentConfiguration, result.ProposedConfiguration)
 	}
 }
 
@@ -465,9 +551,12 @@ func TestGenerateRecommendationSupportsComputeModelChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Action.Type != ActionChangeComputeModel || result.ProposedConfiguration.ComputeModel != "serverless" {
-		t.Fatalf("got action=%q model=%q, want change_compute_model/serverless",
-			result.Action.Type, result.ProposedConfiguration.ComputeModel)
+	if result.Action.Type != ActionNoAction || result.Risk.Level != RiskLevelIndeterminate {
+		t.Fatalf("unvalidated compute-model transfer should abstain with indeterminate risk, got action=%q risk=%q",
+			result.Action.Type, result.Risk.Level)
+	}
+	if result.ProposedConfiguration.ComputeModel != "provisioned" {
+		t.Fatalf("no-action proposal must retain current compute model, got %q", result.ProposedConfiguration.ComputeModel)
 	}
 }
 
@@ -479,7 +568,7 @@ func TestGenerateRecommendationIncludesRequiredEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"cpu_p95", "cpu_p99", "headroom", "projected_monthly_cost", "estimated_savings"} {
+	for _, required := range []string{"cpu_p95", "cpu_p99", "cpu_p95_hourly_coverage", "headroom", "projected_monthly_cost", "estimated_savings"} {
 		if !containsEvidence(result.Evidence, required) {
 			t.Errorf("evidence missing required type %q: %+v", required, result.Evidence)
 		}
@@ -743,30 +832,43 @@ func newTestEngine(t *testing.T, config *ConfigurationSnapshot) (*Service, *engi
 		ObjectiveWeights: map[string]float64{"cost": 0.6, "performance": 0.25, "risk": 0.15},
 		Constraints: map[string]any{
 			"min_confidence": 0.5, "max_risk_score": 0.9,
-			"allow_scale_down": true, "allow_compute_model_change": false,
+			"min_cpu_p95_coverage_pct": 95.0,
+			"allow_scale_down":         true, "allow_compute_model_change": false,
 		},
 	}
 	cpu50, cpu95, cpu99 := 25.0, 30.0, 50.0
 	io95, sessions95 := 40.0, 20.0
 	family := "Gen5"
+	percentiles := make([]PercentileStatistic, 0, 720*5)
+	baseHour := now.Truncate(time.Hour)
+	for offset := 1; offset <= 720; offset++ {
+		periodStart := baseHour.Add(-time.Duration(offset) * time.Hour)
+		for _, row := range []PercentileStatistic{
+			{MetricCode: "cpu_percent", Percentile: 50, Value: &cpu50},
+			{MetricCode: "cpu_percent", Percentile: 95, Value: &cpu95},
+			{MetricCode: "cpu_percent", Percentile: 99, Value: &cpu99},
+			{MetricCode: "data_io_percent", Percentile: 95, Value: &io95},
+			{MetricCode: "sessions_percent", Percentile: 95, Value: &sessions95},
+		} {
+			row.PeriodType = defaultPeriodType
+			row.PeriodStartUTC = periodStart
+			row.ObservationCount = 60
+			row.Method = "exact"
+			percentiles = append(percentiles, row)
+		}
+	}
 	analyticsReader := engineTestAnalytics{
 		snapshots: []FeatureSnapshot{{
 			ResourceUID: resourceUID, PeriodStartUTC: now.Add(-time.Hour), PeriodEndUTC: now,
 			CPUAvg: 25, CPUP50: &cpu50, CPUP95: &cpu95, CPUP99: &cpu99, CapacityVCores: 8,
 			ComputedAt: now,
 		}},
-		percentiles: []PercentileStatistic{
-			{MetricCode: "cpu_percent", Percentile: 50, Value: &cpu50, PeriodStartUTC: now.Add(-time.Hour)},
-			{MetricCode: "cpu_percent", Percentile: 95, Value: &cpu95, PeriodStartUTC: now.Add(-time.Hour)},
-			{MetricCode: "cpu_percent", Percentile: 99, Value: &cpu99, PeriodStartUTC: now.Add(-time.Hour)},
-			{MetricCode: "data_io_percent", Percentile: 95, Value: &io95, PeriodStartUTC: now.Add(-time.Hour)},
-			{MetricCode: "sessions_percent", Percentile: 95, Value: &sessions95, PeriodStartUTC: now.Add(-time.Hour)},
-		},
-		trends:   []Trend{{MetricCode: "cpu_percent", Slope: 0.05, WindowStart: now.Add(-24 * time.Hour), WindowEnd: now}},
-		pattern:  WorkloadPattern{PeakHours: []int{9, 10}, ComputedAt: now},
-		capacity: CapacityAnalysis{HeadroomPct: 50, PeakUtilization: 50, ComputedAt: now},
-		cost:     CostAnalysis{ActualMonthlyCost: 420, ComputedAt: now},
-		des:      DESComponents{CapacityE: 0.8, CostE: 0.7, PerformanceE: 0.8, ComputedAt: now},
+		percentiles: percentiles,
+		trends:      []Trend{{MetricCode: "cpu_percent", Slope: 0.05, WindowStart: now.Add(-24 * time.Hour), WindowEnd: now}},
+		pattern:     WorkloadPattern{PeakHours: []int{9, 10}, ComputedAt: now},
+		capacity:    CapacityAnalysis{HeadroomPct: 50, PeakUtilization: 50, ComputedAt: now},
+		cost:        CostAnalysis{ActualMonthlyCost: 420, ComputedAt: now},
+		des:         DESComponents{CapacityE: 0.8, CostE: 0.7, PerformanceE: 0.8, ComputedAt: now},
 	}
 	snapshot := config
 	if snapshot == nil {
@@ -819,20 +921,23 @@ func TestGenerateRecommendationPersistsPolicyApprovedCatalogCandidate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Action.Type != ActionResizeDown {
-		t.Fatalf("action = %q, want resize_down; recommendation: %+v", result.Action.Type, result)
+	if result.Action.Type != ActionNoAction || result.GenerationState != "no_action" {
+		t.Fatalf("unvalidated SKU transfer must produce no_action, got %+v", result)
 	}
-	if result.ProposedConfiguration.SKUName != "GP_Gen5_6" {
-		t.Fatalf("proposed SKU = %q, want GP_Gen5_6", result.ProposedConfiguration.SKUName)
+	if result.ProposedConfiguration.SKUName != result.CurrentConfiguration.SKUName {
+		t.Fatalf("no-action decision retained mismatched configuration: current=%q proposed=%q", result.CurrentConfiguration.SKUName, result.ProposedConfiguration.SKUName)
 	}
 	if len(repository.persist.Candidates) != 2 || len(repository.persist.Simulations) != 2 {
 		t.Fatalf("persisted %d candidates and %d simulations, want 2 each", len(repository.persist.Candidates), len(repository.persist.Simulations))
 	}
-	if repository.persist.SelectedCandidateIndex == nil || *repository.persist.SelectedCandidateIndex != 1 {
-		t.Fatalf("selected candidate index = %v, want 1", repository.persist.SelectedCandidateIndex)
+	if repository.persist.SelectedCandidateIndex != nil || result.ChosenCandidateID != nil {
+		t.Fatalf("abstaining decision must not retain a selected candidate: selected=%v chosen=%v", repository.persist.SelectedCandidateIndex, result.ChosenCandidateID)
 	}
-	if result.EstimatedSaving.MonthlyAmount <= 0 || result.EstimatedSaving.MonthlyPercentage <= 0 {
-		t.Fatalf("unexpected saving estimate: %+v", result.EstimatedSaving)
+	if result.EstimatedSaving.MonthlyAmount != 0 || result.EstimatedSaving.MonthlyPercentage != 0 {
+		t.Fatalf("abstaining decision must clear candidate savings: %+v", result.EstimatedSaving)
+	}
+	if result.EstimatedSaving.CurrentCostBasis != CostBasisActualCost || result.EstimatedSaving.ProposedCostBasis != CostBasisActualCost {
+		t.Fatalf("no-action cost bases should compare observed cost with itself: %+v", result.EstimatedSaving)
 	}
 	if result.PolicyUID != policy.UID || result.PolicyVersion != policy.Version {
 		t.Fatalf("policy provenance missing: %+v", result)

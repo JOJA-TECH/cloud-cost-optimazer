@@ -1,4 +1,9 @@
-# ── Backend ──
+# --- Secrets / local configuration -----------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Backend ----------------------------------------------------------------
 # Ejecutable compilado (nunca commitear binarios .exe)
 cco-app.exe
 cco-app
@@ -12,15 +17,44 @@ cco_app.db-wal
 cco-app.log
 cco-app-err.log
 
-# ── Frontend ──
+# --- Frontend ---------------------------------------------------------------
 frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/AGENTS.md
 frontend/CLAUDE.md
 frontend/.env.local
+frontend/Diagnóstico de _ Cloud Cost Optimizer.md
 
-# ── OS ──
+# --- Datasets and dumps (never version heavy data) --------------------------
+*.dump
+*.parquet
+*.csv
+*.sql.gz
+data/
+!tests/fixtures/*.csv
+
+# --- Generated artifacts ----------------------------------------------------
+artifacts/*
+!artifacts/.gitkeep
+models/*
+!models/.gitkeep
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+uv.lock
+
+# --- Editors / OS -----------------------------------------------------------
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db
-frontend/Diagnóstico de _ Cloud Cost Optimizer.md

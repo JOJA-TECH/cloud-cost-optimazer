@@ -9,6 +9,7 @@ import {
   Stethoscope,
   History,
   Settings,
+  BrainCircuit,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -25,6 +26,7 @@ export const navItems: NavItem[] = [
   { label: 'Workload', href: '/dashboard/workload', icon: Activity },
   { label: 'Scenarios', href: '/dashboard/scenarios', icon: GitCompareArrows },
   { label: 'Recommendations', href: '/dashboard/recommendations', icon: CircleCheck },
+  { label: 'IA & Analytics', href: '/dashboard/intelligence', icon: BrainCircuit },
   { label: 'Forecasting', href: '/dashboard/forecasting', icon: TrendingUp },
   { label: 'Diagnostics', href: '/dashboard/diagnostics', icon: Stethoscope },
   { label: 'History', href: '/dashboard/history', icon: History },

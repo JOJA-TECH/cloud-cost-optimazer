@@ -49,14 +49,16 @@ func (a *PasswordAdapter) Authenticate(ctx context.Context, cred iam.Credentials
 	// Resolve org context
 	orgID, orgRole, _ := a.resolveDefaultOrg(ctx, user.ID)
 
-	perms, _ := iam.NewMembershipResolver(a.repo).ResolvePermissions(ctx, user.ID, orgID, nil)
+	resolver := iam.NewMembershipResolver(a.repo)
+	systemRoles, _ := resolver.SystemRoles(ctx, user.ID)
+	perms, _ := resolver.ResolvePermissions(ctx, user.ID, orgID, nil)
 
 	ic := iam.IdentityContext{
 		UserID:         user.ID,
 		Email:          user.Email,
 		DisplayName:    user.DisplayName,
 		AuthMethod:     "password",
-		SystemRoles:    []string{}, // resolved via resolver
+		SystemRoles:    systemRoles,
 		OrgID:          orgID,
 		OrgRole:        orgRole,
 		ProjectID:      nil,

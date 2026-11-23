@@ -87,6 +87,32 @@ func NewEngine(deps Dependencies) (*Service, error) {
 	}, nil
 }
 
+// ListPolicies returns policies from the existing optimization-policy repository.
+func (s *Service) ListPolicies(ctx context.Context, name string, enabledOnly bool) ([]OptimizationPolicy, error) {
+	if s.policyRepository == nil {
+		return nil, ErrDependenciesUnavailable
+	}
+	return s.policyRepository.ListPolicies(ctx, strings.TrimSpace(name), enabledOnly)
+}
+
+// CreatePolicy stores a versioned decision policy through the existing repository.
+func (s *Service) CreatePolicy(ctx context.Context, policy OptimizationPolicy) (OptimizationPolicy, error) {
+	if s.policyRepository == nil {
+		return OptimizationPolicy{}, ErrDependenciesUnavailable
+	}
+	policy.Name = strings.TrimSpace(policy.Name)
+	if policy.Name == "" || policy.Version < 1 || strings.TrimSpace(policy.CreatedBy) == "" {
+		return OptimizationPolicy{}, ErrInvalidRequest
+	}
+	if raw, exists := policy.Constraints["min_cpu_p95_coverage_pct"]; exists {
+		threshold, ok := numeric(raw)
+		if !ok || threshold <= 0 || threshold > 100 {
+			return OptimizationPolicy{}, fmt.Errorf("%w: min_cpu_p95_coverage_pct must be greater than 0 and at most 100", ErrInvalidRequest)
+		}
+	}
+	return s.policyRepository.CreatePolicy(ctx, policy)
+}
+
 func (s *Service) acquireResourceLock(resourceUID uuid.UUID) (func(), error) {
 	s.lockMu.Lock()
 	entry := s.locks[resourceUID]
@@ -277,6 +303,13 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 		evidence.Degraded = true
 		evidence.InsufficientReasons = append(evidence.InsufficientReasons, "required_forecast_unavailable")
 	}
+	if evidence.CPUDataCoverageThresholdPct == nil {
+		evidence.InsufficientReasons = append(evidence.InsufficientReasons, "cpu_p95_coverage_threshold_unconfigured")
+	} else if !evidence.CPUDataCoverageAvailable {
+		evidence.InsufficientReasons = append(evidence.InsufficientReasons, "cpu_p95_coverage_unavailable")
+	} else if evidence.CPUDataCoveragePct < *evidence.CPUDataCoverageThresholdPct {
+		evidence.InsufficientReasons = append(evidence.InsufficientReasons, "cpu_p95_coverage_below_policy_threshold")
+	}
 	allowServerless := policyBool(policy.Constraints, "allow_compute_model_change") ||
 		strings.EqualFold(stringValue(policy.Constraints["allow_compute_model_change"]), "true")
 	priceContext, err := s.resourceContext.PricingContext(ctx, input.ResourceUID)
@@ -396,12 +429,29 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 
 	isInsufficient := len(evidence.InsufficientReasons) > 0 || !evidence.HasMinimumEvidence ||
 		(actualCost <= 0) || len(candidateSKUs) == 0 || len(candidates) == 0
+	if isInsufficient {
+		// A candidate selected earlier in the loop cannot survive a failed evidence gate.
+		chosen = nil
+	}
 	if isInsufficient || chosen == nil {
 		selectedIndex = -1
 		chosenSaving = savingEstimate(actualCost, actualCost, costCurrencyOrRequested(costCurrency, input.Currency),
 			CostBasisActualCost, CostBasisActualCost, input.From, input.To, "no_action")
 		chosenRisk = calculateRisk(evidence, ScenarioSimulation{}, CandidateConfiguration{}, currentConfig)
 		chosenConfidence = calculateConfidence(evidence, ScenarioSimulation{}, false, false)
+		indeterminate := isInsufficient
+		for _, candidateResult := range candidateResults {
+			if candidateResult.DiscardReason == "candidate_transfer_validation_unavailable" {
+				indeterminate = true
+			}
+		}
+		if indeterminate {
+			chosenRisk.Level = RiskLevelIndeterminate
+			if chosenRisk.Factors == nil {
+				chosenRisk.Factors = make(map[string]any)
+			}
+			chosenRisk.Factors["indeterminate_reason"] = "evidence_or_candidate_transfer_not_validated"
+		}
 		reasons := append([]string(nil), evidence.InsufficientReasons...)
 		if actualCost <= 0 {
 			reasons = append(reasons, "observed_cost_unavailable")
@@ -409,11 +459,27 @@ func (s *Service) generate(ctx context.Context, input GenerateRecommendationInpu
 		if chosen == nil && !isInsufficient {
 			reasons = append(reasons, "no_candidate_satisfies_policy")
 		}
-		rationale = RecommendationRationale{
-			Summary: "No se propone un cambio porque la evidencia es insuficiente o ningún candidato cumple la política.",
+		rationale = rationaleFromEvidence(evidence, ScenarioSimulation{}, chosenSaving, PolicyEvaluation{})
+		switch {
+		case isInsufficient:
+			rationale.Summary = "No se propone un cambio porque la calidad o cobertura de la evidencia no alcanza el umbral exigido por la política."
+		case indeterminate:
+			rationale.Summary = "No se propone un cambio: no existe una transferencia de rendimiento validada para evaluar configuraciones alternativas; la factibilidad queda indeterminada."
+		default:
+			rationale.Summary = "No se propone un cambio porque ningún candidato cumple las reglas y restricciones de la política."
 		}
 		for _, reason := range reasons {
 			rationale.Evidence = append(rationale.Evidence, Evidence{Type: "decision_reason", Context: map[string]any{"reason": reason}, Method: defaultAlgorithm})
+		}
+		for _, candidateResult := range candidateResults {
+			if candidateResult.DiscardReason == "" {
+				continue
+			}
+			rationale.Evidence = append(rationale.Evidence, Evidence{
+				Type:    "candidate_not_evaluable",
+				Context: map[string]any{"sku_name": candidateResult.Candidate.SKUName, "reason": candidateResult.DiscardReason},
+				Method:  defaultAlgorithm,
+			})
 		}
 	} else {
 		for i := range candidateResults {
@@ -540,6 +606,12 @@ func (s *Service) loadEvidence(ctx context.Context, input GenerateRecommendation
 		}
 		result.PercentileStatistics = append(result.PercentileStatistics, values...)
 	}
+	result.WindowStartUTC, result.WindowEndUTC = from, to
+	result.CPUDataCoveragePct, result.CPUReceivedBuckets, result.CPUExpectedBuckets, result.CPUDataCoverageAvailable =
+		cpuP95HourlyCoverage(result.PercentileStatistics, from, to)
+	if threshold, ok := numeric(policy.Constraints["min_cpu_p95_coverage_pct"]); ok && threshold > 0 && threshold <= 100 {
+		result.CPUDataCoverageThresholdPct = &threshold
+	}
 	if !hasPercentile(result.PercentileStatistics, "cpu_percent", 95) ||
 		!hasPercentile(result.PercentileStatistics, "cpu_percent", 99) {
 		result.InsufficientReasons = append(result.InsufficientReasons, "cpu_percentiles_unavailable")
@@ -610,15 +682,49 @@ func (s *Service) loadEvidence(ctx context.Context, input GenerateRecommendation
 	return result, nil
 }
 
+func cpuP95HourlyCoverage(rows []PercentileStatistic, from, to time.Time) (float64, int, int, bool) {
+	if !from.Before(to) {
+		return 0, 0, 0, false
+	}
+	first := from.UTC().Truncate(time.Hour)
+	last := to.UTC().Add(-time.Nanosecond).Truncate(time.Hour)
+	expected := int(last.Sub(first)/time.Hour) + 1
+	if expected <= 0 {
+		return 0, 0, 0, false
+	}
+	buckets := make(map[time.Time]struct{}, expected)
+	for _, row := range rows {
+		if row.MetricCode != "cpu_percent" || row.Percentile != 95 || row.Value == nil ||
+			row.ObservationCount <= 0 || row.PeriodType != defaultPeriodType ||
+			strings.TrimSpace(row.Method) == "" || strings.EqualFold(row.Method, "not_available") {
+			continue
+		}
+		bucket := row.PeriodStartUTC.UTC().Truncate(time.Hour)
+		if bucket.Before(first) || bucket.After(last) {
+			continue
+		}
+		buckets[bucket] = struct{}{}
+	}
+	received := len(buckets)
+	return float64(received) * 100 / float64(expected), received, expected, true
+}
+
 type generationEvidence struct {
 	EvidenceBundle
-	ProviderCode        string
-	RegionCode          string
-	MeterID             string
-	HasMinimumEvidence  bool
-	Degraded            bool
-	InsufficientReasons []string
-	PartialErrors       []string
+	ProviderCode                string
+	RegionCode                  string
+	MeterID                     string
+	WindowStartUTC              time.Time
+	WindowEndUTC                time.Time
+	CPUDataCoveragePct          float64
+	CPUExpectedBuckets          int
+	CPUReceivedBuckets          int
+	CPUDataCoverageAvailable    bool
+	CPUDataCoverageThresholdPct *float64
+	HasMinimumEvidence          bool
+	Degraded                    bool
+	InsufficientReasons         []string
+	PartialErrors               []string
 }
 
 func (s *Service) EstimateSaving(_ context.Context, input SavingInput) (EstimatedSaving, error) {

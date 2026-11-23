@@ -283,6 +283,7 @@ func main() {
 	var analyticsRepo *analyticsrepos.AnalyticsRepository
 	var analyticsSvc *analytics.Service
 	var recommendationSvc *recommendation.Service
+	var mlClient analytics.MLPort
 	if dataDSN := os.Getenv("CCO_DATA_DSN"); dataDSN != "" {
 		dataDB, err := database.Open(database.Config{Driver: database.DriverPostgres, DSN: dataDSN})
 		if err != nil {
@@ -295,7 +296,6 @@ func main() {
 
 		// Analytics module (Module 5)
 		analyticsRepo = analyticsrepos.NewAnalyticsRepository(dataDB)
-		var mlClient analytics.MLPort
 		mlMode := os.Getenv("CCO_ML_MODE")
 		switch mlMode {
 		case "baseline":
@@ -304,6 +304,16 @@ func main() {
 		case "not_available":
 			// Explicitly not available: never present a fake forecast as productive.
 			mlClient = analyticsadapters.NewNotAvailableMLClient()
+		case "grpc":
+			// Productive gRPC client to the external Python ML service (Module 6).
+			mlEndpoint := os.Getenv("CCO_ML_ENDPOINT")
+			mlTimeout := envSeconds("CCO_ML_REQUEST_TIMEOUT_SECONDS", 10*time.Second)
+			grpcClient, err := analyticsadapters.NewGRPCMLClient(mlEndpoint, mlTimeout)
+			if err != nil {
+				log.Fatalf("connect ML endpoint: %v", err)
+			}
+			defer grpcClient.Close()
+			mlClient = grpcClient
 		default:
 			// Default (dev/unset): fake client.
 			mlClient = analyticsadapters.NewFakeMLClient()
@@ -518,6 +528,56 @@ func main() {
 		return err
 	})
 
+	// ml:train entrena un modelo candidato vía el servicio Python y lo
+	// registra en ml.training_run / ml.model_version. Invocado por Jobs.
+	jw.RegisterHandler("ml:train", func(ctx context.Context, payload []byte) error {
+		if analyticsSvc == nil {
+			return errors.New("analytics service not configured (CCO_DATA_DSN missing)")
+		}
+		mlMgmt, ok := mlClient.(*analyticsadapters.GrpcMLClient)
+		if !ok {
+			return errors.New("ML client is not a gRPC client; set CCO_ML_MODE=grpc")
+		}
+		var parsed struct {
+			ResourceUID  string `json:"resource_uid"`
+			TargetMetric string `json:"target_metric"`
+			ModelName    string `json:"model_name"`
+			ModelVersion string `json:"model_version"`
+			Algorithm    string `json:"algorithm"`
+			Hours        int    `json:"hours"`
+		}
+		if err := json.Unmarshal(payload, &parsed); err != nil {
+			return err
+		}
+		resourceUID, err := uuid.Parse(parsed.ResourceUID)
+		if err != nil {
+			return err
+		}
+		if parsed.ModelName == "" {
+			return errors.New("model_name is required")
+		}
+		if parsed.ModelVersion == "" {
+			return errors.New("model_version is required")
+		}
+		if parsed.Hours <= 0 {
+			parsed.Hours = 720
+		}
+		if parsed.Algorithm == "" {
+			parsed.Algorithm = "random_forest"
+		}
+		resp, err := mlMgmt.Train(ctx, resourceUID, parsed.TargetMetric, parsed.ModelName,
+			parsed.ModelVersion, parsed.Algorithm, int32(parsed.Hours))
+		if err != nil {
+			return err
+		}
+		if resp.Status != "ok" {
+			return fmt.Errorf("training failed: %s", resp.ErrorMessage)
+		}
+		slog.Info("ml:train completed", "resource_uid", resourceUID, "target", parsed.TargetMetric,
+			"model", resp.ModelName, "version", resp.ModelVersion, "mae", resp.Mae)
+		return nil
+	})
+
 	// recommendation:generate genera una recomendación pesada de forma
 	// asíncrona y la persiste en cco_data.
 	jw.RegisterHandler("recommendation:generate", func(ctx context.Context, payload []byte) error {
@@ -525,15 +585,23 @@ func main() {
 			return errors.New("recommendation service not configured (CCO_DATA_DSN missing)")
 		}
 		var parsed struct {
-			ResourceUID string `json:"resource_uid"`
-			From        string `json:"from"`
-			To          string `json:"to"`
-			HorizonDays int    `json:"horizon_days,omitempty"`
+			ResourceUID  string `json:"resource_uid"`
+			PolicyUID    string `json:"policy_uid"`
+			From         string `json:"from"`
+			To           string `json:"to"`
+			HorizonDays  int    `json:"horizon_days"`
+			Currency     string `json:"currency"`
+			ForceRefresh bool   `json:"force_refresh"`
+			CreatedBy    string `json:"created_by"`
 		}
 		if err := json.Unmarshal(payload, &parsed); err != nil {
 			return err
 		}
 		resourceUID, err := uuid.Parse(parsed.ResourceUID)
+		if err != nil {
+			return err
+		}
+		policyUID, err := uuid.Parse(parsed.PolicyUID)
 		if err != nil {
 			return err
 		}
@@ -546,11 +614,10 @@ func main() {
 			return err
 		}
 		_, err = recommendationSvc.GenerateRecommendation(ctx, recommendation.GenerateRecommendationInput{
-			ResourceUID: resourceUID,
-			From:        from,
-			To:          to,
-			HorizonDays: parsed.HorizonDays,
-			CreatedBy:   "jobs-worker",
+			ResourceUID: resourceUID, PolicyUID: policyUID,
+			From: from, To: to, HorizonDays: parsed.HorizonDays,
+			Currency: strings.ToUpper(parsed.Currency), ForceRefresh: parsed.ForceRefresh,
+			CreatedBy: parsed.CreatedBy,
 		})
 		return err
 	})
@@ -705,6 +772,38 @@ func main() {
 	// Analytics routes (Module 5): analytical evidence endpoints. nil service =
 	// CCO_DATA_DSN not configured → endpoints answer 503.
 	analytics.RegisterRoutes(mux, analyticsSvc, authMiddleware, permEngine)
+
+	// GET /api/v1/ml/models lists registered model versions (ML management).
+	// Requires analytics:read.
+	mux.Handle("GET /api/v1/ml/models",
+		authMiddleware.Handler(middleware.RequirePermission(permEngine, "analytics", "read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if analyticsRepo == nil {
+				writeError(w, http.StatusServiceUnavailable, "ML_UNAVAILABLE", "analytics repository not configured")
+				return
+			}
+			models, err := analyticsRepo.ListModels(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "MODEL_LIST_FAILED", err.Error())
+				return
+			}
+			out := make([]map[string]any, 0, len(models))
+			for _, m := range models {
+				out = append(out, map[string]any{
+					"model_version_id":  m.ModelVersionID,
+					"training_run_id":   m.TrainingRunID,
+					"model_name":        m.ModelName,
+					"version":           m.Version,
+					"framework":         ptrStr(m.Framework),
+					"stage":             m.Stage,
+					"params":            ptrStr(m.Params),
+					"metrics_summary":   ptrStr(m.MetricsSummary),
+					"promoted_at":       ptrTime(m.PromotedAt),
+					"created_at":        m.CreatedAt.UTC(),
+					"algorithm":         ptrStr(m.Algorithm),
+				})
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"items": out, "count": len(out)})
+		}))))
 
 	// Recommendation routes (Module 7): nil service when CCO_DATA_DSN is not
 	// configured → endpoints return 503.
@@ -929,10 +1028,13 @@ func main() {
 			const maxBody = 1 << 20 // 1 MB
 			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 			var req struct {
-				ResourceUID string `json:"resource_uid"`
-				From        string `json:"from"`
-				To          string `json:"to"`
-				HorizonDays int    `json:"horizon_days,omitempty"`
+				ResourceUID  string `json:"resource_uid"`
+				PolicyUID    string `json:"policy_uid"`
+				From         string `json:"from"`
+				To           string `json:"to"`
+				HorizonDays  int    `json:"horizon_days"`
+				Currency     string `json:"currency"`
+				ForceRefresh bool   `json:"force_refresh"`
 			}
 			dec := json.NewDecoder(r.Body)
 			dec.DisallowUnknownFields()
@@ -945,6 +1047,14 @@ func main() {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid resource_uid")
 				return
 			}
+			if _, err := uuid.Parse(req.PolicyUID); err != nil {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid policy_uid")
+				return
+			}
+			if len(req.Currency) != 3 || strings.ToUpper(req.Currency) != req.Currency {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "currency must be a three-letter uppercase code")
+				return
+			}
 			from, err := time.Parse(time.RFC3339, req.From)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid from")
@@ -955,16 +1065,25 @@ func main() {
 				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid to")
 				return
 			}
+			if !from.Before(to) {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "from must be before to")
+				return
+			}
+			if req.HorizonDays < 1 || req.HorizonDays > 365 {
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "horizon_days must be between 1 and 365")
+				return
+			}
 			ic, ok := iam.IdentityContextFromContext(r.Context())
 			if !ok {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "no identity context")
 				return
 			}
 			payload, _ := json.Marshal(map[string]any{
-				"resource_uid": req.ResourceUID,
-				"from":         from.UTC().Format(time.RFC3339),
-				"to":           to.UTC().Format(time.RFC3339),
-				"horizon_days": req.HorizonDays,
+				"resource_uid": req.ResourceUID, "policy_uid": req.PolicyUID,
+				"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339),
+				"horizon_days": req.HorizonDays, "currency": req.Currency,
+				"force_refresh": req.ForceRefresh,
+				"created_by":    ic.UserID.String(),
 			})
 			job, err := jsvc.Enqueue(r.Context(), jobs.EnqueueInput{
 				Type:           "recommendation:generate",
@@ -1169,4 +1288,18 @@ func envSeconds(name string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+func ptrTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

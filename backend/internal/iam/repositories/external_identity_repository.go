@@ -2,12 +2,14 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type externalIdentityRepository struct{ db *gorm.DB }
@@ -17,21 +19,44 @@ func NewExternalIdentityRepository(db *gorm.DB) iam.ExternalIdentityRepository {
 }
 
 func (r *externalIdentityRepository) LinkExternalIdentity(ctx context.Context, input iam.CreateExternalIdentityInput) (iam.ExternalIdentityDTO, error) {
-	now := time.Now().UTC()
+	table := database.TableName(r.db, "iam", "external_identities")
+
+	var existing database.ExternalIdentityModel
+	err := r.db.WithContext(ctx).
+		Table(table).
+		Where("provider = ? AND subject = ?", input.Provider, input.Subject).
+		Take(&existing).Error
+	if err == nil {
+		return toExternalIdentityDTO(existing), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return iam.ExternalIdentityDTO{}, err
+	}
+
 	model := database.ExternalIdentityModel{
 		ExternalIdentityID: uuid.New(),
 		UserID:             input.UserID,
 		Provider:           input.Provider,
 		Subject:            input.Subject,
-		CreatedAt:          now,
+		CreatedAt:          time.Now().UTC(),
 	}
-	err := r.db.WithContext(ctx).
-		Table(database.TableName(r.db, "iam", "external_identities")).
+	err = r.db.WithContext(ctx).
+		Table(table).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "provider"}, {Name: "subject"}},
+			DoNothing: true,
+		}).
 		Create(&model).Error
 	if err != nil {
 		return iam.ExternalIdentityDTO{}, err
 	}
-	return toExternalIdentityDTO(model), nil
+	if err := r.db.WithContext(ctx).
+		Table(table).
+		Where("provider = ? AND subject = ?", input.Provider, input.Subject).
+		Take(&existing).Error; err != nil {
+		return iam.ExternalIdentityDTO{}, err
+	}
+	return toExternalIdentityDTO(existing), nil
 }
 
 func (r *externalIdentityRepository) FindExternalIdentityByProviderSubject(ctx context.Context, provider, subject string) (iam.ExternalIdentityDTO, error) {

@@ -1448,6 +1448,50 @@ El motor genera decisiones declarativas y auditables; no ejecuta cambios sobre r
 
 Todas las rutas requieren `Authorization: Bearer <token>`. Los permisos se evalúan sobre el recurso `recommendations`: `write` para generar, `evaluate` para evaluar y `read` para consultar.
 
+### GET /api/v1/recommendations/policies
+
+Lista políticas versionadas del repositorio `opt.optimization_policy`. Requiere `recommendations:read`. Query opcionales: `name` y `enabled_only` (`true`/`false`). La respuesta es `{ "items": [...], "count": n }`.
+
+### POST /api/v1/recommendations/policies
+
+Crea una política versionada en el repositorio existente. Requiere `recommendations:write`. `created_by` se toma de la identidad autenticada y no del request.
+
+```json
+{
+  "name": "right-sizing-conservador",
+  "version": 1,
+  "enabled": true,
+  "objective_weights": { "cost": 0.5, "risk": 0.5 },
+  "constraints": {
+    "allow_scale_down": false,
+    "allow_compute_model_change": false,
+    "max_risk_score": 0.35,
+    "min_confidence": 0.7,
+    "min_cpu_p95_coverage_pct": 95
+  }
+}
+```
+
+Los umbrales y permisos de la política son decisiones del equipo. El servidor los conserva, los versiona y los aplica; no los infiere de un LLM. `min_cpu_p95_coverage_pct` debe ser mayor que 0 y hasta 100. La cobertura se calcula sobre buckets horarios distintos de CPU p95 con valor, `ObservationCount > 0`, `PeriodType == "1h"` y método disponible. Si el umbral no está configurado, la cobertura no puede calcularse o queda debajo del umbral, el motor se abstiene: `no_action`, estado `insufficient_information`, riesgo `indeterminate`, sin candidato seleccionado ni ahorro de candidato. La respuesta incluye cobertura, numerador/denominador y motivo.
+
+### POST /api/v1/jobs/recommendation
+
+Encola una generación pesada con el worker durable de `jobs`. Requiere `recommendations:write` y devuelve `202 Accepted` con el DTO del job. El actor autenticado se conserva en la ejecución y en la auditoría; no se acepta un actor elegido por el cliente.
+
+```json
+{
+  "resource_uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "policy_uid": "11111111-2222-3333-4444-555555555555",
+  "from": "2026-10-01T00:00:00Z",
+  "to": "2026-11-01T00:00:00Z",
+  "horizon_days": 7,
+  "currency": "USD",
+  "force_refresh": false
+}
+```
+
+La ventana debe ser creciente, `horizon_days` debe estar entre 1 y 365 y `currency` debe ser un código de tres letras mayúsculas. Consulta estado/error del job con `GET /api/v1/jobs/{id}` (`jobs:read`); el job usa el tipo `recommendation:generate`. Cuando el estado sea `completed`, recupera la recomendación persistida con `GET /api/v1/recommendations?resource_uid=...` (`recommendations:read`).
+
 ### POST /api/v1/recommendations
 
 Genera y persiste una recomendación versionada. Requiere `recommendations:write`.
@@ -1468,6 +1512,15 @@ Genera y persiste una recomendación versionada. Requiere `recommendations:write
 **Response (201 Created):** incluye `recommendation_uid`, `scenario_uid`, versión, estado de generación (`complete`, `no_action` o `insufficient_information`), acción declarativa, configuraciones, ahorro, riesgo, componentes de confianza y explicación basada en evidencia. Si la recomendación se guardó en `cco_data` pero falló su auditoría síncrona en `cco_app`, también incluye `audit_status: "audit_pending"`; la recomendación se devuelve y el fallo queda registrado en un error estructurado de `slog`. La auditoría pendiente requiere reconciliación manual en esta versión; no hay reintento automático.
 
 `force_refresh: false` reutiliza una recomendación previa solo si coinciden recurso, política, ventana temporal, horizonte y moneda. Si los parámetros difieren, crea una nueva versión.
+
+#### Gates de evidencia y explicación Release 1.0
+
+- La cobertura horaria de CPU p95 debe cumplir `min_cpu_p95_coverage_pct`. La falta de umbral o cobertura insuficiente impide proponer un cambio.
+- No se usa una extrapolación lineal de CPU por vCores para declarar factible otro SKU, ni se transfiere factibilidad entre modelos provisionado/serverless sin evidencia calibrada. Al no existir actualmente ese contrato de validación, una configuración alternativa se marca no evaluable (`candidate_transfer_validation_unavailable`); la abstención conserva SKU, modelo y capacidad actuales y usa riesgo `indeterminate`.
+- p95/p99 son estadísticos históricos observados. Un forecast con `target_metric: "cpu_avg"` se presenta como promedio; sus valores e intervalos no sustituyen ni se etiquetan como p95/p99. Un forecast sin contrato de backtest/calibración no incrementa `forecast_quality_score`.
+- `estimated_saving.current_cost_basis` y `proposed_cost_basis` identifican bases separadas. La comparación actual usa cargos diarios observados normalizados al mes (`actual_cost_daily`) y el candidato usa precio de lista del catálogo (`price_catalog`); este último no es costo efectivo negociado. `comparison_assumptions` declara que descuentos, créditos, impuestos y transferencia de workload no se modelan. `monthly_amount` y `monthly_percentage` son ahorro potencial, no ahorro realizado; en esta respuesta `monthly_percentage` se expresa en escala de 0 a 100.
+- `risk.level` admite `indeterminate` cuando faltan datos, límites o transferencia de rendimiento validada. La respuesta determinista expone cobertura, forecast promedio y razones de abstención; el LLM no elige candidatos ni altera la decisión.
+- Una recomendación persistida requiere revisión humana mediante `POST /api/v1/recommendations/{uid}/accept` o `/reject`, que registra actor, transición y evento de auditoría. `/apply` registra un estado comunicado; no provisiona, escala ni modifica recursos en Azure.
 
 ### POST /api/v1/recommendations/evaluate
 

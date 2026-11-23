@@ -317,3 +317,73 @@ func TestEvaluateHandlerReturnsOKForAuditableNoAction(t *testing.T) {
 		t.Fatalf("evaluation state = %q, want auditable no-action state", response.State)
 	}
 }
+
+type handlerPolicyRepositoryStub struct {
+	policies []OptimizationPolicy
+	created  OptimizationPolicy
+}
+
+func (r *handlerPolicyRepositoryStub) CreatePolicy(_ context.Context, policy OptimizationPolicy) (OptimizationPolicy, error) {
+	if policy.UID == uuid.Nil {
+		policy.UID = uuid.New()
+	}
+	r.created = policy
+	return policy, nil
+}
+
+func (r *handlerPolicyRepositoryStub) GetPolicy(context.Context, uuid.UUID) (OptimizationPolicy, error) {
+	return OptimizationPolicy{}, ErrPolicyNotFound
+}
+
+func (r *handlerPolicyRepositoryStub) GetLatestEnabledPolicy(context.Context, string) (OptimizationPolicy, error) {
+	return OptimizationPolicy{}, ErrPolicyNotFound
+}
+
+func (r *handlerPolicyRepositoryStub) ListPolicies(context.Context, string, bool) ([]OptimizationPolicy, error) {
+	return r.policies, nil
+}
+
+func TestPolicyHandlersReadAndCreateUsingExistingRepository(t *testing.T) {
+	actorID := uuid.New()
+	policyRepository := &handlerPolicyRepositoryStub{policies: []OptimizationPolicy{{
+		UID: uuid.New(), Name: "safe", Version: 1, Enabled: true,
+	}}}
+	service, err := NewEngine(Dependencies{
+		PolicyEvaluator: policyEvaluatorFunc(func(context.Context, OptimizationPolicy, PolicyEvaluationInput) (PolicyEvaluation, error) {
+			return PolicyEvaluation{}, nil
+		}),
+		PolicyRepository: policyRepository,
+		Repository:       handlerRecommendationRepository{},
+	})
+	if err != nil {
+		t.Fatalf("create recommendation service: %v", err)
+	}
+
+	listRecorder := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/recommendations/policies?enabled_only=true", nil)
+	handleListPolicies(service).ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK || !strings.Contains(listRecorder.Body.String(), policyRepository.policies[0].UID.String()) {
+		t.Fatalf("list policy response = %d %s", listRecorder.Code, listRecorder.Body.String())
+	}
+
+	createRecorder := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/recommendations/policies", strings.NewReader(`{"name":"safe-v2","version":2,"enabled":true,"constraints":{"allow_scale_down":false}}`))
+	createRequest = createRequest.WithContext(iam.WithIdentityContext(createRequest.Context(), iam.IdentityContext{UserID: actorID}))
+	handleCreatePolicy(service).ServeHTTP(createRecorder, createRequest)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create policy status = %d, body = %s", createRecorder.Code, createRecorder.Body.String())
+	}
+	if policyRepository.created.Name != "safe-v2" || policyRepository.created.Version != 2 || policyRepository.created.CreatedBy != actorID.String() {
+		t.Fatalf("created policy = %#v", policyRepository.created)
+	}
+	invalidRecorder := httptest.NewRecorder()
+	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/v1/recommendations/policies", strings.NewReader(`{"name":"unsafe-v3","version":3,"enabled":true,"constraints":{"min_cpu_p95_coverage_pct":0}}`))
+	invalidRequest = invalidRequest.WithContext(iam.WithIdentityContext(invalidRequest.Context(), iam.IdentityContext{UserID: actorID}))
+	handleCreatePolicy(service).ServeHTTP(invalidRecorder, invalidRequest)
+	if invalidRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid coverage threshold status = %d, body = %s", invalidRecorder.Code, invalidRecorder.Body.String())
+	}
+	if policyRepository.created.Name != "safe-v2" {
+		t.Fatalf("invalid policy should not be persisted: got %#v", policyRepository.created)
+	}
+}

@@ -220,10 +220,11 @@ const (
 type RiskLevel string
 
 const (
-	RiskLevelLow      RiskLevel = "low"
-	RiskLevelMedium   RiskLevel = "medium"
-	RiskLevelHigh     RiskLevel = "high"
-	RiskLevelCritical RiskLevel = "critical"
+	RiskLevelLow           RiskLevel = "low"
+	RiskLevelMedium        RiskLevel = "medium"
+	RiskLevelHigh          RiskLevel = "high"
+	RiskLevelCritical      RiskLevel = "critical"
+	RiskLevelIndeterminate RiskLevel = "indeterminate"
 )
 
 type Configuration struct {

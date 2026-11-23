@@ -1,0 +1,36 @@
+# =============================================================================
+# Local PostgreSQL working copy for the forecasting pipeline.
+#
+# This is a LOCAL COPY. The development database (and the source database with
+# the real telemetry) are never used directly for training or experiments.
+#
+#   docker compose up -d        -> start
+#   docker compose down         -> stop
+#   docker compose down -v      -> stop and delete the volume (data loss)
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: cco-forecasting-pg
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cco_forecasting}
+      POSTGRES_USER: ${POSTGRES_USER:-cco_forecasting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - forecasting_pgdata:/var/lib/postgresql/data
+      # Base schema of the cco_data context (branch baseline, untouched).
+      - ./databases/cco_data/cco_data_schema.sql:/docker-entrypoint-initdb.d/001_cco_data_schema.sql:ro
+      # Idempotent forecasting extension (synthetic schema + extra features).
+      - ./sql/create_forecasting_schema.sql:/docker-entrypoint-initdb.d/002_create_forecasting_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cco_forecasting} -d ${POSTGRES_DB:-cco_forecasting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  forecasting_pgdata:
