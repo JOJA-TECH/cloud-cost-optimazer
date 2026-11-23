@@ -359,6 +359,233 @@ export async function getConfigSnapshots(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Analytics (requieren CCO_DATA_DSN → 503 sin él, fallback a mock)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PercentileResult {
+  period_start: string
+  period_end: string
+  p50: number
+  p95: number
+  p99: number
+  avg: number
+  min: number
+  max: number
+}
+
+export interface TrendResult {
+  timestamp_utc: string
+  cpu_slope: number
+  storage_growth: number
+}
+
+export interface WorkloadPattern {
+  pattern: string
+  confidence: number
+  peak_hours: string[]
+  intensity_band: string
+  evidence: string[]
+}
+
+export interface CapacityAnalysis {
+  resource_uid: string
+  period_type: string
+  period_start: string
+  headroom_pct: number
+  peak_utilization_pct: number
+  growth_rate_pct: number
+  recommended_vcores: number
+  feasible: boolean
+}
+
+export interface CostAnalysis {
+  resource_uid: string
+  current_cost: number
+  projected_cost: number
+  savings_pct: number
+  savings_abs: number
+}
+
+export interface DESComponents {
+  resource_uid: string
+  period_type: string
+  period_start: string
+  capacity_e: number
+  cost_e: number
+  performance_e: number
+}
+
+export interface ForecastResponse {
+  resource_uid: string
+  target_metric: string
+  horizon_steps: number
+  step_unit: string
+  points: Array<{
+    step: number
+    timestamp_utc: string
+    forecast: number
+    lower: number
+    upper: number
+  }>
+}
+
+export interface AnalyticsJob {
+  job_uid: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  created_at: string
+  completed_at?: string
+  error?: string
+}
+
+// ── Helper para llamadas POST de analytics (computar) ──
+async function analyticsPost<T>(
+  path: string,
+  body: any
+): Promise<T | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<T>(path, {
+      method: 'POST',
+      body: JSON.stringify({ resource_uid: uid, from: range.from, to: range.to, ...body }),
+    })
+  )
+}
+
+// ── Helper para llamadas GET de analytics (leer) ──
+async function analyticsGet<T>(
+  path: string
+): Promise<T | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<T>(
+      `${path}?resource_uid=${uid}&from=${range.from}&to=${range.to}`
+    )
+  )
+}
+
+export async function getPercentiles(
+  metricCode: string = 'cpu_percent',
+  periodType: string = '1h'
+): Promise<PercentileResult[] | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<PercentileResult[]>(
+      `/api/v1/analytics/percentiles?resource_uid=${uid}&metric_code=${metricCode}&period_type=${periodType}&from=${range.from}&to=${range.to}`
+    )
+  )
+}
+
+export async function getTrends(): Promise<TrendResult[] | null> {
+  return analyticsGet<TrendResult[]>('/api/v1/analytics/trends')
+}
+
+export async function getWorkloadPattern(): Promise<WorkloadPattern | null> {
+  return analyticsGet<WorkloadPattern>('/api/v1/analytics/patterns')
+}
+
+export async function getCapacityAnalysis(
+  periodType: string = '1d'
+): Promise<CapacityAnalysis | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<CapacityAnalysis>(
+      `/api/v1/analytics/capacity?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`
+    )
+  )
+}
+
+export async function getAnalyticsCosts(): Promise<CostAnalysis | null> {
+  return analyticsGet<CostAnalysis>('/api/v1/analytics/costs')
+}
+
+export async function getDESComponents(
+  periodType: string = '1d'
+): Promise<DESComponents | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<DESComponents>(
+      `/api/v1/analytics/des?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`
+    )
+  )
+}
+
+export async function getAnalyticsForecasts(
+  targetMetric: string = 'cpu_percent'
+): Promise<ForecastResponse | null> {
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson<ForecastResponse>(
+      `/api/v1/analytics/forecasts?resource_uid=${uid}&target_metric=${targetMetric}&from=${range.from}&to=${range.to}`
+    )
+  )
+}
+
+export async function computeSnapshots(): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/snapshots', {})
+}
+
+export async function computePercentiles(
+  metricCode: string = 'cpu_percent',
+  periodType: string = '1h'
+): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/percentiles', {
+    metric_code: metricCode,
+    period_type: periodType,
+  })
+}
+
+export async function computeTrends(): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/trends', {})
+}
+
+export async function detectPatterns(): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/patterns', {})
+}
+
+export async function analyzeCapacity(
+  periodType: string = '1d'
+): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/capacity', {
+    period_type: periodType,
+  })
+}
+
+export async function analyzeAnalyticsCosts(): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/costs', {})
+}
+
+export async function computeDES(
+  periodType: string = '1d'
+): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/des', {
+    period_type: periodType,
+  })
+}
+
+export async function requestForecast(
+  targetMetric: string = 'cpu_percent',
+  horizonSteps: number = 24
+): Promise<AnalyticsJob | null> {
+  return analyticsPost<AnalyticsJob>('/api/v1/analytics/forecasts', {
+    target_metric: targetMetric,
+    horizon_steps: horizonSteps,
+    step_unit: '1h',
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Recommendations (requieren CCO_DATA_DSN → 503 sin él, fallback a mock)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -369,6 +596,113 @@ export async function getRecommendations(): Promise<RecommendationItem[]> {
 
 export async function getRecommendation(uid: string): Promise<RecommendationItem | null> {
   return tryBackend(() => apiJson<RecommendationItem>(`/api/v1/recommendations/${uid}`))
+}
+
+export interface RecommendationEvidence {
+  recommendation_uid: string
+  evidence_items: Array<{
+    label: string
+    value: string
+    tone: 'good' | 'warn' | 'bad'
+  }>
+  constraints: Array<{
+    label: string
+    pass: boolean
+  }>
+  limitations: string[]
+  rationale: string
+}
+
+export interface RecommendationTrace {
+  recommendation_uid: string
+  trace_items: Array<{
+    timestamp_utc: string
+    actor_type: string
+    actor_id: string
+    action: string
+    details: Record<string, any>
+  }>
+}
+
+export interface RecommendationDecision {
+  recommendation_uid: string
+  action: 'accept' | 'reject' | 'dismiss' | 'apply'
+  decided_at: string
+  decided_by: string
+}
+
+export async function getRecommendationEvidence(uid: string): Promise<RecommendationEvidence | null> {
+  return tryBackend(() =>
+    apiJson<RecommendationEvidence>(`/api/v1/recommendations/${uid}/evidence`)
+  )
+}
+
+export async function evaluateRecommendations(
+  resourceUid: string,
+  policyUid: string | null,
+  horizonDays: number,
+  from: string,
+  to: string,
+  currency: string = 'USD'
+): Promise<any> {
+  const uid = resourceUid || getSelectedResourceUid()
+  const range = from && to ? { from, to } : getTimeRange()
+  if (!uid) return null
+  return tryBackend(() =>
+    apiJson('/api/v1/recommendations/evaluate', {
+      method: 'POST',
+      body: JSON.stringify({
+        resource_uid: uid,
+        policy_uid: policyUid,
+        horizon_days: horizonDays,
+        from: range.from,
+        to: range.to,
+        currency,
+      }),
+    })
+  )
+}
+
+export async function acceptRecommendation(uid: string): Promise<any> {
+  return tryBackend(() =>
+    apiJson(`/api/v1/recommendations/${uid}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  )
+}
+
+export async function rejectRecommendation(uid: string): Promise<any> {
+  return tryBackend(() =>
+    apiJson(`/api/v1/recommendations/${uid}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  )
+}
+
+export async function dismissRecommendation(uid: string): Promise<any> {
+  return tryBackend(() =>
+    apiJson(`/api/v1/recommendations/${uid}/dismiss`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  )
+}
+
+export async function applyRecommendation(uid: string): Promise<any> {
+  return tryBackend(() =>
+    apiJson(`/api/v1/recommendations/${uid}/apply`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+  )
+}
+
+export async function getRecommendationTrace(uid: string): Promise<RecommendationTrace | null> {
+  return tryBackend(() =>
+    apiJson<RecommendationTrace>(`/api/v1/recommendations/${uid}/trace`)
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -454,10 +788,13 @@ export async function getReliabilityEvents() {
 }
 
 export async function getRecommendationSummary(): Promise<RecommendationItem> {
+  const uid = getSelectedResourceUid()
+  if (uid) {
+    const single = await getRecommendation(uid)
+    if (single) return single
+  }
   const recs = await getRecommendations()
   if (recs.length > 0) return recs[0]
-  const single = await getRecommendation('rec-2041')
-  if (single) return single
   return recommendation
 }
 

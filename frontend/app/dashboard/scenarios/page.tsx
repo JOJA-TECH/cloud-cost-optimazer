@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bars } from '@/components/charts'
 import { cn } from '@/lib/utils'
-import { getScenarios } from '@/lib/api-services'
+import { getScenarios, evaluateRecommendations, getSelectedResourceUid } from '@/lib/api-services'
 import type { ScenarioItem } from '@/lib/api-services'
 
 const rows: { key: string; label: string; render: (s: ScenarioItem) => React.ReactNode }[] = [
@@ -33,10 +33,36 @@ const rows: { key: string; label: string; render: (s: ScenarioItem) => React.Rea
 export default function ScenariosPage() {
   const [scenarios, setScenarios] = useState<ScenarioItem[]>(scenariosMock)
   const [selected, setSelected] = useState('a')
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [simulating, setSimulating] = useState(false)
+  const [simulateResult, setSimulateResult] = useState<any>(null)
 
   useEffect(() => {
+    const uid = getSelectedResourceUid()
+    setResourceUid(uid)
     getScenarios().then(setScenarios)
   }, [])
+
+  async function handleSimulate() {
+    if (!resourceUid) return
+    setSimulating(true)
+    setSimulateResult(null)
+    try {
+      const result = await evaluateRecommendations(
+        resourceUid,
+        null, // policy_uid
+        30, // horizon_days
+        '', // from (will use default from sessionStorage)
+        '', // to (will use default from sessionStorage)
+        'USD'
+      )
+      setSimulateResult(result)
+    } catch {
+      // Error handled by tryBackend
+    } finally {
+      setSimulating(false)
+    }
+  }
 
   return (
     <div>
@@ -142,9 +168,14 @@ export default function ScenariosPage() {
                     <ArrowRight />
                   </Button>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="outline" disabled className="opacity-50 cursor-not-allowed">
-                      <Play />
-                      Simulate <span className="text-[10px] ml-1">Demo</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSimulate}
+                      disabled={!resourceUid || simulating}
+                      className={!resourceUid || simulating ? 'opacity-50 cursor-not-allowed' : ''}
+                    >
+                      {simulating ? 'Simulating...' : <><Play /> Simulate</>}
                     </Button>
                     <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
                       <FileSearch />
@@ -152,11 +183,26 @@ export default function ScenariosPage() {
                     </Button>
                   </div>
                 </div>
+                {simulateResult && (
+                  <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs">
+                    <p className="text-[10px] font-semibold text-muted-foreground">Evaluation result</p>
+                    <pre className="text-[10px] text-muted-foreground break-all">{JSON.stringify(simulateResult, null, 2)}</pre>
+                  </div>
+                )}
               </div>
             )
           })()}
         </Panel>
       </div>
+
+      {!resourceUid && (
+        <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
+          <p className="text-sm text-muted-foreground">No resource selected</p>
+          <p className="text-xs text-muted-foreground">
+            Select a cloud resource from the top bar to enable scenario simulation.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

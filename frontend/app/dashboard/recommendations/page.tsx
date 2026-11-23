@@ -17,16 +17,87 @@ import { PageHeader, Panel, RiskBadge, ConfidenceBar, EvidenceDot, toneText } fr
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { getRecommendationSummary } from '@/lib/api-services'
+import {
+  getRecommendationSummary,
+  getRecommendation,
+  getRecommendationEvidence,
+  getRecommendationTrace,
+  acceptRecommendation,
+  rejectRecommendation,
+  dismissRecommendation,
+  applyRecommendation,
+  getSelectedResourceUid,
+} from '@/lib/api-services'
 import type { RecommendationItem } from '@/lib/api-services'
+
+type EvidenceItem = {
+  label: string
+  value: string
+  tone: 'good' | 'warn' | 'bad'
+}
 
 export default function RecommendationsPage() {
   const [r, setR] = useState<RecommendationItem>(recMock)
   const [showWhy, setShowWhy] = useState(true)
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [evidence, setEvidence] = useState<EvidenceItem[]>(recMock.evidence)
+  const [trace, setTrace] = useState<{ recommendation_uid: string; trace_items: Array<any> } | null>(null)
+  const [traceLoaded, setTraceLoaded] = useState(false)
 
   useEffect(() => {
+    const uid = getSelectedResourceUid()
+    setResourceUid(uid)
     getRecommendationSummary().then(setR)
   }, [])
+
+  useEffect(() => {
+    if (!resourceUid) return
+    getRecommendationEvidence(resourceUid)
+      .then((e) => {
+        if (e) setEvidence(e.evidence_items)
+      })
+      .catch(() => {})
+    getRecommendationTrace(resourceUid)
+      .then((t) => {
+        if (t) {
+          setTrace(t)
+          setTraceLoaded(true)
+        }
+      })
+      .catch(() => setTraceLoaded(false))
+  }, [resourceUid])
+
+  async function handleAccept() {
+    if (!resourceUid) return
+    const result = await acceptRecommendation(resourceUid)
+    if (result) {
+      setR((prev) => ({ ...prev, risk: 'Low', confidence: prev.confidence }))
+    }
+  }
+
+  async function handleReject() {
+    if (!resourceUid) return
+    const result = await rejectRecommendation(resourceUid)
+    if (result) {
+      setR((prev) => ({ ...prev, risk: 'High' }))
+    }
+  }
+
+  async function handleDismiss() {
+    if (!resourceUid) return
+    const result = await dismissRecommendation(resourceUid)
+    if (result) {
+      setR((prev) => ({ ...prev, risk: 'None' }))
+    }
+  }
+
+  async function handleApply() {
+    if (!resourceUid) return
+    const result = await applyRecommendation(resourceUid)
+    if (result) {
+      setR((prev) => ({ ...prev, risk: 'None' }))
+    }
+  }
 
   return (
     <div>
@@ -78,7 +149,7 @@ export default function RecommendationsPage() {
 
             <Panel title="Evidence" description="Calculated from observed telemetry">
               <ul className="space-y-2.5">
-                {r.evidence.map((e) => (
+                {evidence.map((e) => (
                   <li key={e.label} className="flex items-center gap-2 text-sm">
                     <EvidenceDot tone={e.tone} />
                     <span className="text-muted-foreground">{e.label}</span>
@@ -87,42 +158,90 @@ export default function RecommendationsPage() {
                 ))}
               </ul>
             </Panel>
+
+            <Panel
+              title="Why this recommendation?"
+              action={
+                <button
+                  onClick={() => setShowWhy((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary"
+                >
+                  {showWhy ? 'Hide' : 'Show'}
+                  <ChevronDown className={cn('size-4 transition-transform', showWhy && 'rotate-180')} />
+                </button>
+              }
+            >
+              {showWhy && (
+                <div className="space-y-3">
+                  <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Grounded label="Analysis period" value={r.analysisPeriod} />
+                    <Grounded label="Generated" value={r.generated} />
+                    <Grounded label="Model / ruleset" value={r.modelVersion} />
+                    <Grounded label="Resource" value="sql-prod-orders-eastus" />
+                  </div>
+                </div>
+              )}
+            </Panel>
+
+            <Panel title="Limitations" description="Stated explicitly with every recommendation">
+              <ul className="space-y-2">
+                {r.limitations.map((l) => (
+                  <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                    {l}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
           </div>
 
-          <Panel
-            title="Why this recommendation?"
-            action={
-              <button
-                onClick={() => setShowWhy((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary"
+          {/* Decision actions (disabled until connected to backend) */}
+          <Panel title="Decision actions" description="Record your decision on this recommendation">
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                size="sm"
+                variant="success"
+                onClick={handleAccept}
+                disabled
+                className="opacity-50 cursor-not-allowed"
               >
-                {showWhy ? 'Hide' : 'Show'}
-                <ChevronDown className={cn('size-4 transition-transform', showWhy && 'rotate-180')} />
-              </button>
-            }
-          >
-            {showWhy && (
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Grounded label="Analysis period" value={r.analysisPeriod} />
-                  <Grounded label="Generated" value={r.generated} />
-                  <Grounded label="Model / ruleset" value={r.modelVersion} />
-                  <Grounded label="Resource" value="sql-prod-orders-eastus" />
-                </div>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Limitations" description="Stated explicitly with every recommendation">
-            <ul className="space-y-2">
-              {r.limitations.map((l) => (
-                <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
-                  {l}
-                </li>
-              ))}
-            </ul>
+                Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleReject}
+                disabled
+                className="opacity-50 cursor-not-allowed"
+              >
+                Reject
+              </Button>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDismiss}
+                disabled
+                className="opacity-50 cursor-not-allowed"
+              >
+                Dismiss
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleApply}
+                disabled
+                className="opacity-50 cursor-not-allowed"
+              >
+                Apply (record only)
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Decision actions are not yet connected to the backend. They register a state transition only
+              and do not modify Azure resources.
+            </p>
           </Panel>
         </div>
 
@@ -176,6 +295,23 @@ export default function RecommendationsPage() {
               </div>
             </div>
           </Panel>
+
+          {traceLoaded && trace && (
+            <Panel title="Audit trace" description="Recommendation decision lineage">
+              <div className="space-y-2">
+                {trace.trace_items.map((item, i) => (
+                  <div key={i} className="border-b border-border pb-2 text-xs">
+                    <p className="text-[10px] font-semibold text-muted-foreground">
+                      {item.action} — {item.actor_type}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {item.timestamp_utc} · {item.actor_id}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
         </div>
       </div>
     </div>
@@ -297,5 +433,3 @@ const assistantAnswersMock: Record<string, string> = {
   'Which metric is limiting the recommendation?':
     'CPU p99 at peak is the binding constraint. Candidate B (2 vCores) pushes p99 to ~81% and moves SLA to Warning, which is why it is not recommended despite larger nominal savings. Memory (68%) is the second-closest signal to its threshold.',
 }
-
-
