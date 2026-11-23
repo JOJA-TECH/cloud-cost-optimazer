@@ -58,23 +58,23 @@ export default function ConfigurationPage() {
   }, [])
 
   const summary = resource ? [
-    { icon: Database, label: 'Service', value: resource.service },
-    { icon: Server, label: 'Tier', value: `${resource.tier} · ${resource.computeModel}` },
-    { icon: Server, label: 'Compute', value: `${resource.vCores} vCores · ${resource.memoryGb} GB` },
-    { icon: HardDrive, label: 'Storage', value: `${resource.storageUsedGb} / ${resource.storageLimitGb} GB` },
-    { icon: Shield, label: 'Redundancy', value: resource.redundancy },
-    { icon: CheckCircle2, label: 'State', value: resource.state },
+    { icon: Database, label: 'Service', value: resource.service ?? '—' },
+    { icon: Server, label: 'Tier', value: `${resource.tier ?? '—'} · ${resource.computeModel ?? '—'}` },
+    { icon: Server, label: 'Compute', value: `${resource.vCores ?? '—'} vCores · ${resource.memoryGb ?? '—'} GB` },
+    { icon: HardDrive, label: 'Storage', value: `${resource.storageUsedGb ?? '—'} / ${resource.storageLimitGb ?? '—'} GB` },
+    { icon: Shield, label: 'Redundancy', value: resource.redundancy ?? '—' },
+    { icon: CheckCircle2, label: 'State', value: resource.state ?? '—' },
   ] : []
 
   const technical = resource ? [
     { label: 'Server', value: resource.server },
     { label: 'Region', value: resource.region },
-    { label: 'Collation', value: resource.collation },
-    { label: 'Max workers', value: String(resource.maxWorkers) },
-    { label: 'Max sessions', value: String(resource.maxSessions) },
-    { label: 'Storage limit', value: `${resource.storageLimitGb} GB` },
-    { label: 'Compute model', value: resource.computeModel },
-    { label: 'Service tier', value: resource.tier },
+    { label: 'Collation', value: resource.collation ?? '—' },
+    { label: 'Max workers', value: resource.maxWorkers ? String(resource.maxWorkers) : '—' },
+    { label: 'Max sessions', value: resource.maxSessions ? String(resource.maxSessions) : '—' },
+    { label: 'Storage limit', value: resource.storageLimitGb ? `${resource.storageLimitGb} GB` : '—' },
+    { label: 'Compute model', value: resource.computeModel ?? '—' },
+    { label: 'Service tier', value: resource.tier ?? '—' },
   ] : []
 
   return (

@@ -296,27 +296,33 @@ export async function getDashboardResource(): Promise<ServiceResult<DashboardRes
   }
 
   const r = cloudResourcesRes.data[0]
+  const resourceUid = r.resource_uid
+  setSelectedResourceUid(resourceUid)
+
+  // Obtener configuración real desde el backend (config snapshots)
+  const configRes = await getConfigSnapshots(resourceUid)
+  const latestSnapshot = configRes.source === 'backend' && configRes.data ? configRes.data[0] : null
+
   const resource: DashboardResource = {
-    resource_uid: r.resource_uid,
+    resource_uid: resourceUid,
     name: r.database_name,
     server: r.server_name,
     service: 'Azure SQL Database',
-    tier: 'General Purpose',
-    computeModel: 'Provisioned',
-    vCores: 8,
-    memoryGb: 40.8,
+    tier: latestSnapshot?.tier ?? null,
+    computeModel: latestSnapshot?.compute_model ?? null,
+    vCores: latestSnapshot?.capacity_vcores ?? null,
+    memoryGb: latestSnapshot?.capacity_vcores ? latestSnapshot.capacity_vcores * 5.1 : null,
     region: r.region_code,
-    storageUsedGb: 214,
-    storageLimitGb: 512,
-    redundancy: 'Zone-redundant',
+    storageUsedGb: latestSnapshot?.max_size_bytes ? latestSnapshot.max_size_bytes / (1024 * 1024 * 1024) : null,
+    storageLimitGb: latestSnapshot?.max_size_bytes ? latestSnapshot.max_size_bytes / (1024 * 1024 * 1024) : null,
+    redundancy: null,
     state: r.lifecycle_status,
     lastSyncMinutes: 8,
-    collation: 'SQL_Latin1_General_CP1_CI_AS',
-    maxWorkers: 800,
-    maxSessions: 2400,
+    collation: null,
+    maxWorkers: null,
+    maxSessions: null,
   }
-  // Guardar el resource_uid seleccionado en sesión para que las páginas lo usen
-  setSelectedResourceUid(r.resource_uid)
+
   return { data: resource, source: 'backend', error: null }
 }
 
