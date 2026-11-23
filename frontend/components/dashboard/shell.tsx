@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   PanelLeftClose,
   PanelLeft,
@@ -20,8 +20,11 @@ import { LogoMark } from '@/components/logo'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { getDashboardResource } from '@/lib/api-services'
+import { useAuth } from '@/components/auth-provider'
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const { token, logout } = useAuth()
+  const router = useRouter()
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -29,10 +32,53 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     name: 'Cargando...',
     region: '',
   } as { name: string; region: string })
+  const [userName, setUserName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
 
+  // Verificar autenticación: si no hay token, redirigir al login
   useEffect(() => {
-    getDashboardResource().then((r) => setResource({ name: r.name, region: r.region }))
-  }, [])
+    if (!token) {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+      return
+    }
+  }, [token])
+
+  // Verificar en cada cambio de ruta (incluye botón atrás/adelante)
+  useEffect(() => {
+    if (!token) {
+      router.push('/login')
+      return
+    }
+    if (typeof window !== 'undefined') {
+      setUserName(sessionStorage.getItem('cco_user_name') ?? null)
+      setUserEmail(sessionStorage.getItem('cco_user_email') ?? null)
+    }
+    getDashboardResource()
+      .then((r) => setResource({ name: r.name, region: r.region }))
+      .catch(() => {
+        // Si falla el backend, dejar valores por defecto
+      })
+  }, [token, router, pathname])
+
+  // Escuchar popstate (botón atrás/adelante del navegador)
+  useEffect(() => {
+    const handlePopState = () => {
+      if (!token) {
+        router.push('/login')
+        return
+      }
+      if (typeof window !== 'undefined') {
+        setUserName(sessionStorage.getItem('cco_user_name') ?? null)
+        setUserEmail(sessionStorage.getItem('cco_user_email') ?? null)
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [token, router])
+
+  if (!token) return null
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -43,7 +89,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           collapsed ? 'w-16' : 'w-60',
         )}
       >
-        <SidebarContent collapsed={collapsed} pathname={pathname} onNavigate={() => {}} />
+        <SidebarContent collapsed={collapsed} pathname={pathname} onNavigate={() => {}} userName={userName ?? 'Usuario'} userEmail={userEmail ?? 'usuario@empresa.com'} />
         <button
           onClick={() => setCollapsed((v) => !v)}
           className="m-3 flex items-center justify-center gap-2 rounded-md border border-sidebar-border py-2 text-xs font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-white"
@@ -64,13 +110,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <X className="size-5 text-sidebar-foreground" />
               </button>
             </div>
-            <SidebarContent collapsed={false} pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent collapsed={false} pathname={pathname} onNavigate={() => setMobileOpen(false)} userName={userName ?? 'Usuario'} userEmail={userEmail ?? 'usuario@empresa.com'} />
           </aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onMenu={() => setMobileOpen(true)} resource={resource} />
+        <TopBar onMenu={() => setMobileOpen(true)} resource={resource} userName={userName ?? 'Usuario'} />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 pb-24 sm:px-6 md:pb-6">
           {children}
         </main>
@@ -84,10 +130,14 @@ function SidebarContent({
   collapsed,
   pathname,
   onNavigate,
+  userName,
+  userEmail,
 }: {
   collapsed: boolean
   pathname: string
   onNavigate: () => void
+  userName: string
+  userEmail: string
 }) {
   return (
     <>
@@ -156,12 +206,12 @@ function SidebarContent({
           )}
         >
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-white">
-            AR
+            {getInitials(userName)}
           </span>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="truncate text-xs font-medium text-white">Alex Rivera</p>
-              <p className="truncate text-[11px] text-sidebar-foreground">FinOps Engineer</p>
+              <p className="truncate text-xs font-medium text-white">{userName}</p>
+              <p className="truncate text-[11px] text-sidebar-foreground">{userEmail}</p>
             </div>
           )}
         </div>
@@ -170,7 +220,7 @@ function SidebarContent({
   )
 }
 
-function TopBar({ onMenu, resource }: { onMenu: () => void; resource: { name: string; region: string } }) {
+function TopBar({ onMenu, resource, userName }: { onMenu: () => void; resource: { name: string; region: string }; userName: string }) {
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur-md sm:px-6">
       <button
@@ -206,7 +256,7 @@ function TopBar({ onMenu, resource }: { onMenu: () => void; resource: { name: st
           8 min ago
         </span>
         <span className="flex size-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-          AR
+          {getInitials(userName)}
         </span>
       </div>
     </header>
@@ -238,4 +288,13 @@ function MobileTabBar({ pathname }: { pathname: string }) {
       })}
     </nav>
   )
+}
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return 'U'
+  return name
+    .split(' ')
+    .map((part) => part.charAt(0).toUpperCase())
+    .slice(0, 2)
+    .join('')
 }
