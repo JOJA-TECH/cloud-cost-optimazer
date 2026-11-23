@@ -58,3 +58,7 @@ uv.lock
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- Directories ------------------------------------------------------------
+plan/
+docs/notes/

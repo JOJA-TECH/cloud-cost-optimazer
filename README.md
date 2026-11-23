@@ -19,7 +19,7 @@ El backend es un **monolito modular en Go** con los siguientes módulos ya imple
 | **Adquisición y Monitoreo de Datos** | Scheduler de ciclos, Azure Monitor, DMVs SQL, Query Store, costos diarios | Implementado |
 | **Gestión de Datos** | Lectura de métricas/costos/configuración y contratos de escritura | Implementado |
 | **Analítica y Optimización** | Snapshots, percentiles, tendencias, patrones, capacidad, costos, DES, datasets, forecasts | Implementado |
-| **Integración con ML** | Contrato `MLPort`; proveedor productivo pendiente (fake en dev) | Parcial |
+| **Integración con ML/LLM/IA** | `MLPort` (forecast vía gRPC al servicio Python), `LLMPort` (explicación determinista), `MLManagement` (entrenamiento); punto único de conexión a capacidades de IA en `backend/internal/ai` | Implementado |
 | **Motor de Recomendaciones** | Generación, persistencia versionada, trazas y transiciones explícitas | Implementado |
 | **Auditoría y Trazabilidad** | Eventos append-only, consultas protegidas y correlación | Implementado |
 | **Jobs (cola duradera y worker)** | Cola duradera, reintentos con backoff+jitter, idempotencia, cancelación | Implementado |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
 	"github.com/google/uuid"
 )
 
@@ -83,14 +84,9 @@ type AnalyticsResultRepository interface {
 }
 
 // MLPort is the contract to the external Python ML service (Module 6).
-type MLPort interface {
-	// Forecast requests a prediction from the ML service. ML service writes
-	// ml.forecast and returns forecast_uid.
-	Forecast(ctx context.Context, req ForecastRequest) (uuid.UUID, error)
-
-	// ValidateContract checks the gRPC/HTTP contract version (ml.inference.v1).
-	ValidateContract(ctx context.Context) error
-}
+// Defined in backend/internal/ai; aliased here so existing references to
+// analytics.MLPort keep compiling.
+type MLPort = ai.MLPort
 
 // ---- DTOs ----
 
@@ -248,31 +244,10 @@ type TrainingDatasetSpec struct {
 	CreatedAt      time.Time
 }
 
-// ForecastRequest is sent to MLPort to trigger forecasting.
-type ForecastRequest struct {
-	ResourceUID    uuid.UUID `json:"resource_uid"`
-	TargetMetric   string    `json:"target_metric"`              // 'cpu_avg' | 'workload_intensity' | 'storage_used_bytes'
-	HorizonSteps   int       `json:"horizon_steps"`              // 1..H
-	StepUnit       string    `json:"step_unit"`                  // '15m' | '1h' | '1d'
-	PeriodStartUTC time.Time `json:"period_start_utc"`           // first future period to forecast
-	ModelVersionID *int64    `json:"model_version_id,omitempty"` // specific model_version_id, or nil for champion
-	// Correlation/tracing ids propagated to the ML service, Jobs and audit logs.
-	RequestID     string `json:"request_id,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-}
+// ForecastRequest is defined in backend/internal/ai; aliased here so existing
+// references to analytics.ForecastRequest keep compiling.
+type ForecastRequest = ai.ForecastRequest
 
-// ForecastResponse mirrors ml.forecast (read via contract.v_forecast).
-type ForecastResponse struct {
-	ForecastUID    uuid.UUID
-	ModelVersionID *int64
-	ResourceUID    uuid.UUID
-	TargetMetric   string
-	HorizonSteps   int
-	StepUnit       string
-	PeriodStartUTC time.Time
-	YPred          float64
-	YLower         *float64
-	YUpper         *float64
-	Alpha          float64
-	GeneratedAt    time.Time
-}
+// ForecastResponse is defined in backend/internal/ai; aliased here so existing
+// references to analytics.ForecastResponse keep compiling.
+type ForecastResponse = ai.ForecastResponse

@@ -1169,7 +1169,7 @@ Lee especificación de dataset. Query params: `name`, `version`.
 
 ### POST /api/v1/analytics/forecasts
 
-Dispara forecasting vía servicio ML (Module 6). Requiere `analytics:write`.
+Dispara forecasting vía el módulo `ai` (`ai.MLPort`), que llama al servicio Python `forecast.v1` por gRPC. Requiere `analytics:write`. `analytics` mapea errores de `ai` a los suyos (`fromAIError`) para mantener fronteras diferenciables.
 
 **Request body:**
 ```json
@@ -1195,8 +1195,9 @@ Lee forecasts desde `contract.v_forecast`. Query params: `resource_uid`, `target
 | `ANALYTICS_NOT_FOUND` | 404 | Recurso/entidad no encontrada |
 | `ANALYTICS_INVALID_QUERY` | 400 | Parámetros inválidos |
 | `ANALYTICS_STORAGE_UNAVAILABLE` | 503 | Falta `CCO_DATA_DSN` |
-| `ANALYTICS_ML_UNAVAILABLE` | 503 | Servicio ML no disponible |
-| `ANALYTICS_CONTRACT_MISMATCH` | 409 | Versión de contrato ML incompatible |
+| `ANALYTICS_ML_UNAVAILABLE` | 503 | Servicio ML no disponible (mapeado desde `ai.ErrMLUnavailable`) |
+| `ANALYTICS_CONTRACT_MISMATCH` | 409 | Versión de contrato ML incompatible (mapeado desde `ai.ErrContractMismatch`) |
+| `ANALYTICS_LLM_UNAVAILABLE` | 503 | Servicio LLM no disponible (mapeado desde `ai.ErrLLMUnavailable`) |
 ```
 
 ---

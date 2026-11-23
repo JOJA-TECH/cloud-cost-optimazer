@@ -3,6 +3,8 @@ package analytics
 import (
 	"errors"
 	"fmt"
+
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/ai"
 )
 
 var (
@@ -11,6 +13,7 @@ var (
 	ErrStorageUnavailable = errors.New("analytics storage unavailable (CCO_DATA_DSN not configured)")
 	ErrMLUnavailable      = errors.New("ML service unavailable")
 	ErrContractMismatch   = errors.New("ML contract version mismatch")
+	ErrLLMUnavailable     = errors.New("LLM service unavailable")
 )
 
 type ErrorWithCode struct {
@@ -40,6 +43,7 @@ const (
 	CodeStorageUnavailable = "ANALYTICS_STORAGE_UNAVAILABLE"
 	CodeMLUnavailable      = "ANALYTICS_ML_UNAVAILABLE"
 	CodeContractMismatch   = "ANALYTICS_CONTRACT_MISMATCH"
+	CodeLLMUnavailable     = "ANALYTICS_LLM_UNAVAILABLE"
 )
 
 func MapErrorToCode(err error) string {
@@ -54,7 +58,31 @@ func MapErrorToCode(err error) string {
 		return CodeMLUnavailable
 	case errors.Is(err, ErrContractMismatch):
 		return CodeContractMismatch
+	case errors.Is(err, ErrLLMUnavailable):
+		return CodeLLMUnavailable
 	default:
 		return "INTERNAL_ERROR"
+	}
+}
+
+// fromAIError convierte un error proveniente de la frontera ai.MLPort a un
+// error de analytics, para que cada paquete mantenga sus propios códigos
+// diferenciables y un llamador de analytics pueda distinguir, por ejemplo,
+// ML no disponible de un contrato mal versionado usando codes de analytics.
+func fromAIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, ai.ErrMLUnavailable):
+		return NewError(CodeMLUnavailable, err.Error(), ErrMLUnavailable)
+	case errors.Is(err, ai.ErrContractMismatch):
+		return NewError(CodeContractMismatch, err.Error(), ErrContractMismatch)
+	case errors.Is(err, ai.ErrInvalidQuery):
+		return NewError(CodeInvalidQuery, err.Error(), ErrInvalidQuery)
+	case errors.Is(err, ai.ErrNotFound):
+		return NewError(CodeNotFound, err.Error(), ErrNotFound)
+	default:
+		return NewError("INTERNAL_ERROR", err.Error(), err)
 	}
 }

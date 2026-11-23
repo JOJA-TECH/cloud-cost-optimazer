@@ -377,7 +377,11 @@ func (s *Service) RequestForecast(ctx context.Context, req ForecastRequest) (uui
 	if err := s.ml.ValidateContract(ctx); err != nil {
 		return uuid.Nil, NewError(CodeContractMismatch, "ML contract mismatch: "+err.Error(), ErrContractMismatch)
 	}
-	return s.ml.Forecast(ctx, req)
+	uid, err := s.ml.Forecast(ctx, req)
+	if err != nil {
+		return uuid.Nil, fromAIError(err)
+	}
+	return uid, nil
 }
 
 // ---- ComputeDESComponents ----
