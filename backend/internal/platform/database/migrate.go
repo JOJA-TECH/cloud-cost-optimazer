@@ -38,10 +38,32 @@ func Migrate(db *gorm.DB) error {
 		{"audit", []any{&AuditEventModel{}}},
 	}
 	for _, group := range groups {
+		migrator := db
+		var tx *gorm.DB
+		if db.Dialector.Name() == string(DriverPostgres) {
+			// GORM resuelve constraints e índices por nombre sin esquema.
+			tx = db.Begin()
+			if tx.Error != nil {
+				return fmt.Errorf("begin migrate %s: %w", group.schema, tx.Error)
+			}
+			if err := tx.Exec("SET LOCAL search_path TO " + group.schema + ", public").Error; err != nil {
+				tx.Rollback()
+				return fmt.Errorf("set search_path %s: %w", group.schema, err)
+			}
+			migrator = tx
+		}
 		for _, model := range group.models {
-			tableName := TableName(db, group.schema, tablerName(model))
-			if err := db.Table(tableName).AutoMigrate(model); err != nil {
+			tableName := TableName(migrator, group.schema, tablerName(model))
+			if err := migrator.Table(tableName).AutoMigrate(model); err != nil {
+				if tx != nil {
+					tx.Rollback()
+				}
 				return fmt.Errorf("migrate %s.%s: %w", group.schema, tableName, err)
+			}
+		}
+		if tx != nil {
+			if err := tx.Commit().Error; err != nil {
+				return fmt.Errorf("commit migrate %s: %w", group.schema, err)
 			}
 		}
 	}
@@ -192,6 +214,22 @@ func migrateAuditEvents(db *gorm.DB) error {
 		sql  string
 	}{
 		{
+			name: "audit_action_not_blank",
+			sql: `DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint
+		WHERE conname = 'ck_audit_action_not_blank'
+			AND conrelid = 'audit.events'::regclass
+	) THEN
+		ALTER TABLE audit.events
+			ADD CONSTRAINT ck_audit_action_not_blank
+			CHECK (length(trim(action)) > 0);
+	END IF;
+END;
+$$;`,
+		},
+		{
 			name: "audit_actor_type_constraint",
 			sql: `DO $$
 BEGIN
@@ -227,6 +265,76 @@ $$;`,
 			sql: `CREATE INDEX IF NOT EXISTS idx_audit_recommendation
 				ON audit.events ((metadata->>'recommendation_uid'), occurred_at DESC)
 				WHERE metadata ? 'recommendation_uid'`,
+		},
+		{
+			name: "audit_append_only_function",
+			sql: `CREATE OR REPLACE FUNCTION audit.reject_event_mutation() RETURNS trigger
+				LANGUAGE plpgsql
+				AS $$
+				BEGIN
+					RAISE EXCEPTION 'audit.events is append-only';
+					RETURN NULL;
+				END;
+				$$`,
+		},
+		{
+			name: "audit_append_only_triggers",
+			sql: `DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_trigger
+		WHERE tgname = 'trg_audit_events_no_row_mutation'
+			AND tgrelid = 'audit.events'::regclass
+			AND NOT tgisinternal
+	) THEN
+		CREATE TRIGGER trg_audit_events_no_row_mutation
+			BEFORE UPDATE OR DELETE ON audit.events
+			FOR EACH ROW EXECUTE FUNCTION audit.reject_event_mutation();
+	END IF;
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_trigger
+		WHERE tgname = 'trg_audit_events_no_truncate'
+			AND tgrelid = 'audit.events'::regclass
+			AND NOT tgisinternal
+	) THEN
+		CREATE TRIGGER trg_audit_events_no_truncate
+			BEFORE TRUNCATE ON audit.events
+			FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_event_mutation();
+	END IF;
+END;
+$$;`,
+		},
+		{
+			name: "audit_insert_own_context_policy",
+			sql: `DO $$
+BEGIN
+	IF EXISTS (
+		SELECT 1 FROM pg_policies
+		WHERE schemaname = 'audit'
+			AND tablename = 'events'
+			AND policyname = 'audit_insert_own_context'
+	) THEN
+		ALTER POLICY audit_insert_own_context ON audit.events
+			WITH CHECK (
+				(
+					actor_type = 'system'
+					AND user_id IS NULL
+					AND app.is_platform_admin()
+				)
+				OR (
+					actor_type <> 'system'
+					AND (
+						app.is_platform_admin()
+						OR (
+							user_id = app.current_user_id()
+							AND (organization_id IS NULL OR app.is_org_member(organization_id))
+						)
+					)
+				)
+			);
+	END IF;
+END;
+$$;`,
 		},
 	}
 	for _, stmt := range statements {

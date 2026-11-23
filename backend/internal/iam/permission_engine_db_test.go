@@ -7,6 +7,7 @@ import (
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/platform/database"
+	"gorm.io/gorm/clause"
 )
 
 // TestPermissionEngineLoadsRolesFromDB verifies the engine honors a role that
@@ -22,10 +23,10 @@ func TestPermissionEngineLoadsRolesFromDB(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
-	if err := db.Table("roles").Create(&database.RoleModel{RoleID: 90, RoleCode: "auditor", IsSystemRole: true, CreatedAt: now}).Error; err != nil {
+	if err := db.Table("roles").Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "role_code"}}, DoNothing: true}).Create(&database.RoleModel{RoleID: 90, RoleCode: "auditor", IsSystemRole: true, CreatedAt: now}).Error; err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
-	if err := db.Table("permissions").Create(&database.PermissionModel{PermissionID: 90, PermissionCode: "audit:read", CreatedAt: now}).Error; err != nil {
+	if err := db.Table("permissions").Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "permission_code"}}, DoNothing: true}).Create(&database.PermissionModel{PermissionID: 90, PermissionCode: "audit:read", CreatedAt: now}).Error; err != nil {
 		t.Fatalf("seed permission: %v", err)
 	}
 	if err := db.Table("role_permissions").Create(&database.RolePermissionModel{RoleID: 90, PermissionID: 90}).Error; err != nil {
@@ -79,7 +80,7 @@ func TestSeedRecommendationPermissionsAddsExpectedSystemRoleGrants(t *testing.T)
 	}
 	now := time.Now().UTC()
 	for id, code := range map[int16]string{1: "platform_admin", 2: "db_admin", 3: "analyst", 4: "viewer"} {
-		if err := db.Table("roles").Create(&database.RoleModel{
+		if err := db.Table("roles").Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "role_code"}}, DoNothing: true}).Create(&database.RoleModel{
 			RoleID: id, RoleCode: code, IsSystemRole: true, CreatedAt: now,
 		}).Error; err != nil {
 			t.Fatalf("seed role %q: %v", code, err)
@@ -127,7 +128,7 @@ func TestSeedAuditPermissionsAddsScopedReadGrants(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	for _, code := range []string{"platform_admin", "auditor", "analyst"} {
-		if err := db.Table("roles").Create(&database.RoleModel{
+		if err := db.Table("roles").Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "role_code"}}, DoNothing: true}).Create(&database.RoleModel{
 			RoleCode:     code,
 			IsSystemRole: true,
 			CreatedAt:    now,

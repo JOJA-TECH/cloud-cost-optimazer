@@ -9,8 +9,11 @@ if [ -f ../.env ]; then
 fi
 
 echo "=== Configurando variables de entorno ==="
-export CCO_DB_DSN="postgresql://postgres:example@127.0.0.1:5432/cco_app?sslmode=disable"
-export CCO_DATA_DSN="postgresql://postgres:example@127.0.0.1:5432/cco_data?sslmode=disable"
+export CCO_POSTGRES_CONTAINER="${CCO_POSTGRES_CONTAINER:-database-db-1}"
+export CCO_POSTGRES_PORT="${CCO_POSTGRES_PORT:-5432}"
+export CCO_POSTGRES_PASSWORD="${CCO_POSTGRES_PASSWORD:-example}"
+export CCO_DB_DSN="postgresql://postgres:${CCO_POSTGRES_PASSWORD}@127.0.0.1:${CCO_POSTGRES_PORT}/cco_app?sslmode=disable"
+export CCO_DATA_DSN="postgresql://postgres:${CCO_POSTGRES_PASSWORD}@127.0.0.1:${CCO_POSTGRES_PORT}/cco_data?sslmode=disable"
 export CCO_DB_DRIVER="postgres"
 export CCO_JWT_SIGNING_KEY="clave-secreta-para-e2e"
 export CCO_HTTP_ADDR=":8080"
@@ -61,7 +64,7 @@ echo "Registro: $REGISTER_RESP"
 
 echo ""
 echo "=== Asignando rol analyst al usuario de prueba ==="
-docker exec database-db-1 psql -U postgres -d cco_app -c \
+docker exec "$CCO_POSTGRES_CONTAINER" psql -U postgres -d cco_app -c \
   "INSERT INTO iam.user_roles (user_id, role_id, assigned_at)
    SELECT u.user_id, r.role_id, now()
    FROM iam.users u, iam.roles r
@@ -78,7 +81,7 @@ echo "Token obtenido: ${TOKEN:0:50}..."
 # Probar endpoints de analytics
 echo ""
 echo "=== Probando endpoint /api/v1/analytics/snapshots ==="
-SMOKE_RESOURCE_UID=$(docker exec database-db-1 psql -U postgres -d cco_data -tAc "SELECT resource_uid FROM core.resource ORDER BY 1 LIMIT 1;" | tr -d '[:space:]')
+SMOKE_RESOURCE_UID=$(docker exec "$CCO_POSTGRES_CONTAINER" psql -U postgres -d cco_data -tAc "SELECT resource_uid FROM core.resource ORDER BY 1 LIMIT 1;" | tr -d '[:space:]')
 curl -s --get "http://localhost:8080/api/v1/analytics/snapshots" \
   --data-urlencode "resource_uid=$SMOKE_RESOURCE_UID" \
   -H "Authorization: Bearer $TOKEN" 2>&1

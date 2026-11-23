@@ -5,8 +5,10 @@ if [ -f ../.env ]; then
     . ../.env
     set +a
 fi
-export CCO_DB_DSN="postgresql://postgres:example@127.0.0.1:5432/cco_app?sslmode=disable"
-export CCO_DATA_DSN="postgresql://postgres:example@127.0.0.1:5432/cco_data?sslmode=disable"
+export CCO_POSTGRES_PORT="${CCO_POSTGRES_PORT:-5432}"
+export CCO_POSTGRES_PASSWORD="${CCO_POSTGRES_PASSWORD:-example}"
+export CCO_DB_DSN="postgresql://postgres:${CCO_POSTGRES_PASSWORD}@127.0.0.1:${CCO_POSTGRES_PORT}/cco_app?sslmode=disable"
+export CCO_DATA_DSN="postgresql://postgres:${CCO_POSTGRES_PASSWORD}@127.0.0.1:${CCO_POSTGRES_PORT}/cco_data?sslmode=disable"
 export CCO_DB_DRIVER="postgres"
 export CCO_JWT_SIGNING_KEY="clave-secreta-para-e2e"
 export CCO_HTTP_ADDR=":8080"
