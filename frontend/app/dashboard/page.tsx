@@ -106,20 +106,17 @@ export default function OverviewPage() {
               <CheckCircle2 className="size-3.5" />
               {kpis.status}
             </Badge>
-            <Badge variant="outline" className="h-7 px-2.5 text-[10px]">
-              {anyDataReal ? 'Datos reales' : 'Demo'}
-            </Badge>
           </div>
         }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Resource status" value="Healthy" sub="Azure SQL Database" tone="success" icon={CheckCircle2} />
-        <KpiCard label="Current cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="/ month" delta={kpis.currentCostDelta} icon={DollarSign} />
-        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="simulated / mo" tone="brand" icon={Calculator} />
-        <KpiCard label="Estimated savings" value={`${kpis.savingsPct}%`} sub={`$${kpis.estimatedSavings.toFixed(2)} / mo`} tone="success" icon={TrendingDown} />
-        <KpiCard label="Risk" value={kpis.risk} sub="within constraints" tone="success" icon={ShieldCheck} />
-        <KpiCard label="Confidence" value={`${kpis.confidence}%`} sub="high coverage" tone="brand" icon={Gauge} />
+        <KpiCard label="Resource status" value="Healthy" sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Current cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="/ month" delta={kpis.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="simulated / mo" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Estimated savings" value={`${kpis.savingsPct}%`} sub={`$${kpis.estimatedSavings.toFixed(2)} / mo`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Risk" value={kpis.risk} sub="within constraints" tone="success" icon={ShieldCheck} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
+        <KpiCard label="Confidence" value={`${kpis.confidence}%`} sub="high coverage" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisSource}</Badge>} />
       </div>
 
       <div className="mt-4">
@@ -131,7 +128,7 @@ export default function OverviewPage() {
           title="Cumulative cost"
           description="Billed usage across the analysis window"
           className="lg:col-span-2"
-          action={<Badge variant="neutral">Billed</Badge>}
+          action={<Badge variant="outline" className="text-[9px]">{costsLoaded ? costsSource : 'Demo'}</Badge>}
         >
           {!costsLoaded ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">

@@ -36,6 +36,8 @@ export default function ScenariosPage() {
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
   const [simulateResult, setSimulateResult] = useState<any>(null)
+  const [scenariosLoaded, setScenariosLoaded] = useState(false)
+  const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -43,6 +45,11 @@ export default function ScenariosPage() {
     getScenarios().then((res) => {
       if (res.source === 'backend' && res.data) {
         setScenarios(res.data)
+        setScenariosLoaded(true)
+        setScenariosSource(res.source)
+      } else {
+        setScenariosLoaded(false)
+        setScenariosSource(res.source)
       }
     })
   }, [])

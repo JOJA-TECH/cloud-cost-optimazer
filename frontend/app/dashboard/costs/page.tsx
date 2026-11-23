@@ -89,7 +89,6 @@ export default function CostsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Last 30 days</Badge>
-            <Badge variant="outline" className="text-[9px]">{costsSource}</Badge>
           </div>
         }
       />
@@ -105,11 +104,11 @@ export default function CostsPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiCard label="Billed cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="this period" delta={kpis.currentCostDelta} icon={DollarSign} />
-            <KpiCard label="Reference price" value={`$${(kpis.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} />
-            <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} />
-            <KpiCard label="Estimated savings" value={`$${kpis.estimatedSavings.toFixed(2)}`} sub={`${kpis.savingsPct}% / month`} tone="success" icon={TrendingDown} />
-          </div>
+        <KpiCard label="Billed cost" value={`$${kpis.currentCost.toFixed(2)}`} sub="this period" delta={kpis.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
+        <KpiCard label="Reference price" value={`$${(kpis.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
+        <KpiCard label="Estimated cost" value={`$${kpis.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
+        <KpiCard label="Estimated savings" value={`$${kpis.estimatedSavings.toFixed(2)}`} sub={`${kpis.savingsPct}% / month`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{costsSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>} />
+      </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <Panel

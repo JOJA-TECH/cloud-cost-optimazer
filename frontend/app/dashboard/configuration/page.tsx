@@ -88,7 +88,6 @@ export default function ConfigurationPage() {
               <RefreshCw className="size-3.5" />
               Last updated: {resource?.lastSyncMinutes ?? 0} min ago
             </span>
-            <Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>
           </div>
         }
       />
@@ -104,7 +103,7 @@ export default function ConfigurationPage() {
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Panel title="Current configuration" description={resource?.name ?? '—'} className="lg:col-span-2">
+            <Panel title="Current configuration" description={resource?.name ?? '—'} className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {summary.map((s) => (
                   <div key={s.label} className="rounded-lg border border-border bg-background p-3">
@@ -140,7 +139,7 @@ export default function ConfigurationPage() {
               </div>
             </Panel>
 
-            <Panel title="Data quality" description="Signals feeding the analysis">
+            <Panel title="Data quality" description="Signals feeding the analysis" action={<Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
               <div className="mb-3 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                 <span className="text-xs text-muted-foreground">Global confidence</span>
                 <Badge variant="success">{dataQuality.globalConfidence}</Badge>

@@ -280,7 +280,7 @@ export default function RecommendationsPage() {
             </div>
           </Panel>
 
-          <AssistantPanel />
+          <AssistantPanel recSource={recSource} />
 
           <Panel title="Other outcomes are valid" description="The system can decline to recommend">
             <div className="space-y-3">
@@ -384,14 +384,14 @@ function Grounded({ label, value }: { label: string; value: string }) {
   )
 }
 
-function AssistantPanel() {
+function AssistantPanel({ recSource }: { recSource: string }) {
   const [question, setQuestion] = useState<string | null>(null)
 
   return (
     <Panel
       title="Ask about this recommendation"
       description="Explanation layer over calculated evidence"
-      action={<Badge variant="outline" className="text-[9px]">Demo</Badge>}
+      action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
     >
       <div className="flex flex-col gap-2">
         {assistantSuggestionsMock.map((q: string) => (

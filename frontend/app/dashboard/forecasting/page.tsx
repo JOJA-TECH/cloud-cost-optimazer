@@ -73,7 +73,6 @@ export default function ForecastingPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Horizon: {forecastMeta.horizonDays} days</Badge>
-            <Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>
           </div>
         }
       />
@@ -92,24 +91,13 @@ export default function ForecastingPage() {
             title="CPU utilization — observed vs forecast"
             description="Solid = observed telemetry · dashed = forecast · shaded = uncertainty band"
             note="Uncertainty widens with horizon. Beyond 14 days, forecast confidence degrades and should not drive irreversible decisions."
-            action={
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-0.5 w-4 rounded bg-[var(--chart-1)]" />
-                  Observed
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-0.5 w-4 rounded border-t-2 border-dashed border-[var(--chart-2)]" />
-                  Forecast
-                </span>
-              </div>
-            }
+            action={<Badge variant="outline" className="text-[9px]">{forecastSource === 'backend' ? 'Datos reales' : 'mock'}</Badge>}
           >
             <ForecastChart data={forecastSeries} height={300} />
           </Panel>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
-            <Panel title="Model error" description="Backtested accuracy over the window">
+            <Panel title="Model error" description="Backtested accuracy over the window" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
               <div className="grid grid-cols-3 gap-3">
                 {forecastMeta.errors.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3 text-center">
@@ -123,7 +111,7 @@ export default function ForecastingPage() {
               </p>
             </Panel>
 
-            <Panel title="Trend & saturation" description="What the projection implies">
+            <Panel title="Trend & saturation" description="What the projection implies" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
               <ul className="space-y-3 text-sm">
                 <li className="flex items-start gap-2">
                   <TrendingUp className="mt-0.5 size-4 shrink-0 text-primary" />
@@ -140,7 +128,7 @@ export default function ForecastingPage() {
               </div>
             </Panel>
 
-            <Panel title="Data sufficiency" description="Guardrail for forecast validity">
+            <Panel title="Data sufficiency" description="Guardrail for forecast validity" action={<Badge variant="outline" className="text-[9px]">{forecastSource}</Badge>}>
               <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                 <span className="text-xs text-muted-foreground">History available</span>
                 <Badge variant="success">30 days</Badge>

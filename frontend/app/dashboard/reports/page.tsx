@@ -46,6 +46,7 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState(false)
   const [reports, setReports] = useState<ReportRow[]>([])
   const [loadingReports, setLoadingReports] = useState(false)
+  const [reportSource, setReportSource] = useState<'mock' | 'backend'>('mock')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
@@ -226,11 +227,6 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports"
         description="Genera reportes de optimización en formato JSON, CSV o HTML. Los reportes pueden generarse síncronamente o encolarse como jobs asíncronos."
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[9px]">{resourceUid ? 'Datos reales' : 'Demo'}</Badge>
-          </div>
-        }
       />
 
       {!resourceUid ? (
@@ -242,7 +238,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
-          <Panel title="Generar reporte de optimización" className="mb-4">
+          <Panel title="Generar reporte de optimización" className="mb-4" action={<Badge variant="outline" className="text-[9px]">{reportSource}</Badge>}>
             <form onSubmit={handleGenerateReport} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="flex flex-col">
@@ -329,7 +325,7 @@ export default function ReportsPage() {
             </form>
           </Panel>
 
-          <Panel title="Reportes y jobs" className="mt-4">
+          <Panel title="Reportes y jobs" className="mt-4" action={<Badge variant="outline" className="text-[9px]">{reportService}</Badge>}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-foreground">
                 {reports.length} reporte{reports.length !== 1 ? 's' : ''}
