@@ -28,8 +28,8 @@ func (UserModel) TableName() string { return "users" }
 type ExternalIdentityModel struct {
 	ExternalIdentityID uuid.UUID  `gorm:"column:external_identity_id;type:uuid;primaryKey"`
 	UserID             uuid.UUID  `gorm:"column:user_id;type:uuid;not null"`
-	Provider           string     `gorm:"column:provider;not null"`
-	Subject            string     `gorm:"column:subject;not null"`
+	Provider           string     `gorm:"column:provider;not null;uniqueIndex:uq_external_identity"`
+	Subject            string     `gorm:"column:subject;not null;uniqueIndex:uq_external_identity"`
 	CreatedAt          time.Time  `gorm:"column:created_at;not null"`
 	LastSeenAt         *time.Time `gorm:"column:last_seen_at"`
 }

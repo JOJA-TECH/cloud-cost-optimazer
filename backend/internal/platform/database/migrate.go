@@ -26,6 +26,20 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("create schema %s: %w", schema, err)
 			}
 		}
+		// Un índice único no puede crearse mientras existan duplicados.
+		if err := db.Exec(`DO $$
+BEGIN
+	IF to_regclass('iam.external_identities') IS NOT NULL THEN
+		DELETE FROM iam.external_identities a
+		USING iam.external_identities b
+		WHERE a.provider = b.provider AND a.subject = b.subject
+			AND (a.created_at > b.created_at
+				OR (a.created_at = b.created_at AND a.external_identity_id > b.external_identity_id));
+	END IF;
+END;
+$$;`).Error; err != nil {
+			return fmt.Errorf("deduplicate external identities: %w", err)
+		}
 	}
 	groups := []struct {
 		schema string
