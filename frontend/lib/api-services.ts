@@ -101,6 +101,8 @@ export interface ConfigSnapshot {
 
 export interface RecommendationItem {
   id: string
+  resourceUid?: string
+  status?: string
   title: string
   from: string
   to: string
@@ -108,7 +110,7 @@ export interface RecommendationItem {
   savingsAbs: number
   risk: RiskLevel
   confidence: number
-  latencyImpact: number
+  latencyImpact: number | null
   analysisPeriod: string
   generated: string
   modelVersion: string
@@ -559,12 +561,67 @@ export async function requestForecast(
 // Recommendations (requieren CCO_DATA_DSN → 503 sin él)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getRecommendations(): Promise<ServiceResult<RecommendationItem[]>> {
-  return tryBackend(() => apiJson<RecommendationItem[]>('/api/v1/recommendations'))
+interface BackendRecommendation {
+  recommendation_uid: string
+  resource_uid: string
+  status: string
+  version: number
+  current_configuration: { SKUName?: string; CapacityVCores?: number | null }
+  proposed_configuration: { SKUName?: string; CapacityVCores?: number | null }
+  estimated_saving: {
+    monthly_amount: number
+    monthly_percentage: number
+    period_start?: string
+    period_end?: string
+  }
+  risk: { level: string }
+  confidence: { score: number }
+  rationale: { summary: string }
+  created_at: string
+}
+
+function mapRecommendation(value: BackendRecommendation): RecommendationItem {
+  if (!value.recommendation_uid || !value.resource_uid) {
+    throw new Error('Respuesta de recomendación inválida')
+  }
+  const level = value.risk?.level?.toLowerCase()
+  const risk: RiskLevel = level === 'low' ? 'Low' : level === 'medium' ? 'Medium' : level === 'high' || level === 'critical' ? 'High' : 'None'
+  const configuration = (config: BackendRecommendation['current_configuration']) =>
+    config?.SKUName || (config?.CapacityVCores != null ? `${config.CapacityVCores} vCores` : 'No disponible')
+  return {
+    id: value.recommendation_uid,
+    resourceUid: value.resource_uid,
+    status: value.status,
+    title: 'Recomendación de capacidad',
+    from: configuration(value.current_configuration),
+    to: configuration(value.proposed_configuration),
+    savingsPct: value.estimated_saving?.monthly_percentage ?? 0,
+    savingsAbs: value.estimated_saving?.monthly_amount ?? 0,
+    risk,
+    confidence: Math.round((value.confidence?.score ?? 0) * 100),
+    latencyImpact: null,
+    analysisPeriod: value.estimated_saving?.period_start && value.estimated_saving?.period_end
+      ? `${value.estimated_saving.period_start.slice(0, 10)} – ${value.estimated_saving.period_end.slice(0, 10)}`
+      : 'No disponible',
+    generated: value.created_at,
+    modelVersion: `v${value.version}`,
+    evidence: [],
+    constraints: [],
+    limitations: [],
+    rationale: value.rationale?.summary ?? '',
+  }
+}
+
+export async function getRecommendations(resourceUid?: string): Promise<ServiceResult<RecommendationItem[]>> {
+  return tryBackend(async () => {
+    const query = resourceUid ? `?resource_uid=${encodeURIComponent(resourceUid)}` : ''
+    const response = await apiJson<{ items: BackendRecommendation[]; count: number }>(`/api/v1/recommendations${query}`)
+    return (response.items ?? []).map(mapRecommendation)
+  })
 }
 
 export async function getRecommendation(uid: string): Promise<ServiceResult<RecommendationItem | null>> {
-  return tryBackend(() => apiJson<RecommendationItem>(`/api/v1/recommendations/${uid}`))
+  return tryBackend(async () => mapRecommendation(await apiJson<BackendRecommendation>(`/api/v1/recommendations/${encodeURIComponent(uid)}`)))
 }
 
 export interface RecommendationEvidence {
@@ -572,7 +629,7 @@ export interface RecommendationEvidence {
   evidence_items: Array<{
     label: string
     value: string
-    tone: 'good' | 'warn' | 'bad'
+    tone?: 'good' | 'warn' | 'bad'
   }>
   constraints: Array<{ label: string; pass: boolean }>
   limitations: string[]
@@ -622,7 +679,22 @@ export interface RecommendationDecision {
 export async function getRecommendationEvidence(
   uid: string
 ): Promise<ServiceResult<RecommendationEvidence | null>> {
-  return tryBackend(() => apiJson<RecommendationEvidence>(`/api/v1/recommendations/${uid}/evidence`))
+  return tryBackend(async () => {
+    const response = await apiJson<{
+      recommendation_uid: string
+      evidence: Array<{ Type: string; Value: number | null; Unit: string | null }>
+    }>(`/api/v1/recommendations/${encodeURIComponent(uid)}/evidence`)
+    return {
+      recommendation_uid: response.recommendation_uid,
+      evidence_items: (response.evidence ?? []).map((item) => ({
+        label: item.Type,
+        value: item.Value === null ? 'No disponible' : `${item.Value}${item.Unit ? ` ${item.Unit}` : ''}`,
+      })),
+      constraints: [],
+      limitations: [],
+      rationale: '',
+    }
+  })
 }
 
 export async function evaluateRecommendations(
@@ -811,6 +883,7 @@ export async function getPerfSeries(
   cpuPoints.forEach((p, i) => {
     pointMap.set(p.timestamp_utc, {
       t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: p.timestamp_utc,
       idx: i,
       p50: +p.avg.toFixed(1),
       p95: +Math.min(p.avg * 1.25, 96).toFixed(1),
@@ -825,25 +898,25 @@ export async function getPerfSeries(
   ioPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.io = +p.avg.toFixed(1)
-    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: +p.avg.toFixed(1), memory: null, sessions: null, latency: null })
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: +p.avg.toFixed(1), memory: null, sessions: null, latency: null })
   })
 
   memoryPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.memory = +p.avg.toFixed(1)
-    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: +p.avg.toFixed(1), sessions: null, latency: null })
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: +p.avg.toFixed(1), sessions: null, latency: null })
   })
 
   sessionsPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.sessions = Math.round(p.avg)
-    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: Math.round(p.avg), latency: null })
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: Math.round(p.avg), latency: null })
   })
 
   latencyPoints.forEach((p) => {
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.latency = +p.avg.toFixed(1)
-    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: null, latency: +p.avg.toFixed(1) })
+    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: null, latency: +p.avg.toFixed(1) })
   })
 
   return backendResult(Array.from(pointMap.values()))
@@ -859,11 +932,8 @@ export async function getReliabilityEvents(): Promise<ServiceResult<any[]>> {
 
 export async function getRecommendationSummary(): Promise<ServiceResult<RecommendationItem>> {
   const uid = getSelectedResourceUid()
-  if (uid) {
-    const single = await getRecommendation(uid)
-    if (single.source === 'backend' && single.data) return backendResult(single.data)
-  }
-  const recs = await getRecommendations()
+  if (!uid) return mockResult(recommendation)
+  const recs = await getRecommendations(uid)
   if (recs.source === 'backend' && recs.data && recs.data.length > 0) return backendResult(recs.data[0])
   return mockResult(recommendation)
 }
@@ -932,28 +1002,27 @@ export interface ReportRequest {
 }
 
 export interface ReportResponse {
-  report_uid: string
-  status: string
-  format: string
-  resource_uid: string
-  from: string
-  to: string
-  created_at: number
-  requested_by: string
-  project_id: string
-  artifact?: { uid: string; storage_uri: string; mime_type: string; file_size_bytes?: number }
+  report: {
+    uid: string
+    status: string
+    format: 'json' | 'csv' | 'html'
+    resource_uid?: string
+    created_at: string
+    completed_at?: string
+  }
+  artifact: { uid: string; storage_uri: string; mime_type: string; file_size_bytes?: number }
 }
 
 export interface ReportJob {
   job_uid: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   report_uid: string | null
-  artifact_uid: string | null
-  created_at: number
-  started_at: number | null
-  completed_at: number | null
-  error_message: string | null
-  report_type: string
+  artifact_uid?: string | null
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  error_message?: string | null
+  report_type?: string
 }
 
 export async function generateOptimizationReport(request: ReportRequest): Promise<ServiceResult<ReportResponse | null>> {
@@ -986,7 +1055,12 @@ export async function cancelReport(uid: string): Promise<ServiceResult<{ job_uid
 
 export async function downloadReportArtifact(uid: string): Promise<ServiceResult<Blob | null>> {
   const reportRes = await getReport(uid)
-  if (reportRes.source !== 'backend' || !reportRes.data?.artifact?.storage_uri) {
+  if (reportRes.status !== 'ready' || !reportRes.data) {
+    return reportRes.status === 'error'
+      ? errorResult(reportRes.error ?? 'No se pudo consultar el reporte')
+      : emptyResult('no_data')
+  }
+  if (!reportRes.data.artifact?.storage_uri) {
     return emptyResult('no_data')
   }
   return tryBackend(async () => {

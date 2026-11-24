@@ -29,37 +29,40 @@ import {
   getSelectedResourceUid,
   type RecommendationItem,
   type RecommendationTrace,
+  type ServiceResult,
 } from '@/lib/api-services'
 
 type EvidenceItem = {
   label: string
   value: string
-  tone: 'good' | 'warn' | 'bad'
+  tone?: 'good' | 'warn' | 'bad'
 }
 
 export default function RecommendationsPage() {
   const [r, setR] = useState<RecommendationItem>(recMock)
-  const [showWhy, setShowWhy] = useState(true)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [evidence, setEvidence] = useState<EvidenceItem[]>(recMock.evidence)
   const [trace, setTrace] = useState<RecommendationTrace | null>(null)
-  const [traceLoaded, setTraceLoaded] = useState(false)
-  const [recResult, setRecResult] = useState<DataResult<RecommendationItem>>({ data: null, source: null, status: 'loading', error: null })
   const [recSource, setRecSource] = useState<'mock' | 'backend' | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionPending, setActionPending] = useState(false)
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
     getRecommendationSummary().then((res) => {
-      setRecResult(res)
       setRecSource(res.source)
+      if (res.data) {
+        setR(res.data)
+        setEvidence(res.data.evidence)
+      }
     })
   }, [])
 
   useEffect(() => {
-    if (!resourceUid) return
+    if (recSource !== 'backend' || !resourceUid || r.resourceUid !== resourceUid) return
 
-    getRecommendationEvidence(resourceUid)
+    getRecommendationEvidence(r.id)
       .then((e) => {
         if (e.source === 'backend' && e.data) {
           setEvidence(e.data.evidence_items)
@@ -67,47 +70,41 @@ export default function RecommendationsPage() {
       })
       .catch(() => {})
 
-    getRecommendationTrace(resourceUid)
+    getRecommendationTrace(r.id)
       .then((t) => {
         if (t.source === 'backend' && t.data) {
           setTrace(t.data)
-          setTraceLoaded(true)
         }
       })
-      .catch(() => setTraceLoaded(false))
-  }, [resourceUid])
+      .catch(() => setTrace(null))
+  }, [resourceUid, recSource, r.id, r.resourceUid])
 
-  async function handleAccept() {
-    if (!resourceUid) return
-    const result = await acceptRecommendation(resourceUid)
-    if (result && result.source === 'backend' && result.data) {
-      setR((prev) => ({ ...prev, risk: 'Low', confidence: prev.confidence }))
+  async function recordDecision(action: (uid: string) => Promise<ServiceResult<unknown>>) {
+    if (recSource !== 'backend' || !r.resourceUid || r.resourceUid !== resourceUid || actionPending) return
+    setActionPending(true)
+    setActionError(null)
+    try {
+      const result = await action(r.id)
+      if (result.status !== 'ready') {
+        setActionError(result.error ?? 'No se pudo registrar la decisión.')
+        return
+      }
+      const updated = await getRecommendation(r.id)
+      if (updated.status === 'ready' && updated.data) {
+        setR(updated.data)
+        const updatedTrace = await getRecommendationTrace(r.id)
+        if (updatedTrace.status === 'ready' && updatedTrace.data) setTrace(updatedTrace.data)
+      } else {
+        setActionError(updated.error ?? 'Decisión registrada, pero no se pudo actualizar la vista.')
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'No se pudo registrar la decisión.')
+    } finally {
+      setActionPending(false)
     }
   }
 
-  async function handleReject() {
-    if (!resourceUid) return
-    const result = await rejectRecommendation(resourceUid)
-    if (result && result.source === 'backend' && result.data) {
-      setR((prev) => ({ ...prev, risk: 'High' }))
-    }
-  }
-
-  async function handleDismiss() {
-    if (!resourceUid) return
-    const result = await dismissRecommendation(resourceUid)
-    if (result && result.source === 'backend' && result.data) {
-      setR((prev) => ({ ...prev, risk: 'None' }))
-    }
-  }
-
-  async function handleApply() {
-    if (!resourceUid) return
-    const result = await applyRecommendation(resourceUid)
-    if (result && result.source === 'backend' && result.data) {
-      setR((prev) => ({ ...prev, risk: 'None' }))
-    }
-  }
+  const canDecide = recSource === 'backend' && r.resourceUid === resourceUid && !actionPending
 
   return (
     <div>
@@ -121,6 +118,7 @@ export default function RecommendationsPage() {
         {/* Main detail */}
         <div className="space-y-4 lg:col-span-2">
           <Panel>
+            {r.status && <Badge variant="outline" className="mb-3">Estado: {r.status}</Badge>}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success">
@@ -137,7 +135,7 @@ export default function RecommendationsPage() {
               </div>
               <div className="grid grid-cols-3 gap-4 text-center">
                 <Metric label="Savings" value={`${r.savingsPct}%`} tone="success" />
-                <Metric label="Latency" value={`+${r.latencyImpact}%`} />
+                <Metric label="Latency" value={r.latencyImpact === null ? '—' : `+${r.latencyImpact}%`} />
                 <Metric label="Confidence" value={`${r.confidence}%`} tone="brand" />
               </div>
             </div>
@@ -148,24 +146,26 @@ export default function RecommendationsPage() {
               <ul className="space-y-2.5">
                 {r.constraints.map((c) => (
                   <li key={c.label} className="flex items-start gap-2 text-sm">
-                    <span className="mt-0.5 flex size-4 items-center justify-center rounded-full bg-success/15 text-success">
-                      <Check className="size-3" />
+                    <span className={cn('mt-0.5 flex size-4 items-center justify-center rounded-full', c.pass ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning')}>
+                      {c.pass ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}
                     </span>
                     <span className="text-muted-foreground">{c.label}</span>
                   </li>
                 ))}
+                {r.constraints.length === 0 && <li className="text-xs text-muted-foreground">No se proporcionaron restricciones evaluadas.</li>}
               </ul>
             </Panel>
 
-            <Panel title="Evidence" description="Calculated from observed telemetry">
+            <Panel title="Evidence" description="Available evidence for this recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource ?? 'Cargando'}</Badge>}>
               <ul className="space-y-2.5">
                 {evidence.map((e) => (
                   <li key={e.label} className="flex items-center gap-2 text-sm">
-                    <EvidenceDot tone={e.tone} />
+                    {e.tone ? <EvidenceDot tone={e.tone} /> : <span className="size-2 shrink-0 rounded-full bg-muted-foreground" />}
                     <span className="text-muted-foreground">{e.label}</span>
-                    <span className={cn('ml-auto font-medium tabular-nums', toneText(e.tone))}>{e.value}</span>
+                    <span className={cn('ml-auto font-medium tabular-nums', e.tone ? toneText(e.tone) : 'text-foreground')}>{e.value}</span>
                   </li>
                 ))}
+                {evidence.length === 0 && <li className="text-xs text-muted-foreground">No hay evidencia disponible para esta recomendación.</li>}
               </ul>
             </Panel>
 
@@ -173,17 +173,15 @@ export default function RecommendationsPage() {
               title="Why this recommendation?"
               action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
             >
-              {showWhy && (
-                <div className="space-y-3">
+              <div className="space-y-3">
                   <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Grounded label="Analysis period" value={r.analysisPeriod} />
                     <Grounded label="Generated" value={r.generated} />
                     <Grounded label="Model / ruleset" value={r.modelVersion} />
-                    <Grounded label="Resource" value="sql-prod-orders-eastus" />
+                    <Grounded label="Resource" value={r.resourceUid ?? 'Ejemplo'} />
                   </div>
-                </div>
-              )}
+              </div>
             </Panel>
 
             <Panel title="Limitations" description="Stated explicitly with every recommendation">
@@ -194,6 +192,7 @@ export default function RecommendationsPage() {
                     {l}
                   </li>
                 ))}
+                {r.limitations.length === 0 && <li className="text-xs text-muted-foreground">No se proporcionaron limitaciones.</li>}
               </ul>
             </Panel>
 
@@ -202,19 +201,17 @@ export default function RecommendationsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   size="sm"
-                  variant="success"
-                  onClick={handleAccept}
-                  disabled={recSource !== 'backend'}
-                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                  variant="default"
+                  onClick={() => void recordDecision(acceptRecommendation)}
+                  disabled={!canDecide}
                 >
                   Accept
                 </Button>
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={handleReject}
-                  disabled={recSource !== 'backend'}
-                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                  onClick={() => void recordDecision(rejectRecommendation)}
+                  disabled={!canDecide}
                 >
                   Reject
                 </Button>
@@ -223,18 +220,16 @@ export default function RecommendationsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleDismiss}
-                  disabled={recSource !== 'backend'}
-                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                  onClick={() => void recordDecision(dismissRecommendation)}
+                  disabled={!canDecide}
                 >
                   Dismiss
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleApply}
-                  disabled={recSource !== 'backend'}
-                  className={recSource !== 'backend' ? 'opacity-50 cursor-not-allowed' : ''}
+                  onClick={() => void recordDecision(applyRecommendation)}
+                  disabled={!canDecide}
                 >
                   Apply (record only)
                 </Button>
@@ -244,6 +239,7 @@ export default function RecommendationsPage() {
                   Los botones de decisión están deshabilitados sin conexión al backend.
                 </p>
               )}
+              {actionError && <p role="alert" className="mt-2 text-xs text-danger">{actionError}</p>}
             </Panel>
           </div>
 
@@ -265,16 +261,15 @@ export default function RecommendationsPage() {
                 <div className="border-t border-border pt-4">
                   <ConfidenceBar value={r.confidence} />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    High confidence: sufficient historical coverage, complete CPU/I/O metrics, stable
-                    workload pattern, validated scenario.
+                    La confianza es una estimación del motor; consulta la evidencia antes de tomar una decisión.
                   </p>
                 </div>
               </div>
             </Panel>
 
-            <AssistantPanel recSource={recSource} />
+            <AssistantPanel />
 
-            <Panel title="Other outcomes are valid" description="The system can decline to recommend">
+            <Panel title="Other outcomes are valid" description="Ejemplos ilustrativos" action={<Badge variant="outline" className="text-[9px]">mock</Badge>}>
               <div className="space-y-3">
                 <div className="rounded-lg border border-border bg-background p-3">
                   <div className="mb-1 flex items-center gap-2">
@@ -298,54 +293,24 @@ export default function RecommendationsPage() {
               </div>
             </Panel>
 
-            {traceLoaded && trace && (
+            {trace && (
               <Panel title="Audit trace" description="Recommendation decision lineage">
                 <div className="space-y-2">
-                  {trace.decision_traces.map((dt: any, i: number) => (
-                    <div key={i} className="border-b border-border pb-3 last:border-0">
-                      <div className="flex justify-between mb-1">
-                        <p className="text-xs font-semibold text-foreground">{dt.action}</p>
-                        <Badge variant={dt.status === 'complete' ? 'success' : dt.status === 'failed' ? 'destructive' : 'warning'} className="text-[9px]">
-                          {dt.status}
-                        </Badge>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {dt.action} — {dt.actor_type}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {dt.created_at} · trace_id: {dt.trace_id.slice(0, 8)}...
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-[9px] text-muted-foreground mt-1">
-                        <div>
-                          <span className="text-xs font-medium">Risk score:</span>
-                          <span className="text-xs">{dt.risk_score?.toFixed(2) ?? '—'}</span>
-                        </div>
-                        <div>
-                          <span className="text-xs font-medium">Confidence score:</span>
-                          <span className="text-xs">{dt.confidence_score?.toFixed(2) ?? '—'}</span>
-                        </div>
-                        <div>
-                          <span className="text-xs font-medium">Estimated saving:</span>
-                          <span className="text-xs">{dt.estimated_saving?.toFixed(2) ?? '—'}</span>
-                        </div>
-                      </div>
-                      {dt.rationale && (
-                        <div className="mt-1 text-[9px] text-muted-foreground italic">{dt.rationale}</div>
-                      )}
+                  <div className="flex items-center justify-between text-xs">
+                    <span>Estado: {trace.status}</span>
+                    <Badge variant={trace.status === 'accepted' || trace.status === 'applied' ? 'success' : trace.status === 'rejected' ? 'danger' : 'outline'}>
+                      {trace.decision}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Riesgo: {trace.risk.level} · Confianza: {Math.round(trace.confidence.score * 100)}%</p>
+                  {trace.events.length === 0 && <p className="text-xs text-muted-foreground">Sin eventos de auditoría registrados.</p>}
+                  {trace.events.map((event) => (
+                    <div key={event.event_id} className="flex gap-2 border-t border-border pt-2 text-xs text-muted-foreground">
+                      <span className="font-mono">{event.event_id}</span>
+                      <span>{event.action}</span>
+                      <span>{event.occurred_at}</span>
                     </div>
                   ))}
-                  {trace.events && trace.events.length > 0 && (
-                    <div className="mt-3 border-t border-border pt-3 text-[9px] text-muted-foreground">
-                      <div className="font-semibold mb-1">Audit events:</div>
-                      {trace.events.map((e: any) => (
-                        <div key={e.event_id} className="flex gap-2 mb-1 text-xs text-muted-foreground">
-                          <span className="font-mono">{e.event_id}</span>
-                          <span>{e.action}</span>
-                          <span>{e.occurred_at}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </Panel>
             )}
@@ -375,14 +340,14 @@ function Grounded({ label, value }: { label: string; value: string }) {
   )
 }
 
-function AssistantPanel({ recSource }: { recSource: string }) {
+function AssistantPanel() {
   const [question, setQuestion] = useState<string | null>(null)
 
   return (
     <Panel
       title="Ask about this recommendation"
-      description="Explanation layer over calculated evidence"
-      action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
+      description="Ejemplos ilustrativos; no consultan la recomendación actual"
+      action={<Badge variant="outline" className="text-[9px]">mock</Badge>}
     >
       <div className="flex flex-col gap-2">
         {Object.values(assistantSuggestionsMock).map((q) => (
@@ -405,7 +370,7 @@ function AssistantPanel({ recSource }: { recSource: string }) {
         <div className="mt-3 rounded-lg bg-muted/60 p-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-primary">
             <Sparkles className="size-3" />
-            Grounded in visible evidence
+            Respuesta de ejemplo, no generada a partir de los datos actuales
           </div>
           <p className="text-xs leading-relaxed text-foreground">{assistantSuggestionsMock[question]}</p>
         </div>

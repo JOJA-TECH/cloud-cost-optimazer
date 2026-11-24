@@ -23,7 +23,7 @@ type WorkloadClassification = {
 
 export default function WorkloadPage() {
   const [workloadHourly, setWorkloadHourly] = useState<{ hour: string; intensity: number; concurrency: number; reads: number; writes: number }[]>([])
-  const [cls, setCls] = setClassificationState(workloadClassificationMock)
+  const [cls, setCls] = useState<WorkloadClassification>(workloadClassificationMock)
   const [workloadPatterns, setWorkloadPatterns] = useState<string[]>(workloadPatternsMock)
   const [patternLoaded, setPatternLoaded] = useState(false)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
@@ -39,28 +39,29 @@ export default function WorkloadPage() {
   useEffect(() => {
     if (!resourceUid || !timeRange) return
     getWorkloadHourly()
-      .then(setWorkloadHourly)
+      .then((res) => setWorkloadHourly(res.data ?? []))
       .catch(() => setWorkloadHourly([]))
     getWorkloadClassification()
-      .then(setCls)
+      .then((res) => setCls(res.data ?? workloadClassificationMock))
       .catch(() => setCls(workloadClassificationMock))
     getWorkloadPatterns()
-      .then(setWorkloadPatterns)
+      .then((res) => setWorkloadPatterns(res.data ?? workloadPatternsMock))
       .catch(() => setWorkloadPatterns(workloadPatternsMock))
     getWorkloadPattern()
       .then((p) => {
-        if (p && p.data) {
-          setCls({
-            pattern: p.data.pattern,
-            confidence: p.data.confidence,
-            evidence: p.data.evidence,
-            metrics: cls.metrics,
-          })
+        if (p.source === 'backend' && p.data) {
+          const pattern = p.data
+          setCls((previous) => ({
+            pattern: pattern.pattern,
+            confidence: pattern.confidence,
+            evidence: pattern.evidence,
+            metrics: previous.metrics,
+          }))
           setPatternLoaded(true)
         }
       })
       .catch(() => setPatternLoaded(false))
-  }, [resourceUid, timeRange, cls.metrics])
+  }, [resourceUid, timeRange])
 
   return (
     <div>
@@ -174,10 +175,6 @@ function Legend({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   )
-}
-
-function setClassificationState(_: any) {
-  return useState<any>(workloadClassificationMock)
 }
 
 const workloadClassificationMock: WorkloadClassification = {

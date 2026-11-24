@@ -1,42 +1,24 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth-provider'
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
   const [checked, setChecked] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
-    // Verificar en montaje inicial
-    checkAuth()
-
-    // Verificar en cada cambio de ruta (incluye botón atrás/adelante del navegador)
-    const unsubscribe = router.events.on('routeChangeComplete', () => {
-      checkAuth()
-    })
-
-    // También interceptar popstate (botón atrás/adelante)
-    const handlePopState = () => {
-      checkAuth()
-    }
-    window.addEventListener('popstate', handlePopState)
-
-    return () => {
-      unsubscribe()
-      window.removeEventListener('popstate', handlePopState)
-    }
-  }, [isAuthenticated, router])
-
-  function checkAuth() {
+    // usePathname se actualiza en las navegaciones del App Router, incluso atrás/adelante.
     if (!isAuthenticated) {
-      router.push('/login')
+      router.replace('/login')
+      return
     }
     setChecked(true)
-  }
+  }, [isAuthenticated, pathname, router])
 
-  if (!checked) return null
+  if (!checked || !isAuthenticated) return null
   return <>{children}</>
 }

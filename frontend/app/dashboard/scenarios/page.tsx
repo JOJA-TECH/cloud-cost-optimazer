@@ -36,21 +36,16 @@ export default function ScenariosPage() {
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
   const [simulateResult, setSimulateResult] = useState<any>(null)
-  const [scenariosLoaded, setScenariosLoaded] = useState(false)
-  const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend'>('mock')
+  const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend' | null>(null)
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
     getScenarios().then((res) => {
-      if (res.source === 'backend' && res.data) {
+      if (res.data) {
         setScenarios(res.data)
-        setScenariosLoaded(true)
-        setScenariosSource(res.source)
-      } else {
-        setScenariosLoaded(false)
-        setScenariosSource(res.source)
       }
+      setScenariosSource(res.source)
     })
   }, [])
 
@@ -137,7 +132,7 @@ export default function ScenariosPage() {
       </Panel>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{scenariosSource}</Badge>}>
+        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Cargando'}</Badge>}>
           <Bars
             data={scenarios.map((s) => ({ label: s.label, cost: s.cost }))}
             xKey="label"
@@ -147,7 +142,7 @@ export default function ScenariosPage() {
           />
         </Panel>
 
-        <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource}</Badge>}>
+        <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Cargando'}</Badge>}>
           {(() => {
             const s = scenarios.find((x) => x.id === selected)!
             return (

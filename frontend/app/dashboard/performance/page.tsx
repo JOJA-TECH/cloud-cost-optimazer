@@ -27,6 +27,7 @@ const cpuLines = [
 
 type PerfPoint = {
   t: string
+  timestamp: string
   idx: number
   p50: number
   p95: number
@@ -61,7 +62,10 @@ export default function PerformancePage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid || !timeRange) {
+      setDataResult({ data: null, source: null, status: 'empty', error: 'Selecciona un recurso y un período.' })
+      return
+    }
 
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
       .then((res) => setDataResult(res))
@@ -71,7 +75,12 @@ export default function PerformancePage() {
     getReliabilityEvents().then((res) => setReliabilityEventsResult(res))
   }, [resourceUid, timeRange])
 
-  const shownData = dataResult.data ? dataResult.data.slice(-hours) : []
+  const end = timeRange ? new Date(timeRange.to).getTime() : NaN
+  const shownData = dataResult.data?.filter((point) => {
+    const timestamp = new Date(point.timestamp).getTime()
+    return timestamp >= end - hours * 60 * 60 * 1000 && timestamp <= end
+  }) ?? []
+  const shownLines = cpuLines.filter((line) => active[line.key])
 
   return (
     <div>
@@ -83,10 +92,11 @@ export default function PerformancePage() {
             {ranges.map((r) => (
               <button
                 key={r.label}
-                onClick={() => setActive((s) => ({ ...s, [r.label]: !s[r.label] }))}
+                onClick={() => setHours(r.hours)}
+                aria-pressed={hours === r.hours}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                  active[r.label]
+                  hours === r.hours
                     ? 'border-border bg-background text-foreground'
                     : 'border-transparent text-muted-foreground opacity-50',
                 )}
@@ -98,12 +108,12 @@ export default function PerformancePage() {
         }
       />
 
-      {!dataResult.data || dataResult.status !== 'ready' ? (
+      {!shownData.length || dataResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           {dataResult.status === 'loading' ? (
             <div className="text-xs text-muted-foreground">Cargando datos de rendimiento...</div>
           ) : dataResult.status === 'empty' ? (
-            <p className="text-sm text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>
+            <p className="text-sm text-muted-foreground">{dataResult.error ?? 'No hay datos de rendimiento disponibles para el recurso seleccionado.'}</p>
           ) : (
             <p className="text-sm text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>
           )}
@@ -111,6 +121,7 @@ export default function PerformancePage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+            <div className="col-span-full"><Badge variant="outline" className="text-[9px]">Resumen: {perfSummaryResult.source ?? 'sin datos'}</Badge></div>
             {perfSummaryResult.data?.map((m: any) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-3 shadow-sm">
                 <p className="text-[11px] text-muted-foreground">{m.label}</p>
@@ -123,10 +134,25 @@ export default function PerformancePage() {
 
           <Panel
             title="CPU utilization over time"
-            description="Toggle percentiles · threshold lines mark warning and critical"
+            description="Estimated CPU percentiles · threshold lines mark warning and critical"
             className="mt-4"
-            note="Observed telemetry at 5-minute resolution. The average is intentionally not the headline metric."
-            action={perfSource === 'backend' ? <Badge variant="outline" className="text-[9px]">{perfSource}</Badge> : undefined}
+            note="p50 and p95 are estimates derived from the average; p99 is derived from the maximum. They are not measured percentiles."
+            action={
+              <div className="flex items-center gap-2">
+                {cpuLines.map((line) => (
+                  <button
+                    key={line.key}
+                    type="button"
+                    aria-pressed={active[line.key]}
+                    onClick={() => setActive((current) => ({ ...current, [line.key]: !current[line.key] }))}
+                    className={cn('rounded border px-2 py-1 text-[10px]', active[line.key] ? 'border-primary text-foreground' : 'border-border text-muted-foreground')}
+                  >
+                    {line.name}
+                  </button>
+                ))}
+                <Badge variant="outline" className="text-[9px]">{dataResult.source}</Badge>
+              </div>
+            }
           >
             <MultiLine
               data={shownData}
@@ -134,7 +160,7 @@ export default function PerformancePage() {
               yDomain={[0, 100]}
               unit="%"
               height={300}
-              lines={shownLines.length ? shownData : cpuLines}
+              lines={shownLines}
               thresholds={[
                 { y: 75, color: 'var(--warning)', label: 'warning' },
                 { y: 90, color: 'var(--danger)', label: 'critical' },
@@ -158,7 +184,7 @@ export default function PerformancePage() {
             <Panel title="Memory utilization" description="Working set as percent of provisioned">
               <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
             </Panel>
-            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={perfLoaded ? <Badge variant="outline" className="text-[9px]">{perfSource}</Badge> : undefined}>
+            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{reliabilityEventsResult.source ?? 'sin datos'}</Badge>}>
               <div className="grid grid-cols-2 gap-3">
                 {reliabilityEventsResult.data?.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3">
@@ -181,10 +207,6 @@ export default function PerformancePage() {
     </div>
   )
 }
-
-const perfSeriesMock: PerfPoint[] = [
-  { t: '00:00', idx: 0, p50: 12, p95: 21, p99: 26, io: 24, memory: 58, sessions: 180, latency: 4.2 },
-]
 
 const perfSummaryMock = [
   { label: 'CPU p50', value: '18%', tone: 'good' },

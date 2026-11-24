@@ -74,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userName,
         userEmail,
         isAuthenticated: !!token,
+        isClient,
         login: doLogin,
         logout: doLogout,
       }}

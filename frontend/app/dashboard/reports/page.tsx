@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import {
-  ArrowRight,
   Clock,
   Download,
   FileText,
@@ -17,7 +16,6 @@ import { Label } from '@/components/ui/label'
 import {
   generateOptimizationReport,
   queueOptimizationReport,
-  getReport,
   getReportStatus,
   cancelReport,
   downloadReportArtifact,
@@ -27,6 +25,19 @@ import {
 } from '@/lib/api-services'
 
 type ReportFormat = 'json' | 'csv' | 'html'
+
+type ReportRow = {
+  kind: 'sync' | 'async'
+  job_uid: string
+  status: string
+  report_uid: string | null
+  artifact_uid: string | null
+  created_at: string
+  completed_at: string | null
+  error_message: string | null
+  format: ReportFormat
+  downloadable: boolean
+}
 
 const formatOptions: Array<{ value: ReportFormat; label: string }> = [
   { value: 'json', label: 'JSON' },
@@ -46,22 +57,19 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState(false)
   const [reports, setReports] = useState<ReportRow[]>([])
   const [loadingReports, setLoadingReports] = useState(false)
-  const [reportSource, setReportSource] = useState<'mock' | 'backend'>('mock')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     const range = getTimeRange()
     setResourceUid(uid)
     setTimeRangeState(range)
-    loadReports()
   }, [])
 
-  async function loadReports() {
+  async function refreshStatuses() {
     setLoadingReports(true)
     try {
-      setReports([])
-    } catch {
-      // Ignorar errores al cargar
+      await Promise.all(reports.filter((report) => report.kind === 'async').map((report) => handleRefreshStatus(report.job_uid)))
     } finally {
       setLoadingReports(false)
     }
@@ -72,6 +80,7 @@ export default function ReportsPage() {
     if (!resourceUid || !timeRange) return
 
     setGenerating(true)
+    setError(null)
     try {
       const request: ReportRequest = {
         resource_uid: resourceUid,
@@ -87,25 +96,27 @@ export default function ReportsPage() {
 
       const result = await generateOptimizationReport(request)
       if (result.source === 'backend' && result.data) {
+        const { report, artifact } = result.data
         setReports((prev) => [
           {
-            job_uid: result.data.report_uid,
-            status: result.data.status,
-            report_uid: result.data.report_uid,
-            artifact_uid: result.data.artifact?.uid ?? null,
-            created_at: result.data.created_at,
-            started_at: null,
-            completed_at: null,
+            kind: 'sync',
+            job_uid: report.uid,
+            status: report.status,
+            report_uid: report.uid,
+            artifact_uid: artifact.uid,
+            created_at: report.created_at,
+            completed_at: report.completed_at ?? null,
             error_message: null,
-            report_type: result.data.format,
-            format: result.data.format,
-            downloadable: !!result.data.artifact?.storage_uri,
+            format: report.format,
+            downloadable: !!artifact.storage_uri,
           },
           ...prev,
         ])
+      } else {
+        setError(result.error ?? 'No se pudo generar el reporte.')
       }
-    } catch {
-      // Error manejado por tryBackend
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo generar el reporte.')
     } finally {
       setGenerating(false)
     }
@@ -116,6 +127,7 @@ export default function ReportsPage() {
     if (!resourceUid || !timeRange) return
 
     setGenerating(true)
+    setError(null)
     try {
       const request: ReportRequest = {
         resource_uid: resourceUid,
@@ -131,25 +143,27 @@ export default function ReportsPage() {
 
       const job = await queueOptimizationReport(request)
       if (job.source === 'backend' && job.data) {
+        const data = job.data
         setReports((prev) => [
           {
-            job_uid: job.data.job_uid,
-            status: job.data.status,
-            report_uid: job.data.report_uid ?? null,
-            artifact_uid: job.data.artifact_uid ?? null,
-            created_at: job.data.created_at,
-            started_at: job.data.started_at ?? null,
-            completed_at: job.data.completed_at ?? null,
-            error_message: job.data.error_message ?? null,
-            report_type: job.data.report_type,
+            kind: 'async',
+            job_uid: data.job_uid,
+            status: data.status,
+            report_uid: data.report_uid,
+            artifact_uid: data.artifact_uid ?? null,
+            created_at: data.created_at,
+            completed_at: data.completed_at ?? null,
+            error_message: data.error_message ?? null,
             format: format,
-            downloadable: !!job.data.artifact_uid,
+            downloadable: !!data.artifact_uid && !!data.report_uid,
           },
           ...prev,
         ])
+      } else {
+        setError(job.error ?? 'No se pudo encolar el reporte.')
       }
-    } catch {
-      // Error manejado por tryBackend
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo encolar el reporte.')
     } finally {
       setGenerating(false)
     }
@@ -158,34 +172,40 @@ export default function ReportsPage() {
   async function handleRefreshStatus(jobUid: string) {
     const job = await getReportStatus(jobUid)
     if (job.source === 'backend' && job.data) {
+      const data = job.data
       setReports((prev) =>
         prev.map((r) =>
           r.job_uid === jobUid
             ? {
                 ...r,
-                status: job.data.status,
-                report_uid: job.data.report_uid ?? r.report_uid,
-                artifact_uid: job.data.artifact_uid ?? r.artifact_uid,
-                completed_at: job.data.completed_at ?? r.completed_at,
-                error_message: job.data.error_message ?? r.error_message,
-                downloadable: !!job.data.artifact_uid,
+                status: data.status,
+                report_uid: data.report_uid ?? r.report_uid,
+                artifact_uid: data.artifact_uid ?? r.artifact_uid,
+                completed_at: data.completed_at ?? r.completed_at,
+                error_message: data.error_message ?? r.error_message,
+                downloadable: !!(data.artifact_uid ?? r.artifact_uid) && !!(data.report_uid ?? r.report_uid),
               }
             : r
         )
       )
+    } else {
+      setError(job.error ?? 'No se pudo consultar el estado del reporte.')
     }
   }
 
   async function handleCancel(jobUid: string) {
     const result = await cancelReport(jobUid)
-    if (result && result.source === 'backend' && result.data) {
+    if (result.source === 'backend' && result.data) {
+      const status = result.data.status
       setReports((prev) =>
         prev.map((r) =>
           r.job_uid === jobUid
-            ? { ...r, status: result.data.status }
+            ? { ...r, status }
             : r
         )
       )
+    } else {
+      setError(result.error ?? 'No se pudo cancelar el reporte.')
     }
   }
 
@@ -193,31 +213,35 @@ export default function ReportsPage() {
     const report = reports.find((r) => r.job_uid === jobUid)
     if (!report?.report_uid) return
 
-    const blob = await downloadReportArtifact(report.report_uid)
-    if (!blob) return
+    const result = await downloadReportArtifact(report.report_uid)
+    if (result.status !== 'ready' || !result.data) {
+      setError(result.error ?? 'No se pudo descargar el reporte.')
+      return
+    }
 
-    const url = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(result.data)
     const a = document.createElement('a')
     a.href = url
-    a.download = `report-${jobUid}.${format}`
+    a.download = `report-${report.report_uid}.${report.format}`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
 
-  function formatDate(ts: number | null): string {
+  function formatDate(ts: string | null): string {
     if (!ts) return '—'
     return new Date(ts).toLocaleString()
   }
 
   function statusBadge(status: string) {
-    const variants: Record<string, string> = {
-      pending: 'warning',
+    const variants: Record<string, NonNullable<React.ComponentProps<typeof Badge>['variant']>> = {
+      queued: 'warning',
       running: 'warning',
       completed: 'success',
-      failed: 'destructive',
+      failed: 'danger',
       cancelled: 'neutral',
+      generating: 'warning',
     }
     return <Badge variant={variants[status] || 'neutral'}>{status}</Badge>
   }
@@ -238,7 +262,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
-          <Panel title="Generar reporte de optimización" className="mb-4" action={<Badge variant="outline" className="text-[9px]">{reportSource}</Badge>}>
+          <Panel title="Generar reporte de optimización" className="mb-4" action={<Badge variant="outline" className="text-[9px]">backend</Badge>}>
             <form onSubmit={handleGenerateReport} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="flex flex-col">
@@ -323,22 +347,23 @@ export default function ReportsPage() {
                 Los jobs asíncronos permiten consultar su estado y descargar el artefacto cuando estén listos.
               </p>
             </form>
+            {error && <p role="alert" className="mt-3 text-xs text-danger">{error}</p>}
           </Panel>
 
-          <Panel title="Reportes y jobs" className="mt-4" action={<Badge variant="outline" className="text-[9px]">{reportService}</Badge>}>
+          <Panel title="Reportes y jobs" className="mt-4" action={<Badge variant="outline" className="text-[9px]">Sesión actual</Badge>}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-foreground">
                 {reports.length} reporte{reports.length !== 1 ? 's' : ''}
               </h3>
-              <Button variant="outline" size="sm" onClick={loadReports}>
+              <Button variant="outline" size="sm" onClick={() => void refreshStatuses()} disabled={loadingReports}>
                 <RefreshCw className="size-4 mr-1" />
-                Actualizar
+                {loadingReports ? 'Actualizando...' : 'Actualizar estados'}
               </Button>
             </div>
 
             {reports.length === 0 ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
-                No hay reportes generados todavía.
+                No hay reportes generados en esta sesión. El backend no ofrece un listado de reportes.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -378,7 +403,7 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center gap-1">
-                            {r.status === 'running' && (
+                            {r.kind === 'async' && r.status === 'running' && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -388,7 +413,7 @@ export default function ReportsPage() {
                                 <Clock className="size-3.5" />
                               </Button>
                             )}
-                            {r.status === 'pending' || r.status === 'running' ? (
+                            {r.kind === 'async' && (r.status === 'queued' || r.status === 'running') ? (
                               <Button
                                 size="sm"
                                 variant="destructive"
@@ -397,7 +422,7 @@ export default function ReportsPage() {
                               >
                                 <Trash2 className="size-3.5" />
                               </Button>
-                            ) : (
+                            ) : r.kind === 'async' ? (
                               <Button
                                 size="sm"
                                 onClick={() => handleRefreshStatus(r.job_uid)}
@@ -405,7 +430,7 @@ export default function ReportsPage() {
                               >
                                 <RefreshCw className="size-3.5" />
                               </Button>
-                            )}
+                            ) : null}
                             {r.downloadable ? (
                               <Button
                                 size="sm"

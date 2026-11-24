@@ -16,6 +16,7 @@ import {
   getRecommendationSummary,
   getSelectedResourceUid,
   getTimeRange,
+  type RecommendationItem,
 } from '@/lib/api-services'
 
 type CostDay = {
@@ -50,7 +51,7 @@ export default function OverviewPage() {
   const [costDailyResult, setCostDailyResult] = useState<DataResult<CostDay[]>>({ data: null, source: null, status: 'loading', error: null })
   const [perfSeriesResult, setPerfSeriesResult] = useState<DataResult<PerfPoint[]>>({ data: null, source: null, status: 'loading', error: null })
   const [dataQualityResult, setDataQualityResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
-  const [recResult, setRecResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
+  const [recResult, setRecResult] = useState<DataResult<RecommendationItem>>({ data: null, source: null, status: 'loading', error: null })
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
@@ -79,6 +80,8 @@ export default function OverviewPage() {
     getRecommendationSummary().then((res) => setRecResult(res))
   }, [])
 
+  const currentRecommendation = recResult.data ?? recMock
+
   return (
     <div>
       <PageHeader
@@ -105,7 +108,7 @@ export default function OverviewPage() {
       </div>
 
       <div className="mt-4">
-        <RecommendationSummary rec={recResult.data ?? recMock} recSource={recResult.source} />
+        <RecommendationSummary rec={currentRecommendation} recSource={recResult.source} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -113,7 +116,7 @@ export default function OverviewPage() {
           title="Cumulative cost"
           description="Billed usage across the analysis window"
           className="lg:col-span-2"
-          action={<Badge variant="outline" className="text-[9px]">{costDailyResult.source === 'backend' ? costsSource : 'mock'}</Badge>}
+          action={<Badge variant="outline" className="text-[9px]">{costDailyResult.source ?? 'Cargando'}</Badge>}
         >
           {!costDailyResult.data || costDailyResult.status !== 'ready' ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
@@ -187,13 +190,15 @@ export default function OverviewPage() {
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">Compute</p>
               <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-foreground">
-                8 vCores <ArrowRight className="size-3.5 text-primary" /> <span className="text-primary">4 vCores</span>
+                {currentRecommendation.from} <ArrowRight className="size-3.5 text-primary" /> <span className="text-primary">{currentRecommendation.to}</span>
               </p>
             </div>
-            <ConfidenceBar value={recResult.data?.confidence ?? 91} badge={<Badge variant="outline" className="text-[9px]">{recResult.source}</Badge>} />
+            <ConfidenceBar value={currentRecommendation.confidence} />
+            <Badge variant="outline" className="text-[9px]">{recResult.source ?? 'Cargando'}</Badge>
             <div className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-              Projected CPU p99 at target capacity stays near 58% — below saturation, with headroom
-              for observed peaks.
+              {recResult.source === 'backend'
+                ? 'Consulta la evidencia y los escenarios antes de tomar una decisión de capacidad.'
+                : 'Ejemplo: CPU p99 proyectado de 58% en la capacidad propuesta; estos datos son ilustrativos.'}
             </div>
             <Button size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/scenarios" />}>
               Compare scenarios
@@ -246,7 +251,7 @@ const dataQualityMock = {
   ],
 }
 
-const recMock = {
+const recMock: RecommendationItem = {
   id: 'rec-2041',
   title: 'Recommendation available',
   from: '8 vCores',

@@ -31,6 +31,7 @@ export default function HistoryPage() {
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [auditLoaded, setAuditLoaded] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
   useEffect(() => {
@@ -41,11 +42,14 @@ export default function HistoryPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid) return
+    if (!resourceUid || !timeRange) {
+      setAuditError('Selecciona un recurso y una ventana de tiempo para consultar la auditoría.')
+      setAuditLoaded(true)
+      return
+    }
 
-    const range = getTimeRange()
-    if (!range) return
-
+    setAuditError(null)
+    setAuditLoaded(false)
     getHistory().then((hRes) => {
       if (hRes.source === 'backend' && hRes.data) {
         setRows(hRes.data)
@@ -58,8 +62,8 @@ export default function HistoryPage() {
 
     getAuditEvents({
       entity_type: 'recommendation',
-      from: range.from,
-      to: range.to,
+      from: timeRange.from,
+      to: timeRange.to,
       limit: 50,
     }).then((res) => {
       if (res.source === 'backend' && res.data) {
@@ -71,17 +75,22 @@ export default function HistoryPage() {
             actor_type: e.actor.actor_type,
             actor_user_id: e.actor.user_id ?? '—',
             actor_auth_method: e.actor.auth_method ?? '—',
-            correlation_id: e.trace.correlation_id,
+            correlation_id: e.trace.correlation_id ?? '—',
             operation_id: e.trace.operation_id ?? '—',
             resource_type: e.resource.type ?? '—',
             resource_id: e.resource.id ?? '—',
             details: e.metadata ?? {},
           }))
         )
+      } else {
+        setAuditError(res.error ?? 'No se pudo consultar la traza de auditoría.')
       }
       setAuditLoaded(true)
+    }).catch((error: unknown) => {
+      setAuditError(error instanceof Error ? error.message : 'No se pudo consultar la traza de auditoría.')
+      setAuditLoaded(true)
     })
-  }, [resourceUid])
+  }, [resourceUid, timeRange])
 
   const filtered = rows.filter((h) => filter === 'All' || h.status === filter)
 
@@ -190,12 +199,14 @@ export default function HistoryPage() {
         title="Traza de auditoría (Audit Trail)"
         description="Eventos de auditoría registrados para decisiones de recomendación: quién, cuándo, qué acción y evidencia asociada."
         className="mt-4"
-        action={<Badge variant="outline" className="text-[9px]">{auditLoaded ? 'Datos reales' : 'mock'}</Badge>}
+        action={<Badge variant="outline" className="text-[9px]">{auditError ? 'Error' : auditLoaded ? 'Datos reales' : 'Cargando'}</Badge>}
       >
         {!auditLoaded ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             Cargando traza de auditoría...
           </div>
+        ) : auditError ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">{auditError}</div>
         ) : auditEvents.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             No hay eventos de auditoría para el recurso y ventana seleccionados.
