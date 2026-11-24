@@ -263,6 +263,30 @@ type Scenario struct {
 	CompletedAt      *time.Time
 }
 
+// ScenarioComparison exposes only persisted scenario and candidate evidence.
+// Nullable simulation fields mean "not evaluated", never zero.
+type ScenarioComparison struct {
+	UID         uuid.UUID             `json:"scenario_uid"`
+	Status      string                `json:"status"`
+	CreatedAt   time.Time             `json:"created_at"`
+	HorizonDays int                   `json:"horizon_days"`
+	Candidates  []ScenarioCandidate   `json:"candidates"`
+}
+
+type ScenarioCandidate struct {
+	ID                   int64    `json:"candidate_id"`
+	CapacityVCores       *float64 `json:"capacity_vcores"`
+	ComputeModel         *string  `json:"compute_model"`
+	EstimatedMonthlyCost *float64 `json:"estimated_monthly_cost"`
+	PredictedMonthlyCost *float64 `json:"predicted_monthly_cost"`
+	PredictedCPUP99      *float64 `json:"predicted_cpu_p99"`
+	PredictedLatencyMS   *float64 `json:"predicted_latency_p95_ms"`
+	EstimatedSavingsPct  *float64 `json:"estimated_savings_pct"`
+	PredictedSLAViolations *int   `json:"predicted_sla_violations"`
+	Feasible             *bool    `json:"feasible"`
+	Recommended          bool     `json:"recommended"`
+}
+
 type CandidateConfiguration struct {
 	ID                   int64
 	ScenarioID           int64

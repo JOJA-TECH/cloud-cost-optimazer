@@ -25,6 +25,7 @@ var (
 	_ data.PriceCatalogReader      = (*DataRepository)(nil)
 	_ data.SKUReader               = (*DataRepository)(nil)
 	_ data.ResourceContextReader   = (*DataRepository)(nil)
+	_ data.QueryStoreReader         = (*DataRepository)(nil)
 )
 
 // DataRepository implements the Gestión de Datos contracts (DataWriter,
@@ -46,6 +47,7 @@ func MigrateDataTables(db *gorm.DB) error {
 		&dbResourceStatRow{},
 		&queryStoreQueryRow{},
 		&queryStoreRuntimeStatRow{},
+		&queryStoreWaitStatRow{},
 		&coreResourceRow{},
 		&catalogRegionRow{},
 		&costDailyRow{},
@@ -149,6 +151,18 @@ type queryStoreRuntimeStatRow struct {
 }
 
 func (queryStoreRuntimeStatRow) TableName() string { return "query_store_runtime_stats" }
+
+type queryStoreWaitStatRow struct {
+	ResourceID    int64     `gorm:"column:resource_id;primaryKey"`
+	QueryID       int64     `gorm:"column:query_id;primaryKey"`
+	WaitCategory  string    `gorm:"column:wait_category;primaryKey"`
+	AvgWaitMs     *float64  `gorm:"column:avg_wait_ms"`
+	TotalWaitMs   *float64  `gorm:"column:total_wait_ms"`
+	SnapshotAtUTC time.Time `gorm:"column:snapshot_at_utc;primaryKey"`
+	CollectedAt   time.Time `gorm:"column:collected_at"`
+}
+
+func (queryStoreWaitStatRow) TableName() string { return "query_store_wait_stats" }
 
 type coreResourceRow struct {
 	ResourceID      int64      `gorm:"column:resource_id;primaryKey;autoIncrement"`

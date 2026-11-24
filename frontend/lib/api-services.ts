@@ -139,6 +139,26 @@ export interface ScenarioItem {
   recommended: boolean
 }
 
+export interface PersistedScenario {
+  scenario_uid: string
+  status: string
+  created_at: string
+  horizon_days: number
+  candidates: Array<{
+    candidate_id: number
+    capacity_vcores: number | null
+    compute_model: string | null
+    estimated_monthly_cost: number | null
+    predicted_monthly_cost: number | null
+    predicted_cpu_p99: number | null
+    predicted_latency_p95_ms: number | null
+    estimated_savings_pct: number | null
+    predicted_sla_violations: number | null
+    feasible: boolean | null
+    recommended: boolean
+  }>
+}
+
 export interface WorkloadClassificationItem {
   pattern: string
   confidence: number | null
@@ -992,6 +1012,16 @@ export async function getScenarios(): Promise<ServiceResult<ScenarioItem[]>> {
   return isDemoMode() ? mockResult(scenarios) : emptyResult('no_data')
 }
 
+export async function getPersistedScenarios(resourceUid: string): Promise<ServiceResult<PersistedScenario[]>> {
+  return tryBackend(async () => {
+    const items = await apiJson<PersistedScenario[]>(`/api/v1/recommendations/scenarios?resource_uid=${encodeURIComponent(resourceUid)}`)
+    if (!Array.isArray(items) || items.some(item => !Array.isArray(item.candidates))) {
+      throw new Error('Respuesta de escenarios inválida')
+    }
+    return items
+  })
+}
+
 export async function getForecastSeries(): Promise<ServiceResult<any[]>> {
   return isDemoMode() ? mockResult(forecastSeries) : emptyResult('no_data')
 }
@@ -1001,7 +1031,44 @@ export async function getForecastMeta(): Promise<ServiceResult<any>> {
 }
 
 export async function getWorkloadHourly(): Promise<ServiceResult<any[]>> {
-  return isDemoMode() ? mockResult(workloadHourly) : emptyResult('no_data')
+  if (isDemoMode()) return mockResult(workloadHourly)
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid || !range) return emptyResult('no_resource')
+  const query = new URLSearchParams({ resource_uid: uid, period_type: '1h', from: range.from, to: range.to })
+  const response = await tryBackend(() => apiJson<Array<{
+    PeriodStartUTC: string
+    HourOfDay: number
+    WorkloadIntensity: number
+    SessionsAvg: number
+    AvailableMetrics: string[]
+  }>>(`/api/v1/analytics/snapshots?${query}`))
+  if (response.status !== 'ready' || !response.data) return { ...response, data: null }
+  if (!Array.isArray(response.data) || response.data.some(row =>
+    !Array.isArray(row.AvailableMetrics) || !Number.isInteger(row.HourOfDay) || row.HourOfDay < 0 || row.HourOfDay > 23
+  )) return errorResult('Respuesta de snapshots horarios inválida')
+  const hours = Array.from({ length: 24 }, (_, hour) => ({
+    hour: `${String(hour).padStart(2, '0')}:00`,
+    intensitySum: 0, intensityCount: 0, sessionsSum: 0, sessionsCount: 0,
+  }))
+  for (const row of response.data) {
+    const entry = hours[row.HourOfDay]
+    if (row.AvailableMetrics.includes('workload_intensity') && Number.isFinite(row.WorkloadIntensity)) {
+      entry.intensitySum += row.WorkloadIntensity
+      entry.intensityCount++
+    }
+    if (row.AvailableMetrics.includes('sessions_avg') && Number.isFinite(row.SessionsAvg)) {
+      entry.sessionsSum += row.SessionsAvg
+      entry.sessionsCount++
+    }
+  }
+  return backendResult(hours.filter(hour => hour.intensityCount || hour.sessionsCount).map(hour => ({
+    hour: hour.hour,
+    intensity: hour.intensityCount ? hour.intensitySum / hour.intensityCount : null,
+    concurrency: hour.sessionsCount ? hour.sessionsSum / hour.sessionsCount : null,
+    reads: null,
+    writes: null,
+  })))
 }
 
 export async function getWorkloadClassification(): Promise<ServiceResult<WorkloadClassificationItem>> {
@@ -1024,11 +1091,42 @@ export async function getWorkloadPatterns(): Promise<ServiceResult<string[]>> {
 }
 
 export async function getTopQueries(): Promise<ServiceResult<any[]>> {
-  return isDemoMode() ? mockResult(topQueries) : emptyResult('no_data')
+  if (isDemoMode()) return mockResult(topQueries)
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid || !range) return emptyResult('no_resource')
+  const query = new URLSearchParams({ resource_uid: uid, from: range.from, to: range.to, limit: '10' })
+  const response = await tryBackend(() => apiJson<Array<{
+    query_id: number; text: string | null; execs: number
+    avg_cpu_ms: number | null; avg_dur_ms: number | null; reads: number | null
+  }>>(`/api/v1/data/top-operations?${query}`))
+  if (response.status !== 'ready' || !response.data) return { ...response, data: null }
+  if (!Array.isArray(response.data)) return errorResult('Respuesta de operaciones inválida')
+  return backendResult(response.data.map(row => ({
+    id: String(row.query_id), text: row.text ?? 'Texto no disponible',
+    execs: row.execs, avgCpuMs: row.avg_cpu_ms,
+    avgDurMs: row.avg_dur_ms, reads: row.reads,
+  })))
 }
 
 export async function getWaitCategories(): Promise<ServiceResult<any[]>> {
-  return isDemoMode() ? mockResult(waitCategories) : emptyResult('no_data')
+  if (isDemoMode()) return mockResult(waitCategories)
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid || !range) return emptyResult('no_resource')
+  const query = new URLSearchParams({ resource_uid: uid, from: range.from, to: range.to })
+  const response = await tryBackend(() => apiJson<Array<{ name: string; total_wait_ms: number }>>(`/api/v1/data/wait-categories?${query}`))
+  if (response.status !== 'ready' || !response.data) return { ...response, data: null }
+  if (!Array.isArray(response.data) || response.data.some(row => !Number.isFinite(row.total_wait_ms) || row.total_wait_ms < 0)) {
+    return errorResult('Respuesta de esperas inválida')
+  }
+  const total = response.data.reduce((sum, row) => sum + row.total_wait_ms, 0)
+  if (!total) return emptyResult('no_data')
+  const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+  return backendResult(response.data.map((row, index) => ({
+    name: row.name, pct: +(row.total_wait_ms / total * 100).toFixed(1),
+    color: colors[index % colors.length],
+  })))
 }
 
 export async function getHistory(): Promise<ServiceResult<HistoryItem[]>> {

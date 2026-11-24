@@ -1317,6 +1317,21 @@ curl -X GET "http://localhost:8080/api/v1/acquisitions/42" -H "Authorization: Be
 
 Todos los endpoints son **solo lectura** sobre `cco_data`, requieren `Authorization: Bearer <access_token>` + permiso `data:read`. Están definidos en `backend/internal/data/handlers.go`. Si `CCO_DATA_DSN` no está configurado, responden `503 DATA_STORAGE_UNAVAILABLE`.
 
+### GET /api/v1/data/top-operations
+
+Top operaciones de Query Store en la ventana indicada. Requiere `data:read` y `cco_data`.
+Query params requeridos: `resource_uid` (UUID), `from` y `to` (RFC3339, `[from,to)`); `limit` opcional (1–100, default 10).
+Devuelve `[]` si no hay estadísticas. Cada fila contiene `query_id`, `text` (nullable), `execs`,
+`avg_cpu_ms`, `avg_dur_ms` y `reads` (promedio de lecturas lógicas, nullable).
+Las medias están ponderadas por ejecuciones; las duraciones de Query Store se convierten de µs a ms.
+
+### GET /api/v1/data/wait-categories
+
+Totales de espera por categoría para el recurso y la ventana indicados (`resource_uid`, `from`, `to`).
+Requiere `data:read`; devuelve `[]` si no hay registros en `raw.query_store_wait_stats`.
+Cada fila contiene `name` y `total_wait_ms`. La adquisición actual todavía no escribe esa tabla;
+el endpoint no debe interpretarse como evidencia de cobertura de esperas.
+
 ### GET /api/v1/data/metrics
 
 Serie histórica de una métrica para un recurso. Requiere permiso `data:read`.
@@ -1528,6 +1543,14 @@ Genera y persiste una recomendación versionada. Requiere `recommendations:write
 Evalúa candidatos y política sin persistir una recomendación. Requiere `recommendations:evaluate`. Acepta el mismo body que la ruta de generación.
 
 **Response (200 OK):** estado (`complete`, `no_action` o `insufficient_information`), confianza, disponibilidad de forecast, degradación, evidencia y candidatos con factibilidad y motivo de descarte.
+
+### GET /api/v1/recommendations/scenarios
+
+Lista los últimos escenarios persistidos para `resource_uid` (UUID requerido), con `limit` opcional
+(1–20, default 10). Requiere `recommendations:read`. Devuelve `[]` cuando no hay escenarios.
+Incluye candidatos y la simulación persistida más reciente de cada uno. Valores no medidos
+o no calculados son `null`; `recommended` solo es verdadero cuando una recomendación persistida
+seleccionó explícitamente ese candidato. No ejecuta evaluación ni aplica cambios.
 
 ### GET /api/v1/recommendations
 

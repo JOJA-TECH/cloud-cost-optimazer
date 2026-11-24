@@ -216,6 +216,27 @@ type HistoricalDataReader interface {
 	MetricSeries(ctx context.Context, q DataQuery, limit int) ([]HistoricalMetric, error)
 }
 
+// QueryStoreReader serves bounded, resource-scoped diagnostics without
+// interpreting missing Query Store samples as zero.
+type QueryStoreReader interface {
+	TopOperations(ctx context.Context, resourceUID uuid.UUID, from, to time.Time, limit int) ([]TopOperation, error)
+	WaitCategories(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) ([]WaitCategory, error)
+}
+
+type TopOperation struct {
+	QueryID  int64    `json:"query_id"`
+	Text     *string  `json:"text"`
+	Execs    int64    `json:"execs"`
+	AvgCPUMs *float64 `json:"avg_cpu_ms"`
+	AvgDurMs *float64 `json:"avg_dur_ms"`
+	Reads    *float64 `json:"avg_logical_io_reads"`
+}
+
+type WaitCategory struct {
+	Name        string  `json:"name"`
+	TotalWaitMs float64 `json:"total_wait_ms"`
+}
+
 // RunReader exposes raw.collector_run to the acquisition module (its API
 // serves run state but storage lives here, in Gestión de Datos).
 type RunReader interface {

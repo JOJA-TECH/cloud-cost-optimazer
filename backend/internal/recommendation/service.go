@@ -41,6 +41,21 @@ type Service struct {
 	locks  map[uuid.UUID]*resourceLock
 }
 
+type scenarioReader interface {
+	ListScenarioComparisons(ctx context.Context, uid uuid.UUID, limit int) ([]ScenarioComparison, error)
+}
+
+func (s *Service) ListScenarioComparisons(ctx context.Context, uid uuid.UUID, limit int) ([]ScenarioComparison, error) {
+	if uid == uuid.Nil || limit < 1 || limit > 20 {
+		return nil, ErrInvalidRequest
+	}
+	reader, ok := s.repository.(scenarioReader)
+	if !ok {
+		return nil, ErrDependenciesUnavailable
+	}
+	return reader.ListScenarioComparisons(ctx, uid, limit)
+}
+
 type resourceLock struct {
 	mu    sync.Mutex
 	users int

@@ -23,7 +23,7 @@ type WorkloadClassification = {
 }
 
 export default function WorkloadPage() {
-  const [workloadHourly, setWorkloadHourly] = useState<{ hour: string; intensity: number; concurrency: number; reads: number; writes: number }[]>([])
+  const [workloadHourly, setWorkloadHourly] = useState<{ hour: string; intensity: number | null; concurrency: number | null; reads: number | null; writes: number | null }[]>([])
   const [clsResult, setClsResult] = useState<ServiceResult<WorkloadClassification>>({ data: null, source: null, status: 'loading', error: null })
   const [workloadPatterns, setWorkloadPatterns] = useState<string[]>([])
   const [hourlyResult, setHourlyResult] = useState<ServiceResult<typeof workloadHourly>>({ data: null, source: null, status: 'loading', error: null })
@@ -63,7 +63,7 @@ export default function WorkloadPage() {
         }
       />
 
-      {!cls || clsResult.status !== 'ready' ? (
+      {(!cls || clsResult.status !== 'ready') && hourlyResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           <p className="text-sm text-muted-foreground">{clsResult.status === 'loading' ? 'Cargando clasificación...' : clsResult.status === 'error' ? 'No fue posible consultar el patrón de carga.' : 'Datos insuficientes'}</p>
           <p className="text-xs text-muted-foreground">
@@ -74,6 +74,7 @@ export default function WorkloadPage() {
         <>
           <div className="grid gap-4 lg:grid-cols-3">
             <Panel className="lg:col-span-1" title="Workload pattern" description="Classified from selected telemetry" action={clsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {cls ? (<>
               <div className="rounded-xl border border-primary/25 bg-primary/[0.05] p-4">
                 <div className="flex items-center gap-2">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -107,13 +108,14 @@ export default function WorkloadPage() {
                   ))}
                 </div>
               </div>
+              </>) : <p className="text-xs text-muted-foreground">No hay clasificación calculada para este período.</p>}
             </Panel>
 
             <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
-              {hourlyResult.status === 'ready' && hourlyResult.data ? (<>
-              <AreaTrend data={workloadHourly} dataKey="intensity" xKey="hour" unit="%" height={200} color="var(--chart-1)" />
+              {hourlyResult.status === 'ready' && workloadHourly.some(p => p.intensity !== null) ? (<>
+              <AreaTrend data={workloadHourly} dataKey="intensity" xKey="hour" unit={hourlyResult.source === 'mock' ? '%' : ' ops/min'} height={200} color="var(--chart-1)" />
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {cls.metrics.map((m: any) => (
+                {cls?.metrics.map((m: any) => (
                   <div key={m.label} className="rounded-lg border border-border bg-background p-3">
                     <p className="text-[11px] text-muted-foreground">{m.label}</p>
                     <p className="mt-0.5 text-sm font-semibold text-foreground">{m.value}</p>
@@ -125,8 +127,8 @@ export default function WorkloadPage() {
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Panel title="Concurrency by hour" description="Peak concurrent sessions during business windows" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
-              {hourlyResult.status === 'ready' && hourlyResult.data ? (
+            <Panel title="Concurrency by hour" description={hourlyResult.source === 'mock' ? 'Peak concurrent sessions' : 'Average active sessions by hour'} action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {hourlyResult.status === 'ready' && workloadHourly.some(p => p.concurrency !== null) ? (
               <Bars
                 data={workloadHourly}
                 xKey="hour"
@@ -136,7 +138,7 @@ export default function WorkloadPage() {
               ) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles.</p>}
             </Panel>
             <Panel title="Read / write mix" description="Share of operations by hour (%)" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
-              {hourlyResult.status === 'ready' && hourlyResult.data ? (<>
+              {hourlyResult.status === 'ready' && workloadHourly.some(p => p.reads !== null && p.writes !== null) ? (<>
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <Legend color="var(--chart-1)" label="Reads" />
                 <Legend color="var(--chart-4)" label="Writes" />
@@ -152,7 +154,7 @@ export default function WorkloadPage() {
                   { key: 'writes', color: 'var(--chart-4)', name: 'Writes' },
                 ]}
               />
-              </>) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles.</p>}
+              </>) : <p className="text-xs text-muted-foreground">No hay lecturas y escrituras medidas para este período; las métricas de I/O no representan la mezcla de operaciones.</p>}
             </Panel>
           </div>
         </>

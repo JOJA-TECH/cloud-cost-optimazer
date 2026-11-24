@@ -36,6 +36,28 @@ type Service struct{ repo repository }
 // NewService builds the read service on top of a cco_data repository.
 func NewService(repo repository) *Service { return &Service{repo: repo} }
 
+func (s *Service) TopOperations(ctx context.Context, uid uuid.UUID, from, to time.Time, limit int) ([]TopOperation, error) {
+	if uid == uuid.Nil || !from.Before(to) || limit < 1 || limit > 100 {
+		return nil, NewError(CodeInvalidQuery, "invalid resource, time range or limit", ErrInvalidQuery)
+	}
+	reader, ok := s.repo.(QueryStoreReader)
+	if !ok {
+		return nil, ErrStorageUnavailable
+	}
+	return reader.TopOperations(ctx, uid, from, to, limit)
+}
+
+func (s *Service) WaitCategories(ctx context.Context, uid uuid.UUID, from, to time.Time) ([]WaitCategory, error) {
+	if uid == uuid.Nil || !from.Before(to) {
+		return nil, NewError(CodeInvalidQuery, "invalid resource or time range", ErrInvalidQuery)
+	}
+	reader, ok := s.repo.(QueryStoreReader)
+	if !ok {
+		return nil, ErrStorageUnavailable
+	}
+	return reader.WaitCategories(ctx, uid, from, to)
+}
+
 var _ DataQueryService = (*Service)(nil)
 
 // MetricSeries returns the stored series for one metric over [from, to),

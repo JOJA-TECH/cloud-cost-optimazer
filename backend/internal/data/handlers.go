@@ -51,6 +51,74 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, authMW *middleware.AuthMid
 		authMW.Handler(middleware.RequirePermission(perm, "data", "read")(http.HandlerFunc(handleConfigSnapshots(svc)))))
 	mux.Handle("GET /api/v1/data/coverage",
 		authMW.Handler(middleware.RequirePermission(perm, "data", "read")(http.HandlerFunc(handleCoverage(svc)))))
+	mux.Handle("GET /api/v1/data/top-operations",
+		authMW.Handler(middleware.RequirePermission(perm, "data", "read")(http.HandlerFunc(handleTopOperations(svc)))))
+	mux.Handle("GET /api/v1/data/wait-categories",
+		authMW.Handler(middleware.RequirePermission(perm, "data", "read")(http.HandlerFunc(handleWaitCategories(svc)))))
+}
+
+func diagnosticsQuery(w http.ResponseWriter, r *http.Request) (uuid.UUID, time.Time, time.Time, bool) {
+	uid, ok := requireUUIDParam(w, r, "resource_uid")
+	if !ok {
+		return uuid.Nil, time.Time{}, time.Time{}, false
+	}
+	from, ok := requireTimeParam(w, r, "from")
+	if !ok {
+		return uuid.Nil, time.Time{}, time.Time{}, false
+	}
+	to, ok := requireTimeParam(w, r, "to")
+	return uid, from, to, ok
+}
+
+func handleTopOperations(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardStorage(svc, w) {
+			return
+		}
+		uid, from, to, ok := diagnosticsQuery(w, r)
+		if !ok {
+			return
+		}
+		limit := 10
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 || n > 100 {
+				writeError(w, http.StatusBadRequest, CodeInvalidQuery, "limit must be between 1 and 100")
+				return
+			}
+			limit = n
+		}
+		rows, err := svc.TopOperations(r.Context(), uid, from, to, limit)
+		if err != nil {
+			writeError(w, statusFromError(err), MapErrorToCode(err), err.Error())
+			return
+		}
+		if rows == nil {
+			rows = []TopOperation{}
+		}
+		writeJSON(w, http.StatusOK, rows)
+	}
+}
+
+func handleWaitCategories(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardStorage(svc, w) {
+			return
+		}
+		uid, from, to, ok := diagnosticsQuery(w, r)
+		if !ok {
+			return
+		}
+		rows, err := svc.WaitCategories(r.Context(), uid, from, to)
+		if err != nil {
+			writeError(w, statusFromError(err), MapErrorToCode(err), err.Error())
+			return
+		}
+		if rows == nil {
+			rows = []WaitCategory{}
+		}
+		writeJSON(w, http.StatusOK, rows)
+	}
 }
 
 // guardStorage rejects requests when cco_data is not configured.

@@ -24,6 +24,8 @@ func RegisterRoutes(
 ) {
 	mux.Handle("GET /api/v1/recommendations/policies",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(http.HandlerFunc(handleListPolicies(svc)))))
+	mux.Handle("GET /api/v1/recommendations/scenarios",
+		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(http.HandlerFunc(handleListScenarios(svc)))))
 	mux.Handle("POST /api/v1/recommendations/policies",
 		authMW.Handler(middleware.RequirePermission(perm, "recommendations", "write")(http.HandlerFunc(handleCreatePolicy(svc)))))
 	mux.Handle("POST /api/v1/recommendations",
@@ -55,6 +57,36 @@ func RegisterRoutes(
 		mux.Handle("GET /api/v1/recommendations/{uid}/trace",
 			authMW.Handler(middleware.RequirePermission(perm, "recommendations", "read")(
 				http.HandlerFunc(handleTrace(svc, traceReaders[0])))))
+	}
+}
+
+func handleListScenarios(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !guardService(svc, w) {
+			return
+		}
+		uid, err := uuid.Parse(r.URL.Query().Get("resource_uid"))
+		if err != nil || uid == uuid.Nil {
+			writeError(w, http.StatusBadRequest, "INVALID_RESOURCE_UID", "resource_uid must be a UUID")
+			return
+		}
+		limit := 10
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			limit, err = strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 20 {
+				writeError(w, http.StatusBadRequest, "INVALID_LIMIT", "limit must be between 1 and 20")
+				return
+			}
+		}
+		items, err := svc.ListScenarioComparisons(r.Context(), uid, limit)
+		if err != nil {
+			writeDomainError(w, err)
+			return
+		}
+		if items == nil {
+			items = []ScenarioComparison{}
+		}
+		writeJSON(w, http.StatusOK, items)
 	}
 }
 

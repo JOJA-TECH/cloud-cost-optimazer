@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Bars } from '@/components/charts'
 import { cn } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo-mode'
-import { getScenarios, evaluateRecommendations, getSelectedResourceUid } from '@/lib/api-services'
-import type { ScenarioItem } from '@/lib/api-services'
+import { getScenarios, getPersistedScenarios, evaluateRecommendations, getSelectedResourceUid } from '@/lib/api-services'
+import type { ScenarioItem, PersistedScenario, ServiceResult } from '@/lib/api-services'
 
 const rows: { key: string; label: string; render: (s: ScenarioItem) => React.ReactNode }[] = [
   { key: 'capacity', label: 'Capacity', render: (s) => s.capacity },
@@ -39,16 +39,31 @@ export default function ScenariosPage() {
   const [simulateResult, setSimulateResult] = useState<any>(null)
   const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend' | null>(null)
   const [scenariosStatus, setScenariosStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
+  const [demoMode, setDemoModeState] = useState<boolean | null>(null)
+  const [realResult, setRealResult] = useState<ServiceResult<PersistedScenario[]>>({ data: null, source: null, status: 'loading', error: null })
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
-    getScenarios().then((res) => {
-      setScenarios(res.data ?? [])
-      setScenariosStatus(res.status)
-      setScenariosSource(res.source)
-    })
+    setDemoModeState(isDemoMode())
   }, [])
+
+  useEffect(() => {
+    if (demoMode === null) return
+    if (demoMode) {
+      getScenarios().then((res) => {
+        setScenarios(res.data ?? [])
+        setScenariosStatus(res.status)
+        setScenariosSource(res.source)
+      })
+      return
+    }
+    if (!resourceUid) {
+      setRealResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
+    getPersistedScenarios(resourceUid).then(setRealResult)
+  }, [demoMode, resourceUid])
 
   async function handleSimulate() {
     if (!resourceUid) return
@@ -73,6 +88,49 @@ export default function ScenariosPage() {
     } finally {
       setSimulating(false)
     }
+  }
+
+  if (demoMode !== true) {
+    return (
+      <div>
+        <PageHeader title="Scenario analysis" description="Candidatos y simulaciones persistidos para el recurso seleccionado. Ningún valor ausente se infiere." />
+        {realResult.status !== 'ready' || !realResult.data?.length ? (
+          <Panel>
+            <p className="text-sm text-muted-foreground">
+              {realResult.status === 'loading' ? 'Cargando escenarios...' : realResult.status === 'error' ?
+                `No fue posible consultar los escenarios: ${realResult.error ?? 'Error desconocido'}` :
+                realResult.error === 'no_resource' ? 'Selecciona un recurso.' : 'No hay escenarios persistidos para este recurso.'}
+            </p>
+            <Button className="mt-3" size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/intelligence" />}>Abrir evaluación de recomendaciones</Button>
+          </Panel>
+        ) : realResult.data.map(scenario => (
+          <Panel key={scenario.scenario_uid} className="mb-4" title={`Escenario ${scenario.scenario_uid.slice(0, 8)}`} description={`Estado: ${scenario.status} · Horizonte: ${scenario.horizon_days} días · Creado: ${scenario.created_at}`}>
+            {scenario.candidates.length === 0 ? <p className="text-xs text-muted-foreground">No hay candidatos persistidos.</p> : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-sm">
+                  <thead><tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="p-2">Candidato</th><th className="p-2">Capacidad</th><th className="p-2">Costo mensual</th>
+                    <th className="p-2">CPU p99 proyectado</th><th className="p-2">Latencia p95</th><th className="p-2">Ahorro</th><th className="p-2">Factible</th>
+                  </tr></thead>
+                  <tbody>{scenario.candidates.map(candidate => (
+                    <tr key={candidate.candidate_id} className="border-b">
+                      <td className="p-2">{candidate.candidate_id}{candidate.recommended ? ' · recomendado' : ''}</td>
+                      <td className="p-2">{candidate.capacity_vcores == null ? '—' : `${candidate.capacity_vcores} vCores`}{candidate.compute_model ? ` · ${candidate.compute_model}` : ''}</td>
+                      <td className="p-2">{candidate.predicted_monthly_cost != null ? `$${candidate.predicted_monthly_cost.toFixed(2)} (simulado)` :
+                        candidate.estimated_monthly_cost != null ? `$${candidate.estimated_monthly_cost.toFixed(2)} (candidato)` : '—'}</td>
+                      <td className="p-2">{candidate.predicted_cpu_p99 == null ? '—' : `${candidate.predicted_cpu_p99}%`}</td>
+                      <td className="p-2">{candidate.predicted_latency_p95_ms == null ? '—' : `${candidate.predicted_latency_p95_ms} ms`}</td>
+                      <td className="p-2">{candidate.estimated_savings_pct == null ? '—' : `${candidate.estimated_savings_pct}%`}</td>
+                      <td className="p-2">{candidate.feasible == null ? 'No evaluado' : candidate.feasible ? 'Sí' : 'No'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        ))}
+      </div>
+    )
   }
 
   if (scenariosStatus !== 'ready' || !scenarios.length) {

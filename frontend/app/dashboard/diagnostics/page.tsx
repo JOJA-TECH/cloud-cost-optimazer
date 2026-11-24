@@ -51,7 +51,7 @@ export default function DiagnosticsPage() {
         description="Technical detail supporting the recommendation — top operations and wait categories. Denser than the executive views, but kept readable."
         actions={
           <div className="flex items-center gap-2">
-            <Badge variant="neutral">Query Store · last 30 days</Badge>
+            <Badge variant="neutral">Query Store · período seleccionado</Badge>
             {topQueriesResult.status === 'ready' && topQueriesResult.source === 'mock' && <Badge variant="outline">Mock</Badge>}
           </div>
         }
@@ -86,10 +86,10 @@ export default function DiagnosticsPage() {
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">
                       {q.execs.toLocaleString()}
                     </td>
-                    <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgCpuMs} ms</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgDurMs} ms</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgCpuMs == null ? '—' : `${q.avgCpuMs.toFixed(1)} ms`}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgDurMs == null ? '—' : `${q.avgDurMs.toFixed(1)} ms`}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">
-                      {q.reads.toLocaleString()}
+                      {q.reads == null ? '—' : q.reads.toLocaleString()}
                     </td>
                   </tr>
                 ))}
@@ -107,7 +107,7 @@ export default function DiagnosticsPage() {
             <Donut data={waitCategories} height={180} />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-lg font-semibold tabular-nums text-foreground">{waitCategories[0]?.pct}%</span>
-              <span className="text-[11px] text-muted-foreground">CPU-bound</span>
+              <span className="text-[11px] text-muted-foreground">{waitCategories[0]?.name}</span>
             </div>
           </div>
           <ul className="mt-3 space-y-2">
