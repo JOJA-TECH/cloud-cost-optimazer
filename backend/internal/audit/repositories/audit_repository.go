@@ -255,7 +255,11 @@ func auditEventToModel(event audit.AuditEvent) (database.AuditEventModel, error)
 		return database.AuditEventModel{}, audit.ErrEventAlreadyPersisted
 	}
 
-	metadata := make(map[string]any, len(event.Metadata)+1)
+	metadataCapacity := len(event.Metadata)
+	if metadataCapacity < int(^uint(0)>>1) {
+		metadataCapacity++
+	}
+	metadata := make(map[string]any, metadataCapacity)
 	for key, value := range event.Metadata {
 		metadata[key] = value
 	}

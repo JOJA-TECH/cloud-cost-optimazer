@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const maxAuditMetadataEntries = 10000
+
 func validateEvent(event AuditEvent) error {
 	if event.EventID != 0 {
 		return ErrEventAlreadyPersisted
@@ -112,6 +114,9 @@ func normalizeEvent(event AuditEvent) (AuditEvent, error) {
 func normalizeMetadata(metadata map[string]any) (map[string]any, error) {
 	if metadata == nil {
 		return map[string]any{}, nil
+	}
+	if len(metadata) > maxAuditMetadataEntries {
+		return nil, fmt.Errorf("metadata contains too many entries")
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {
