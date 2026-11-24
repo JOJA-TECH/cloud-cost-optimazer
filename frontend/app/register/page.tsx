@@ -23,7 +23,7 @@ export default function RegisterPage() {
       await register({ email, display_name: displayName, password })
       router.push('/login')
     } catch (err: any) {
-      setError(err.message || 'Error al registrarse')
+      setError(err.message || 'Could not sign up')
     } finally {
       setLoading(false)
     }
@@ -32,7 +32,7 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md p-6">
-        <h1 className="text-2xl font-bold mb-6">Registrarse</h1>
+        <h1 className="text-2xl font-bold mb-6">Sign up</h1>
         {error && (
           <div className="mb-4 p-3 rounded bg-red-50 text-red-700 text-sm border border-red-100">
             {error}
@@ -40,7 +40,7 @@ export default function RegisterPage() {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Correo electrónico</Label>
+            <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
@@ -50,7 +50,7 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="display_name">Nombre para mostrar</Label>
+            <Label htmlFor="display_name">Display name</Label>
             <Input
               id="display_name"
               type="text"
@@ -60,7 +60,7 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Contraseña</Label>
+            <Label htmlFor="password">Password</Label>
             <Input
               id="password"
               type="password"
@@ -70,11 +70,11 @@ export default function RegisterPage() {
             />
           </div>
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? 'Registrando...' : 'Registrarse'}
+            {loading ? 'Signing up...' : 'Sign up'}
           </Button>
         </form>
         <p className="mt-6 text-sm text-muted-foreground">
-          ¿Ya tienes cuenta? <a href="/login" className="text-primary">Inicia sesión</a>
+          Already have an account? <a href="/login" className="text-primary">Sign in</a>
         </p>
       </div>
     </div>

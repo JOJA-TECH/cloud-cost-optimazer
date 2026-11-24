@@ -93,10 +93,10 @@ export default function CostsPage() {
       {dailyResult.status !== 'ready' || !dailyResult.data ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           <p className="text-sm text-muted-foreground">
-            {dailyResult.status === 'loading' ? 'Cargando costos...' :
-              dailyResult.status === 'error' ? 'No fue posible consultar los costos.' :
-              dailyResult.error === 'no_resource' ? 'Selecciona un recurso y una ventana para consultar costos.' :
-              'No hay datos de costo para el recurso y ventana seleccionados.'}
+            {dailyResult.status === 'loading' ? 'Loading costs...' :
+              dailyResult.status === 'error' ? 'Could not retrieve costs.' :
+              dailyResult.error === 'no_resource' ? 'Select a resource and time window to view costs.' :
+              'No cost data for the selected resource and time window.'}
           </p>
           {dailyResult.status === 'error' && <p className="text-xs text-muted-foreground">{dailyResult.error}</p>}
         </div>
@@ -104,9 +104,9 @@ export default function CostsPage() {
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard label="Billed cost" value={kpisResult.data?.currentCost != null ? `$${kpisResult.data.currentCost.toFixed(2)}` : '—'} sub="selected period" delta={kpisResult.data?.currentCostDelta ?? undefined} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-            <KpiCard label="Reference price" value="—" sub="No disponible" icon={Tag} />
-            <KpiCard label="Estimated cost" value={kpisResult.data?.estimatedCost != null ? `$${kpisResult.data.estimatedCost.toFixed(2)}` : '—'} sub="Según recomendación" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-            <KpiCard label="Estimated savings" value={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)}` : '—'} sub={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : 'Sin recomendación'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Reference price" value="—" sub="Not available" icon={Tag} />
+            <KpiCard label="Estimated cost" value={kpisResult.data?.estimatedCost != null ? `$${kpisResult.data.estimatedCost.toFixed(2)}` : '—'} sub="Based on recommendation" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Estimated savings" value={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)}` : '—'} sub={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : 'No recommendation'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -135,9 +135,9 @@ export default function CostsPage() {
             <Panel title="Cost distribution" description="Billed cost by component" action={componentsResult.status === 'ready' && componentsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {componentsResult.status !== 'ready' || !componentsResult.data ? (
                 <p className="text-xs text-muted-foreground">
-                  {componentsResult.status === 'loading' ? 'Cargando componentes...' :
-                    componentsResult.status === 'error' ? `No fue posible consultar los componentes: ${componentsResult.error ?? 'Error desconocido'}` :
-                    'No hay componentes de costo disponibles.'}
+                  {componentsResult.status === 'loading' ? 'Loading components...' :
+                    componentsResult.status === 'error' ? `Could not retrieve components: ${componentsResult.error ?? 'Unknown error'}` :
+                    'No cost components available.'}
                 </p>
               ) : (
               <>
@@ -176,7 +176,7 @@ export default function CostsPage() {
 
             <Panel title="Current vs recommended" description="Estimated cost by component" action={componentsResult.status === 'ready' && componentsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {componentsResult.status !== 'ready' || !componentsResult.data || componentsResult.source !== 'mock' ? (
-                <p className="text-xs text-muted-foreground">No hay estimaciones por componente calculadas por el backend.</p>
+                <p className="text-xs text-muted-foreground">No per-component estimates have been calculated by the backend.</p>
               ) : (
               <>
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

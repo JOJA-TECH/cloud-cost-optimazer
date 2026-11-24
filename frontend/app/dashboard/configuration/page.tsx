@@ -94,10 +94,10 @@ export default function ConfigurationPage() {
 
       {!resource ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">Datos insuficientes</p>
+          <p className="text-sm text-muted-foreground">Insufficient data</p>
           <p className="text-xs text-muted-foreground">
-            No hay configuración de recurso disponible. Verifique que exista un recurso cloud
-            registrado y que CCO_DATA_DSN esté configurado en el backend.
+            No resource configuration is available. Check that a cloud resource
+            is registered and CCO_DATA_DSN is configured on the backend.
           </p>
         </div>
       ) : (
@@ -155,7 +155,7 @@ export default function ConfigurationPage() {
                   </li>
                 ))}
               </ul>
-              </>) : <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Cargando cobertura...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No hay información de cobertura disponible.'}</p>}
+              </>) : <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Loading coverage...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No coverage information available.'}</p>}
               <div className="mt-3 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
                 Release 1.0 analyzes Azure SQL Database and does not modify production resources.
                 Multi-cloud support is a roadmap concept.
@@ -165,12 +165,12 @@ export default function ConfigurationPage() {
 
           <Panel
             title="Configuration snapshots"
-            description="Historial de configuración (ARM) del recurso, más reciente primero"
+            description="Resource configuration history (ARM), newest first"
             className="mt-4"
           >
             {!configLoaded ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
-                No hay snapshots de configuración disponibles para el recurso seleccionado.
+                No configuration snapshots are available for the selected resource.
               </div>
             ) : (
               <div className="overflow-x-auto">

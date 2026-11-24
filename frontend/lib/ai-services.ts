@@ -213,7 +213,7 @@ async function settled<T>(label: string, promise: Promise<T>, errors: string[]):
   try {
     return await promise
   } catch (error) {
-    errors.push(`${label}: ${error instanceof Error ? error.message : 'falló la solicitud'}`)
+    errors.push(`${label}: ${error instanceof Error ? error.message : 'request failed'}`)
     return null
   }
 }
@@ -228,13 +228,13 @@ export async function loadAnalyticsWorkspace(resourceUid: string, window: Analys
     settled('Percentiles CPU', apiJson<PercentileEvidence[]>(`/api/v1/analytics/percentiles?${params({ ...common, metric_code: 'cpu_percent', period_type: '1h' })}`), errors),
     settled('Percentiles I/O', apiJson<PercentileEvidence[]>(`/api/v1/analytics/percentiles?${params({ ...common, metric_code: 'data_io_percent', period_type: '1h' })}`), errors),
     settled('Tendencias', apiJson<TrendEvidence[]>(`/api/v1/analytics/trends?${params(common)}`), errors),
-    settled('Patrón de carga', apiJson<WorkloadEvidence>(`/api/v1/analytics/patterns?${params(common)}`), errors),
+    settled('Workload pattern', apiJson<WorkloadEvidence>(`/api/v1/analytics/patterns?${params(common)}`), errors),
     settled('Capacidad', apiJson<CapacityEvidence>(`/api/v1/analytics/capacity?${params({ resource_uid: resourceUid, period_type: '1d', period_start: periodStart })}`), errors),
-    settled('Costos analíticos', apiJson<CostEvidence>(`/api/v1/analytics/costs?${params(common)}`), errors),
+    settled('Analytical costs', apiJson<CostEvidence>(`/api/v1/analytics/costs?${params(common)}`), errors),
     settled('DES', apiJson<DESEvidence>(`/api/v1/analytics/des?${params({ resource_uid: resourceUid, period_type: '1d', period_start: periodStart })}`), errors),
     settled('Forecast', apiJson<ForecastEvidence[]>(`/api/v1/analytics/forecasts?${params({ resource_uid: resourceUid, target_metric: 'cpu_avg', from: window.to, to: forecastEnd })}`), errors),
     settled('Recomendaciones', apiJson<{ items?: BackendRecommendation[] }>(`/api/v1/recommendations?${params({ resource_uid: resourceUid, limit: 20 })}`), errors),
-    settled('Políticas', apiJson<{ items?: OptimizationPolicy[] }>('/api/v1/recommendations/policies?enabled_only=true'), errors),
+    settled('Policies', apiJson<{ items?: OptimizationPolicy[] }>('/api/v1/recommendations/policies?enabled_only=true'), errors),
   ])
 
   return {
@@ -261,7 +261,7 @@ export async function computeAnalytics(resourceUid: string, window: AnalysisWind
     ['Percentiles CPU', '/api/v1/analytics/percentiles', { ...body, metric_code: 'cpu_percent', period_type: '1h' }],
     ['Percentiles I/O', '/api/v1/analytics/percentiles', { ...body, metric_code: 'data_io_percent', period_type: '1h' }],
     ['Tendencias', '/api/v1/analytics/trends', body],
-    ['Patrón de carga', '/api/v1/analytics/patterns', body],
+    ['Workload pattern', '/api/v1/analytics/patterns', body],
     ['Capacidad', '/api/v1/analytics/capacity', { resource_uid: resourceUid, period_type: '1d', period_start: utcDayStart(window.to) }],
     ['Costos', '/api/v1/analytics/costs', body],
     ['Componentes DES', '/api/v1/analytics/des', { resource_uid: resourceUid, period_type: '1d', period_start: utcDayStart(window.to) }],
@@ -271,7 +271,7 @@ export async function computeAnalytics(resourceUid: string, window: AnalysisWind
     try {
       await apiJson(endpoint, { method: 'POST', body: JSON.stringify(payload) })
     } catch (error) {
-      failures.push(`${label}: ${error instanceof Error ? error.message : 'falló el cómputo'}`)
+      failures.push(`${label}: ${error instanceof Error ? error.message : 'computation failed'}`)
     }
   }
   return failures

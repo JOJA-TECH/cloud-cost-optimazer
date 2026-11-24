@@ -45,7 +45,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) {
-      setAuditError('Selecciona un recurso y una ventana de tiempo para consultar la auditoría.')
+      setAuditError('Select a resource and time window to view audit events.')
       setAuditLoaded(true)
       return
     }
@@ -86,11 +86,11 @@ export default function HistoryPage() {
           }))
         )
       } else {
-        setAuditError(res.error ?? 'No se pudo consultar la traza de auditoría.')
+        setAuditError(res.error ?? 'Could not retrieve the audit trail.')
       }
       setAuditLoaded(true)
     }).catch((error: unknown) => {
-      setAuditError(error instanceof Error ? error.message : 'No se pudo consultar la traza de auditoría.')
+      setAuditError(error instanceof Error ? error.message : 'Could not retrieve the audit trail.')
       setAuditLoaded(true)
     })
   }, [resourceUid, timeRange])
@@ -101,7 +101,7 @@ export default function HistoryPage() {
     <div>
       <PageHeader
         title="History"
-        description="Historial de recomendaciones y traza de auditoría. El historial muestra decisiones de right-sizing generadas; la traza de auditoría registra quién tomó cada decisión y cuándo."
+        description="Recommendation history and audit trail. The history shows generated right-sizing decisions; the audit trail records who made each decision and when."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -123,11 +123,11 @@ export default function HistoryPage() {
 
       <Panel
         title="Historial de recomendaciones"
-        description="Cada recomendación generada con su configuración, ahorro, riesgo, confianza y estado."
+        description="Each generated recommendation with its configuration, savings, risk, confidence, and status."
         className="mb-4"
         action={historyResult.status === 'ready' && historyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
       >
-        {historyResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{historyResult.status === 'loading' ? 'Cargando historial...' : historyResult.status === 'error' ? historyResult.error : 'No hay recomendaciones registradas.'}</p>}
+        {historyResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{historyResult.status === 'loading' ? 'Loading history...' : historyResult.status === 'error' ? historyResult.error : 'No recommendations recorded.'}</p>}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
@@ -174,8 +174,8 @@ export default function HistoryPage() {
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <Detail label="Recommendation ID" value={h.id} mono />
                           <Detail label="Model / rule version" value={h.version} mono />
-                           <Detail label="Analysis period" value={h.analysisPeriod ?? 'No disponible'} />
-                           <Detail label="Evidence snapshot" value="No disponible en este listado" />
+                            <Detail label="Analysis period" value={h.analysisPeriod ?? 'Not available'} />
+                            <Detail label="Evidence snapshot" value="Not available in this list" />
                         </div>
                         <p className="mt-3 text-xs text-muted-foreground">
                           Opening a past recommendation replays the evidence exactly as it was when
@@ -190,7 +190,7 @@ export default function HistoryPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-5 py-8 text-center text-xs text-muted-foreground">
-                    No hay recomendaciones para mostrar.
+                    No recommendations to display.
                   </td>
                 </tr>
               )}
@@ -200,30 +200,30 @@ export default function HistoryPage() {
       </Panel>
 
       <Panel
-        title="Traza de auditoría (Audit Trail)"
-        description="Eventos de auditoría registrados para decisiones de recomendación: quién, cuándo, qué acción y evidencia asociada."
+        title="Audit trail"
+        description="Recorded audit events for recommendation decisions: who, when, what action, and associated evidence."
         className="mt-4"
-        action={<Badge variant="outline" className="text-[9px]">{auditError ? 'Error' : auditLoaded ? 'Datos reales' : 'Cargando'}</Badge>}
+        action={<Badge variant="outline" className="text-[9px]">{auditError ? 'Error' : auditLoaded ? 'Live data' : 'Loading'}</Badge>}
       >
         {!auditLoaded ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
-            Cargando traza de auditoría...
+            Loading audit trail...
           </div>
         ) : auditError ? (
           <div className="p-4 text-center text-xs text-muted-foreground">{auditError}</div>
         ) : auditEvents.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
-            No hay eventos de auditoría para el recurso y ventana seleccionados.
+            No audit events for the selected resource and time window.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-muted-foreground">
-                  <th className="px-5 py-2.5 text-left font-medium">Fecha</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Acción</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Date</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Action</th>
                   <th className="px-3 py-2.5 text-left font-medium">Actor</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Método</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Method</th>
                   <th className="px-3 py-2.5 text-left font-medium">Correlation ID</th>
                   <th className="px-3 py-2.5 text-left font-medium">Operation ID</th>
                   <th className="px-5 py-2.5 text-left font-medium">Recurso</th>

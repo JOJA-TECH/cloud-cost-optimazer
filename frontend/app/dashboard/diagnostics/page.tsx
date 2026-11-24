@@ -51,7 +51,7 @@ export default function DiagnosticsPage() {
         description="Technical detail supporting the recommendation — top operations and wait categories. Denser than the executive views, but kept readable."
         actions={
           <div className="flex items-center gap-2">
-            <Badge variant="neutral">Query Store · período seleccionado</Badge>
+            <Badge variant="neutral">Query Store · selected period</Badge>
             {topQueriesResult.status === 'ready' && topQueriesResult.source === 'mock' && <Badge variant="outline">Mock</Badge>}
           </div>
         }
@@ -59,7 +59,7 @@ export default function DiagnosticsPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={topQueriesResult.status === 'ready' && topQueriesResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
-          {topQueriesResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{topQueriesResult.status === 'loading' ? 'Cargando operaciones...' : topQueriesResult.status === 'error' ? topQueriesResult.error : 'No hay operaciones disponibles para este recurso.'}</p>}
+          {topQueriesResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{topQueriesResult.status === 'loading' ? 'Loading operations...' : topQueriesResult.status === 'error' ? topQueriesResult.error : 'No operations available for this resource.'}</p>}
           {topQueriesResult.status === 'ready' && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
@@ -84,12 +84,12 @@ export default function DiagnosticsPage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">
-                      {q.execs.toLocaleString()}
+                      {q.execs.toLocaleString('en-US')}
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgCpuMs == null ? '—' : `${q.avgCpuMs.toFixed(1)} ms`}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-foreground">{q.avgDurMs == null ? '—' : `${q.avgDurMs.toFixed(1)} ms`}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">
-                      {q.reads == null ? '—' : q.reads.toLocaleString()}
+                      {q.reads == null ? '—' : q.reads.toLocaleString('en-US')}
                     </td>
                   </tr>
                 ))}
@@ -101,7 +101,7 @@ export default function DiagnosticsPage() {
 
         <Panel title="Wait categories" description="Where time is actually spent" action={waitCategoriesResult.status === 'ready' && waitCategoriesResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
           {waitCategoriesResult.status !== 'ready' ? (
-            <p className="text-sm text-muted-foreground">{waitCategoriesResult.status === 'loading' ? 'Cargando categorías...' : waitCategoriesResult.status === 'error' ? waitCategoriesResult.error : 'No hay categorías de espera disponibles.'}</p>
+            <p className="text-sm text-muted-foreground">{waitCategoriesResult.status === 'loading' ? 'Loading categories...' : waitCategoriesResult.status === 'error' ? waitCategoriesResult.error : 'No wait categories available.'}</p>
           ) : (<>
           <div className="relative">
             <Donut data={waitCategories} height={180} />
@@ -124,7 +124,7 @@ export default function DiagnosticsPage() {
       </div>
 
       {topQueriesResult.source === 'mock' && waitCategoriesResult.source === 'mock' && topQueriesResult.status === 'ready' && waitCategoriesResult.status === 'ready' && (
-      <Panel title="How diagnostics support the recommendation" className="mt-4" action={<Badge variant="outline">Mock</Badge>} note="Ejemplo demostrativo; no constituye evidencia sobre el recurso seleccionado.">
+      <Panel title="How diagnostics support the recommendation" className="mt-4" action={<Badge variant="outline">Mock</Badge>} note="Illustrative example; not evidence for the selected resource.">
         <div className="grid gap-3 sm:grid-cols-3">
           <Insight title="CPU-bound, not I/O-bound" body="34% of waits are CPU, 22% PAGEIOLATCH. vCore reduction stays viable because I/O is not the bottleneck at peak." />
           <Insight title="Concentrated cost" body="Q3 and Q4 dominate CPU per execution. Their pattern is periodic, matching the workload classification." />

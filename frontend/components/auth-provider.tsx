@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const data = await loginApi({ email, password })
       setToken(data.access_token)
-      setUserName(data.display_name || data.email.split('@')[0] || 'Usuario')
+      setUserName(data.display_name || data.email.split('@')[0] || 'User')
       setUserEmail(data.email)
     },
     [],

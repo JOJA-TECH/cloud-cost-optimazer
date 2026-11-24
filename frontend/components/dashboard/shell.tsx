@@ -162,7 +162,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           collapsed ? 'w-16' : 'w-60',
         )}
       >
-        <SidebarContent collapsed={collapsed} pathname={pathname} onNavigate={() => {}} userName={userName ?? 'Usuario'} userEmail={userEmail ?? 'usuario@empresa.com'} />
+        <SidebarContent collapsed={collapsed} pathname={pathname} onNavigate={() => {}} userName={userName ?? 'User'} userEmail={userEmail ?? 'user@example.com'} />
         <button
           onClick={() => setCollapsed((v) => !v)}
           className="m-3 flex items-center justify-center gap-2 rounded-md border border-sidebar-border py-2 text-xs font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-white"
@@ -183,7 +183,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <X className="size-5 text-sidebar-foreground" />
               </button>
             </div>
-            <SidebarContent collapsed={false} pathname={pathname} onNavigate={() => setMobileOpen(false)} userName={userName ?? 'Usuario'} userEmail={userEmail ?? 'usuario@empresa.com'} />
+            <SidebarContent collapsed={false} pathname={pathname} onNavigate={() => setMobileOpen(false)} userName={userName ?? 'User'} userEmail={userEmail ?? 'user@example.com'} />
           </aside>
         </div>
       )}
@@ -192,7 +192,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <TopBar
           onMenu={() => setMobileOpen(true)}
           resource={resource}
-          userName={userName ?? 'Usuario'}
+          userName={userName ?? 'User'}
           accounts={accounts}
           cloudResources={cloudResources}
           selectedResourceUid={getSelectedResourceUid() ?? ''}
@@ -204,7 +204,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 pb-24 sm:px-6 md:pb-6">
           <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-xs">
-            <span>{demo ? 'Modo demostración: datos ilustrativos, no representan recursos reales.' : 'Modo real: sin sustitución automática por datos demostrativos.'}</span>
+            <span>{demo ? 'Demo mode: illustrative data, not real resources.' : 'Live mode: demo data is never used as an automatic fallback.'}</span>
             <button type="button" className="rounded border border-border px-2 py-1 font-medium" onClick={() => {
               if (!demo) {
                 sessionStorage.setItem('cco_real_resource_uid', getSelectedResourceUid() ?? '')
@@ -216,7 +216,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               setDemoMode(!demo)
               window.location.reload()
             }}>
-              {demo ? 'Salir de la demo' : 'Activar demo'}
+              {demo ? 'Exit demo' : 'Enable demo'}
             </button>
           </div>
           {children}
@@ -363,7 +363,7 @@ function TopBar({
         <Database className="size-4 text-primary" />
         <div className="flex flex-col items-start">
           <span className="max-w-[12rem] truncate sm:max-w-none font-semibold">
-            {resource?.name ?? 'Cargando...'}
+            {resource?.name ?? 'Loading...'}
           </span>
           {cloudResources.length > 1 && (
             <span className="text-[10px] text-muted-foreground truncate max-w-[12rem]">
@@ -413,7 +413,7 @@ function TopBar({
       <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
         <Calendar className="size-4 text-primary" />
         <span className="ml-1 text-xs font-medium text-foreground hidden sm:inline">
-          Desde:
+          From:
         </span>
         <input
           type="datetime-local"
@@ -424,7 +424,7 @@ function TopBar({
             onTimeRangeChange(from, timeRange.to)
           }}
         />
-        <span className="mx-1 text-xs text-muted-foreground hidden sm:inline">Hasta:</span>
+        <span className="mx-1 text-xs text-muted-foreground hidden sm:inline">To:</span>
         <input
           type="datetime-local"
           className="text-xs bg-transparent border-none focus:ring-0 w-[130px]"

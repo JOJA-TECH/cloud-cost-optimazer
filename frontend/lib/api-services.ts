@@ -240,7 +240,7 @@ async function tryBackend<T>(fn: () => Promise<T>): Promise<ServiceResult<T>> {
     const data = await fn()
     return backendResult(data)
   } catch (err: any) {
-    return { data: null, source: null, status: 'error', error: err?.message ?? 'Error desconocido' }
+    return { data: null, source: null, status: 'error', error: err?.message ?? 'Unknown error' }
   }
 }
 
@@ -258,7 +258,7 @@ export async function getCloudResources(
   if (!cloudAccountId) {
     const accounts = await getCloudAccounts()
     if (accounts.status !== 'ready' || !accounts.data?.length) {
-      return accounts.status === 'error' ? errorResult(accounts.error ?? 'Error cargando cuentas') : emptyResult('no_resource')
+      return accounts.status === 'error' ? errorResult(accounts.error ?? 'Failed to load accounts') : emptyResult('no_resource')
     }
     cloudAccountId = accounts.data[0].cloud_account_id
   }
@@ -290,7 +290,7 @@ export async function getDashboardResource(cloudAccountId?: string): Promise<Ser
   const cloudResourcesRes = await getCloudResources(cloudAccountId)
   if (cloudResourcesRes.status !== 'ready' || !cloudResourcesRes.data?.length) {
     return cloudResourcesRes.status === 'error'
-      ? errorResult(cloudResourcesRes.error ?? 'Error cargando recursos')
+      ? errorResult(cloudResourcesRes.error ?? 'Failed to load resources')
       : emptyResult('no_resource')
   }
 
@@ -444,7 +444,7 @@ export interface AnalyticsJob {
 
 // ── Helper para llamadas POST de analytics (computar) ──
 async function analyticsPost<T>(path: string, body: any): Promise<ServiceResult<T>> {
-  if (isDemoMode()) return errorResult('Las acciones del backend están deshabilitadas en modo demostración.')
+  if (isDemoMode()) return errorResult('Backend actions are disabled in demo mode.')
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
@@ -614,17 +614,17 @@ interface BackendRecommendation {
 
 function mapRecommendation(value: BackendRecommendation): RecommendationItem {
   if (!value.recommendation_uid || !value.resource_uid) {
-    throw new Error('Respuesta de recomendación inválida')
+    throw new Error('Invalid recommendation response')
   }
   const level = value.risk?.level?.toLowerCase()
   const risk: RiskLevel = level === 'low' ? 'Low' : level === 'medium' ? 'Medium' : level === 'high' || level === 'critical' ? 'High' : 'None'
   const configuration = (config: BackendRecommendation['current_configuration']) =>
-    config?.SKUName || (config?.CapacityVCores != null ? `${config.CapacityVCores} vCores` : 'No disponible')
+    config?.SKUName || (config?.CapacityVCores != null ? `${config.CapacityVCores} vCores` : 'Not available')
   return {
     id: value.recommendation_uid,
     resourceUid: value.resource_uid,
     status: value.status,
-    title: 'Recomendación de capacidad',
+    title: 'Capacity recommendation',
     from: configuration(value.current_configuration),
     to: configuration(value.proposed_configuration),
     savingsPct: value.estimated_saving?.monthly_percentage ?? 0,
@@ -634,7 +634,7 @@ function mapRecommendation(value: BackendRecommendation): RecommendationItem {
     latencyImpact: null,
     analysisPeriod: value.estimated_saving?.period_start && value.estimated_saving?.period_end
       ? `${value.estimated_saving.period_start.slice(0, 10)} – ${value.estimated_saving.period_end.slice(0, 10)}`
-      : 'No disponible',
+      : 'Not available',
     generated: value.created_at,
     modelVersion: `v${value.version}`,
     evidence: [],
@@ -649,7 +649,7 @@ export async function getRecommendations(resourceUid?: string): Promise<ServiceR
     const query = resourceUid ? `?resource_uid=${encodeURIComponent(resourceUid)}` : ''
     const response = await apiJson<{ items: BackendRecommendation[]; count: number }>(`/api/v1/recommendations${query}`)
     if (!Array.isArray(response?.items)) {
-      throw new Error('Respuesta de recomendaciones inválida: falta items')
+      throw new Error('Invalid recommendations response: missing items')
     }
     return response.items.map(mapRecommendation)
   })
@@ -723,7 +723,7 @@ export async function getRecommendationEvidence(
       recommendation_uid: response.recommendation_uid,
       evidence_items: (response.evidence ?? []).map((item) => ({
         label: item.Type,
-        value: item.Value === null ? 'No disponible' : `${item.Value}${item.Unit ? ` ${item.Unit}` : ''}`,
+         value: item.Value === null ? 'Not available' : `${item.Value}${item.Unit ? ` ${item.Unit}` : ''}`,
       })),
       constraints: [],
       limitations: [],
@@ -740,7 +740,7 @@ export async function evaluateRecommendations(
   to: string,
   currency: string = 'USD'
 ): Promise<ServiceResult<any>> {
-  if (isDemoMode()) return errorResult('La evaluación no está disponible en modo demostración.')
+  if (isDemoMode()) return errorResult('Evaluation is not available in demo mode.')
   const uid = resourceUid || getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
@@ -852,7 +852,7 @@ export async function getKpis(): Promise<ServiceResult<any>> {
   const [recommendations, analysis] = await Promise.all([getRecommendations(uid), getAnalyticsCosts()])
   const rec = recommendations.status === 'ready' ? recommendations.data?.[0] : null
   const projected = analysis.status === 'ready' && analysis.data?.Available ? analysis.data.ProjectedMonthly : null
-  if (projected !== null && !Number.isFinite(projected)) return errorResult('Respuesta de costos estimados inválida')
+  if (projected !== null && !Number.isFinite(projected)) return errorResult('Invalid estimated costs response')
   return backendResult({
     status: null,
     currentCost: costs.data.reduce((sum, item) => sum + item.pre_tax_cost, 0),
@@ -929,7 +929,7 @@ export async function getPerfSeries(
     getMetrics(uid, 'sessions_count', range.from, range.to),
   ])
   const failed = [cpuRes, ioRes, memoryRes, sessionsRes].find(result => result.status === 'error')
-  if (failed) return errorResult(failed.error ?? 'Error cargando métricas')
+  if (failed) return errorResult(failed.error ?? 'Failed to load metrics')
 
   const cpuPoints = cpuRes.source === 'backend' && cpuRes.data ? cpuRes.data : []
   const ioPoints = ioRes.source === 'backend' && ioRes.data ? ioRes.data.points : []
@@ -1016,7 +1016,7 @@ export async function getPersistedScenarios(resourceUid: string): Promise<Servic
   return tryBackend(async () => {
     const items = await apiJson<PersistedScenario[]>(`/api/v1/recommendations/scenarios?resource_uid=${encodeURIComponent(resourceUid)}`)
     if (!Array.isArray(items) || items.some(item => !Array.isArray(item.candidates))) {
-      throw new Error('Respuesta de escenarios inválida')
+      throw new Error('Invalid scenarios response')
     }
     return items
   })
@@ -1046,7 +1046,7 @@ export async function getWorkloadHourly(): Promise<ServiceResult<any[]>> {
   if (response.status !== 'ready' || !response.data) return { ...response, data: null }
   if (!Array.isArray(response.data) || response.data.some(row =>
     !Array.isArray(row.AvailableMetrics) || !Number.isInteger(row.HourOfDay) || row.HourOfDay < 0 || row.HourOfDay > 23
-  )) return errorResult('Respuesta de snapshots horarios inválida')
+  )) return errorResult('Invalid hourly snapshots response')
   const hours = Array.from({ length: 24 }, (_, hour) => ({
     hour: `${String(hour).padStart(2, '0')}:00`,
     intensitySum: 0, intensityCount: 0, sessionsSum: 0, sessionsCount: 0,
@@ -1076,12 +1076,12 @@ export async function getWorkloadClassification(): Promise<ServiceResult<Workloa
   const result = await getWorkloadPattern()
   if (result.status !== 'ready' || !result.data) return { ...result, data: null }
   return backendResult({
-    pattern: result.data.IntensityBand || 'No disponible',
+    pattern: result.data.IntensityBand || 'Not available',
     confidence: null,
     evidence: result.data.PeakHours?.length ? [`Horas pico: ${result.data.PeakHours.join(', ')}`] : [],
     metrics: [
-      { label: 'Picos por día', value: String(result.data.PeakFrequency) },
-      { label: 'Duración promedio del pico', value: `${result.data.AvgPeakDuration} h` },
+      { label: 'Peaks per day', value: String(result.data.PeakFrequency) },
+      { label: 'Average peak duration', value: `${result.data.AvgPeakDuration} h` },
     ],
   })
 }
@@ -1101,9 +1101,9 @@ export async function getTopQueries(): Promise<ServiceResult<any[]>> {
     avg_cpu_ms: number | null; avg_dur_ms: number | null; reads: number | null
   }>>(`/api/v1/data/top-operations?${query}`))
   if (response.status !== 'ready' || !response.data) return { ...response, data: null }
-  if (!Array.isArray(response.data)) return errorResult('Respuesta de operaciones inválida')
+  if (!Array.isArray(response.data)) return errorResult('Invalid operations response')
   return backendResult(response.data.map(row => ({
-    id: String(row.query_id), text: row.text ?? 'Texto no disponible',
+    id: String(row.query_id), text: row.text ?? 'Text not available',
     execs: row.execs, avgCpuMs: row.avg_cpu_ms,
     avgDurMs: row.avg_dur_ms, reads: row.reads,
   })))
@@ -1118,7 +1118,7 @@ export async function getWaitCategories(): Promise<ServiceResult<any[]>> {
   const response = await tryBackend(() => apiJson<Array<{ name: string; total_wait_ms: number }>>(`/api/v1/data/wait-categories?${query}`))
   if (response.status !== 'ready' || !response.data) return { ...response, data: null }
   if (!Array.isArray(response.data) || response.data.some(row => !Number.isFinite(row.total_wait_ms) || row.total_wait_ms < 0)) {
-    return errorResult('Respuesta de esperas inválida')
+    return errorResult('Invalid wait categories response')
   }
   const total = response.data.reduce((sum, row) => sum + row.total_wait_ms, 0)
   if (!total) return emptyResult('no_data')
@@ -1151,13 +1151,13 @@ export async function getDataQuality(): Promise<ServiceResult<DataQuality>> {
   const query = new URLSearchParams({ resource_uid: uid, metric_code: 'cpu_percent', from: range.from, to: range.to })
   const coverage = await tryBackend(() => apiJson<{ coverage_ratio: number; gaps: number; state: string }>(`/api/v1/data/coverage?${query}`))
   if (coverage.status !== 'ready' || !coverage.data) return { ...coverage, data: null }
-  if (!Number.isFinite(coverage.data.coverage_ratio)) return errorResult('Respuesta de cobertura inválida')
+  if (!Number.isFinite(coverage.data.coverage_ratio)) return errorResult('Invalid coverage response')
   const ratio = coverage.data.coverage_ratio
   return backendResult({
-    globalConfidence: coverage.data.state === 'sufficient' ? 'Suficiente' : 'Insuficiente',
+    globalConfidence: coverage.data.state === 'sufficient' ? 'Sufficient' : 'Insufficient',
     items: [
-      { label: 'Cobertura CPU', value: `${(ratio * 100).toFixed(1)}%`, info: '', tone: ratio >= 0.8 ? 'good' : 'warn' },
-      { label: 'Intervalos sin lecturas', value: String(coverage.data.gaps), info: '', tone: coverage.data.gaps ? 'warn' : 'good' },
+      { label: 'CPU coverage', value: `${(ratio * 100).toFixed(1)}%`, info: '', tone: ratio >= 0.8 ? 'good' : 'warn' },
+      { label: 'Intervals without readings', value: String(coverage.data.gaps), info: '', tone: coverage.data.gaps ? 'warn' : 'good' },
     ],
   })
 }
@@ -1237,7 +1237,7 @@ export async function downloadReportArtifact(uid: string): Promise<ServiceResult
   const reportRes = await getReport(uid)
   if (reportRes.status !== 'ready' || !reportRes.data) {
     return reportRes.status === 'error'
-      ? errorResult(reportRes.error ?? 'No se pudo consultar el reporte')
+      ? errorResult(reportRes.error ?? 'Could not retrieve the report')
       : emptyResult('no_data')
   }
   if (!reportRes.data.artifact?.storage_uri) {

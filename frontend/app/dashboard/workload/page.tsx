@@ -65,9 +65,9 @@ export default function WorkloadPage() {
 
       {(!cls || clsResult.status !== 'ready') && hourlyResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">{clsResult.status === 'loading' ? 'Cargando clasificación...' : clsResult.status === 'error' ? 'No fue posible consultar el patrón de carga.' : 'Datos insuficientes'}</p>
+          <p className="text-sm text-muted-foreground">{clsResult.status === 'loading' ? 'Loading classification...' : clsResult.status === 'error' ? 'Could not retrieve the workload pattern.' : 'Insufficient data'}</p>
           <p className="text-xs text-muted-foreground">
-            {clsResult.status === 'error' ? clsResult.error : 'No hay datos de patrones de carga para el recurso y ventana seleccionados.'}
+            {clsResult.status === 'error' ? clsResult.error : 'No workload pattern data for the selected resource and time window.'}
           </p>
         </div>
       ) : (
@@ -108,7 +108,7 @@ export default function WorkloadPage() {
                   ))}
                 </div>
               </div>
-              </>) : <p className="text-xs text-muted-foreground">No hay clasificación calculada para este período.</p>}
+              </>) : <p className="text-xs text-muted-foreground">No classification has been calculated for this period.</p>}
             </Panel>
 
             <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
@@ -122,7 +122,7 @@ export default function WorkloadPage() {
                   </div>
                 ))}
               </div>
-              </>) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles para este recurso.</p>}
+              </>) : <p className="text-xs text-muted-foreground">No hourly data available for this resource.</p>}
             </Panel>
           </div>
 
@@ -135,7 +135,7 @@ export default function WorkloadPage() {
                 height={220}
                 bars={[{ key: 'concurrency', color: 'var(--chart-2)', name: 'Concurrency' }]}
               />
-              ) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles.</p>}
+              ) : <p className="text-xs text-muted-foreground">No hourly data available.</p>}
             </Panel>
             <Panel title="Read / write mix" description="Share of operations by hour (%)" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {hourlyResult.status === 'ready' && workloadHourly.some(p => p.reads !== null && p.writes !== null) ? (<>
@@ -154,7 +154,7 @@ export default function WorkloadPage() {
                   { key: 'writes', color: 'var(--chart-4)', name: 'Writes' },
                 ]}
               />
-              </>) : <p className="text-xs text-muted-foreground">No hay lecturas y escrituras medidas para este período; las métricas de I/O no representan la mezcla de operaciones.</p>}
+              </>) : <p className="text-xs text-muted-foreground">No measured reads and writes for this period; I/O metrics do not represent the operation mix.</p>}
             </Panel>
           </div>
         </>

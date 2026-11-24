@@ -34,7 +34,7 @@ export async function apiFetch(
   init?: RequestInit,
 ): Promise<Response> {
   if (isDemoMode() && !String(input).startsWith('/auth/')) {
-    throw new Error('El modo demostración está aislado del backend. Sal de la demo para consultar datos reales.')
+    throw new Error('Demo mode is isolated from the backend. Exit demo mode to query live data.')
   }
   const token = await getValidToken()
   const projectId = getProjectId()

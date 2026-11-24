@@ -17,7 +17,7 @@ export function RecommendationSummary({ rec, recSource }: { rec: RecommendationI
             </span>
             <div>
               <h2 className="text-sm font-semibold text-foreground">{r.title}</h2>
-              <Badge variant="outline" className="text-[9px]">{recSource ?? 'Cargando'}</Badge>
+              <Badge variant="outline" className="text-[9px]">{recSource ?? 'Loading'}</Badge>
               <p className="text-xs text-muted-foreground">
                 Decision support · does not modify the production resource
               </p>
@@ -79,7 +79,7 @@ export function RecommendationSummary({ rec, recSource }: { rec: RecommendationI
                 </span>
               </li>
             ))}
-            {r.evidence.length === 0 && <li className="text-xs text-muted-foreground">Consulta el detalle para ver la evidencia disponible.</li>}
+            {r.evidence.length === 0 && <li className="text-xs text-muted-foreground">Open the details to view available evidence.</li>}
           </ul>
           <Badge variant="neutral" className="mt-3 w-full justify-center">
             Analysis period: {r.analysisPeriod}

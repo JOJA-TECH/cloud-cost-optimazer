@@ -71,9 +71,9 @@ export default function IntelligencePage() {
         setResources(data)
         const selected = data[0]?.resource_uid ?? ''
         setResourceUID(selected)
-        if (!selected) setPageError('No hay recursos cloud accesibles. Verifica el módulo Cloud, el binding de datos y el permiso resources:read.')
+        if (!selected) setPageError('No accessible cloud resources. Check the Cloud module, data binding, and resources:read permission.')
       } catch (error) {
-        if (active) setPageError(error instanceof Error ? error.message : 'No se pudieron consultar recursos del backend.')
+        if (active) setPageError(error instanceof Error ? error.message : 'Could not retrieve resources from the backend.')
       } finally {
         if (active) setLoadingResources(false)
       }
@@ -100,7 +100,7 @@ export default function IntelligencePage() {
       await refreshWorkspace(resourceUID)
       if (failures.length === 0) setPageError('')
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'No se pudo completar el análisis.')
+      setPageError(error instanceof Error ? error.message : 'Could not complete the analysis.')
     } finally {
       setComputing(false)
     }
@@ -116,7 +116,7 @@ export default function IntelligencePage() {
       (riskValue !== undefined && (!Number.isFinite(riskValue) || riskValue < 0 || riskValue > 1)) ||
       (confidenceValue !== undefined && (!Number.isFinite(confidenceValue) || confidenceValue < 0 || confidenceValue > 1)) ||
       !Number.isFinite(coverageValue) || coverageValue <= 0 || coverageValue > 100) {
-      setPageError('Revisa el nombre, la versión (entero ≥ 1), los umbrales opcionales entre 0 y 1 y la cobertura CPU p95 mayor que 0 y hasta 100%.')
+      setPageError('Check the name, version (integer ≥ 1), optional thresholds between 0 and 1, and CPU p95 coverage above 0 and at most 100%.')
       return
     }
     const constraints: Record<string, unknown> = {
@@ -137,7 +137,7 @@ export default function IntelligencePage() {
       setSelectedPolicy(created.policy_uid)
       setNewPolicyName('')
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'No se pudo crear la política.')
+      setPageError(error instanceof Error ? error.message : 'Could not create the policy.')
     } finally {
       setSavingPolicy(false)
     }
@@ -165,10 +165,10 @@ export default function IntelligencePage() {
         setJobStatus(job)
       }
       if (job.status === 'failed' || job.status === 'cancelled') {
-        throw new Error(job.error || `El job terminó con estado ${job.status}.`)
+        throw new Error(job.error || `The job ended with status ${job.status}.`)
       }
       if (job.status !== 'completed') {
-        setPageError(`El job ${job.id} continúa en ${job.status}. Puedes volver a consultar la recomendación cuando termine.`)
+        setPageError(`Job ${job.id} is still ${job.status}. Check the recommendation again when it finishes.`)
         return
       }
       const updated = await loadAnalyticsWorkspace(resourceUID, window)
@@ -177,9 +177,9 @@ export default function IntelligencePage() {
         ?? updated.recommendations[0]
         ?? null
       setGenerated(latestResult)
-      if (!latestResult) setPageError('El job finalizó, pero no se encontró una recomendación persistida para el recurso.')
+      if (!latestResult) setPageError('The job finished, but no persisted recommendation was found for the resource.')
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'El backend no pudo generar la recomendación.')
+      setPageError(error instanceof Error ? error.message : 'The backend could not generate the recommendation.')
     } finally {
       setGenerating(false)
     }
@@ -194,134 +194,134 @@ export default function IntelligencePage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="IA y analítica"
-        description="La analítica del backend produce evidencia; su motor de reglas aplica políticas versionadas. No se ejecutan cambios en Azure."
+        title="AI and analytics"
+        description="Backend analytics produces evidence; its rules engine applies versioned policies. No changes are made in Azure."
         actions={<Badge variant="neutral"><BrainCircuit className="mr-1 size-3" />Backend · Analytics + Recommendation</Badge>}
       />
 
-      <Panel title="Recurso y ventana temporal" description="Los datos y las fechas se consultan y procesan en los módulos existentes del backend.">
+      <Panel title="Resource and time window" description="Data and dates are queried and processed by the existing backend modules.">
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_1fr_1fr_auto] md:items-end">
           <label className="space-y-1 text-xs text-muted-foreground">
-            <span>Base de datos</span>
+            <span>Database</span>
             <select value={resourceUID} onChange={(event) => setResourceUID(event.target.value)} disabled={loadingResources || resources.length === 0} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground">
-              {resources.length === 0 && <option value="">Sin recursos accesibles</option>}
+              {resources.length === 0 && <option value="">No accessible resources</option>}
               {resources.map((resource) => <option key={resource.resource_uid} value={resource.resource_uid}>{resource.server_name}/{resource.database_name} · {resource.region_code}</option>)}
             </select>
           </label>
           <label className="space-y-1 text-xs text-muted-foreground">
-            <span>Desde (UTC)</span>
+            <span>From (UTC)</span>
             <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
           </label>
           <label className="space-y-1 text-xs text-muted-foreground">
-            <span>Hasta (UTC)</span>
+            <span>To (UTC)</span>
             <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
           </label>
           <Button onClick={runAnalysis} disabled={!resourceUID || !window || computing || loadingResources}>
             {computing ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
-            {computing ? 'Analizando…' : 'Calcular evidencia'}
+            {computing ? 'Analyzing…' : 'Calculate evidence'}
           </Button>
         </div>
-        {!window && <p className="mt-2 text-xs text-danger">Selecciona fechas válidas; la fecha inicial debe ser anterior o igual a la fecha final.</p>}
+        {!window && <p className="mt-2 text-xs text-danger">Select valid dates; the start date must be on or before the end date.</p>}
         {activeResource && <p className="mt-3 break-all text-[11px] text-muted-foreground">resource_uid: {activeResource.resource_uid}</p>}
       </Panel>
 
       {pageError && <Notice kind="error" text={pageError} />}
-      {computeMessages.length > 0 && <Notice kind="warning" text={`El backend reportó ${computeMessages.length} operación(es) incompleta(s): ${computeMessages.join(' · ')}`} />}
+        {computeMessages.length > 0 && <Notice kind="warning" text={`The backend reported ${computeMessages.length} incomplete ${computeMessages.length === 1 ? 'operation' : 'operations'}: ${computeMessages.join(' · ')}`} />}
       {workspace?.errors.map((message) => <Notice key={message} kind="warning" text={message} />)}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="CPU p95 observado" value={formatPercent(cpuP95)} detail="Percentil 95 exacto guardado por Analytics" />
-        <MetricCard label="CPU p99 observado" value={formatPercent(cpuP99)} detail="Percentil 99; no se deriva del promedio" />
-        <MetricCard label="I/O p95 observado" value={formatPercent(ioP95)} detail="No disponible si falta muestra exacta" />
-        <MetricCard label="Snapshots analíticos" value={workspace ? String(workspace.snapshots.length) : '—'} detail="Ventanas horarias en el período" />
+        <MetricCard label="Observed CPU p95" value={formatPercent(cpuP95)} detail="Exact 95th percentile stored by Analytics" />
+        <MetricCard label="Observed CPU p99" value={formatPercent(cpuP99)} detail="99th percentile; not derived from the average" />
+        <MetricCard label="Observed I/O p95" value={formatPercent(ioP95)} detail="Unavailable if the exact sample is missing" />
+        <MetricCard label="Analytics snapshots" value={workspace ? String(workspace.snapshots.length) : '—'} detail="Hourly windows in the selected period" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Evidencia calculada" description="Valores y método proceden de analytics; campos ausentes no se estiman localmente.">
+        <Panel title="Calculated evidence" description="Values and methods come from analytics; missing fields are not estimated locally.">
           {!workspace ? <Loading /> : (
             <div className="space-y-3">
-              <EvidenceRow label="CPU promedio (último snapshot)" value={formatPercent(latest(workspace.snapshots)?.CPUAvg)} />
-              <EvidenceRow label="CPU máximo observado" value={formatPercent(latest(workspace.snapshots)?.CPUMax)} />
-              <EvidenceRow label="Headroom de capacidad" value={formatPercent(workspace.capacity?.HeadroomPct)} />
-              <EvidenceRow label="Utilización pico" value={formatPercent(workspace.capacity?.PeakUtilization)} />
-              <EvidenceRow label="Costo mensual observado" value={money(workspace.costs?.ActualMonthlyCost, workspace.costs?.Currency)} />
-              <EvidenceRow label="Proyección mensual" value={money(workspace.costs?.ProjectedMonthly, workspace.costs?.Currency)} />
-              <EvidenceRow label="DES · capacidad" value={formatNumber(workspace.des?.CapacityE)} />
-              <EvidenceRow label="DES · costo" value={formatNumber(workspace.des?.CostE)} />
-              <EvidenceRow label="DES · rendimiento" value={formatNumber(workspace.des?.PerformanceE)} />
-              <EvidenceRow label="Patrón de carga" value={workspace.workload?.IntensityBand ?? 'Sin evidencia'} />
-              <EvidenceRow label="Tendencias disponibles" value={workspace.trends.map((trend) => `${trend.MetricCode ?? 'métrica'}: ${formatNumber(trend.Slope)}/h`).join(' · ') || 'Sin evidencia'} />
-              <EvidenceRow label="Último cálculo" value={latest(workspace.snapshots)?.ComputedAt ? new Date(latest(workspace.snapshots)!.ComputedAt!).toLocaleString() : 'No calculado'} />
+              <EvidenceRow label="Average CPU (latest snapshot)" value={formatPercent(latest(workspace.snapshots)?.CPUAvg)} />
+              <EvidenceRow label="Maximum observed CPU" value={formatPercent(latest(workspace.snapshots)?.CPUMax)} />
+              <EvidenceRow label="Capacity headroom" value={formatPercent(workspace.capacity?.HeadroomPct)} />
+              <EvidenceRow label="Peak utilization" value={formatPercent(workspace.capacity?.PeakUtilization)} />
+              <EvidenceRow label="Observed monthly cost" value={money(workspace.costs?.ActualMonthlyCost, workspace.costs?.Currency)} />
+              <EvidenceRow label="Monthly projection" value={money(workspace.costs?.ProjectedMonthly, workspace.costs?.Currency)} />
+              <EvidenceRow label="DES · capacity" value={formatNumber(workspace.des?.CapacityE)} />
+              <EvidenceRow label="DES · cost" value={formatNumber(workspace.des?.CostE)} />
+              <EvidenceRow label="DES · performance" value={formatNumber(workspace.des?.PerformanceE)} />
+              <EvidenceRow label="Workload pattern" value={workspace.workload?.IntensityBand ?? 'No evidence'} />
+              <EvidenceRow label="Available trends" value={workspace.trends.map((trend) => `${trend.MetricCode ?? 'metric'}: ${formatNumber(trend.Slope)}/h`).join(' · ') || 'No evidence'} />
+              <EvidenceRow label="Last calculation" value={latest(workspace.snapshots)?.ComputedAt ? new Date(latest(workspace.snapshots)!.ComputedAt!).toLocaleString('en-US') : 'Not calculated'} />
             </div>
           )}
         </Panel>
 
-        <Panel title="Forecast" description="Opcional; debe provenir del proveedor ML conectado a analytics.MLPort.">
+        <Panel title="Forecast" description="Optional; must come from the ML provider connected to analytics.MLPort.">
           {!workspace ? <Loading /> : workspace.forecasts.length > 0 ? (
             <div className="space-y-2">
-              {workspace.forecasts.slice(0, 5).map((forecast) => <EvidenceRow key={forecast.ForecastUID ?? `${forecast.PeriodStartUTC}-${forecast.TargetMetric}`} label={`${forecast.TargetMetric ?? 'métrica'} · ${forecast.StepUnit ?? ''}`} value={`${formatNumber(forecast.YPred)}${forecast.YLower == null || forecast.YUpper == null ? '' : ` (${formatNumber(forecast.YLower)}–${formatNumber(forecast.YUpper)})`}`} />)}
+              {workspace.forecasts.slice(0, 5).map((forecast) => <EvidenceRow key={forecast.ForecastUID ?? `${forecast.PeriodStartUTC}-${forecast.TargetMetric}`} label={`${forecast.TargetMetric ?? 'metric'} · ${forecast.StepUnit ?? ''}`} value={`${formatNumber(forecast.YPred)}${forecast.YLower == null || forecast.YUpper == null ? '' : ` (${formatNumber(forecast.YLower)}–${formatNumber(forecast.YUpper)})`}`} />)}
             </div>
           ) : (
             <div className="flex gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
               <CircleHelp className="mt-0.5 size-4 shrink-0 text-primary" />
-              No hay forecast persistido para este recurso y período. El backend tiene el contrato ML, pero requiere un proveedor productivo configurado; no se fabrica una predicción de respaldo.
+              No persisted forecast for this resource and period. The backend supports an ML provider, but a production provider must be configured; no fallback prediction is fabricated.
             </div>
           )}
         </Panel>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <Panel title="Motor de Recommendation" description="Seleccione una política explícita; el resultado se guarda y exige revisión humana.">
+        <Panel title="Recommendation engine" description="Select a policy explicitly; the result is saved and requires human review.">
           <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <label className="space-y-1 text-xs text-muted-foreground">
-              <span>Política habilitada</span>
+              <span>Enabled policy</span>
               <select value={selectedPolicy} onChange={(event) => setSelectedPolicy(event.target.value)} className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground">
-                <option value="">Selecciona una política</option>
+                <option value="">Select a policy</option>
                 {(workspace?.policies ?? []).map((policy) => <option key={policy.policy_uid} value={policy.policy_uid}>{policy.name} · v{policy.version}</option>)}
               </select>
             </label>
             <Button onClick={requestRecommendation} disabled={!selectedPolicy || !window || generating || !resourceUID}>
               {generating ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
-              {generating ? 'Evaluando…' : 'Generar recomendación'}
+              {generating ? 'Evaluating…' : 'Generate recommendation'}
             </Button>
           </div>
           {(!workspace || workspace.policies.length === 0) && (
             <div className="mt-3 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs text-muted-foreground">
-              No hay políticas habilitadas. Cree una política versionada abajo; el formulario no activa reducción de capacidad ni cambio de modelo salvo que usted lo permita.
+              No enabled policies. Create a versioned policy below; the form does not enable capacity reductions or model changes unless you allow them.
             </div>
           )}
           {jobStatus && <p className="mt-2 text-xs text-muted-foreground">Job {jobStatus.id} · {jobStatus.status}{jobStatus.error ? ` · ${jobStatus.error}` : ''}</p>}
           {latestRecommendation && <RecommendationCard recommendation={latestRecommendation} />}
-          {!latestRecommendation && workspace?.recommendations.length === 0 && <p className="mt-3 text-sm text-muted-foreground">Aún no hay una recomendación persistida para este recurso.</p>}
+          {!latestRecommendation && workspace?.recommendations.length === 0 && <p className="mt-3 text-sm text-muted-foreground">No persisted recommendation for this resource yet.</p>}
         </Panel>
 
-        <Panel title="Crear política versionada" description="Los umbrales son decisiones del equipo; no se inventan por el modelo.">
+        <Panel title="Create a versioned policy" description="Thresholds are team decisions; the model does not invent them.">
           <div className="space-y-3">
-            <label className="block space-y-1 text-xs text-muted-foreground">Nombre
-              <input value={newPolicyName} onChange={(event) => setNewPolicyName(event.target.value)} placeholder="Ej. right-sizing conservador" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
+            <label className="block space-y-1 text-xs text-muted-foreground">Name
+              <input value={newPolicyName} onChange={(event) => setNewPolicyName(event.target.value)} placeholder="e.g. conservative right-sizing" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
             </label>
-            <label className="block space-y-1 text-xs text-muted-foreground">Versión
+            <label className="block space-y-1 text-xs text-muted-foreground">Version
               <input type="number" min="1" value={newPolicyVersion} onChange={(event) => setNewPolicyVersion(event.target.value)} className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
             </label>
               <label className="flex items-start gap-2 text-xs text-muted-foreground">
                 <input type="checkbox" checked={allowScaleDown} onChange={(event) => setAllowScaleDown(event.target.checked)} className="mt-0.5" />
-                Permitir que las reglas evalúen reducciones (no aplica cambios automáticamente).
+                Allow rules to evaluate capacity reductions (changes are not applied automatically).
               </label>
-            <label className="block space-y-1 text-xs text-muted-foreground">Cobertura mínima horaria de CPU p95 (%)
+            <label className="block space-y-1 text-xs text-muted-foreground">Minimum hourly CPU p95 coverage (%)
               <input type="number" min="0.01" max="100" step="0.1" required value={minCPUCoverage} onChange={(event) => setMinCPUCoverage(event.target.value)} className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
-              <span className="block text-[11px]">Debe ser mayor que 0 y hasta 100. Sin cobertura suficiente, el motor se abstiene.</span>
+              <span className="block text-[11px]">Must be above 0 and at most 100. The engine abstains without sufficient coverage.</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-xs text-muted-foreground">Riesgo máximo (0–1)
-                <input type="number" min="0" max="1" step="0.01" value={maxRisk} onChange={(event) => setMaxRisk(event.target.value)} placeholder="Opcional" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
+              <label className="space-y-1 text-xs text-muted-foreground">Maximum risk (0–1)
+                <input type="number" min="0" max="1" step="0.01" value={maxRisk} onChange={(event) => setMaxRisk(event.target.value)} placeholder="Optional" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
               </label>
-              <label className="space-y-1 text-xs text-muted-foreground">Confianza mínima (0–1)
-                <input type="number" min="0" max="1" step="0.01" value={minConfidence} onChange={(event) => setMinConfidence(event.target.value)} placeholder="Opcional" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
+              <label className="space-y-1 text-xs text-muted-foreground">Minimum confidence (0–1)
+                <input type="number" min="0" max="1" step="0.01" value={minConfidence} onChange={(event) => setMinConfidence(event.target.value)} placeholder="Optional" className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground" />
               </label>
             </div>
             <Button variant="outline" onClick={createPolicy} disabled={savingPolicy || !newPolicyName.trim()} className="w-full">
               {savingPolicy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <ShieldCheck className="mr-2 size-4" />}
-              Guardar política en backend
+              Save policy to backend
             </Button>
           </div>
         </Panel>
@@ -329,7 +329,7 @@ export default function IntelligencePage() {
 
       <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         <Database className="mt-0.5 size-4 shrink-0 text-primary" />
-        <span>Las observaciones y evidencias viven en `cco_data`; autenticación, permisos, jobs y auditoría se mantienen en sus módulos del backend. Una recomendación es declarativa: la aprobación humana no ejecuta cambios en Azure.</span>
+        <span>Observations and evidence are stored in `cco_data`; authentication, permissions, jobs, and auditing remain in their backend modules. Recommendations are declarative: human approval does not execute changes in Azure.</span>
       </div>
     </div>
   )
@@ -345,7 +345,7 @@ function latest(rows: AnalyticsWorkspace['snapshots']) {
 }
 
 function formatPercent(value?: number | null) {
-  return value == null || !Number.isFinite(value) ? 'Sin evidencia' : `${value.toFixed(1)}%`
+  return value == null || !Number.isFinite(value) ? 'No evidence' : `${value.toFixed(1)}%`
 }
 
 function formatNumber(value?: number | null) {
@@ -353,8 +353,8 @@ function formatNumber(value?: number | null) {
 }
 
 function money(value?: number, currency?: string) {
-  if (value == null || !Number.isFinite(value)) return 'Sin evidencia'
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: currency || 'USD', maximumFractionDigits: 2 }).format(value)
+  if (value == null || !Number.isFinite(value)) return 'No evidence'
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', maximumFractionDigits: 2 }).format(value)
 }
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -366,7 +366,7 @@ function EvidenceRow({ label, value }: { label: string; value: string }) {
 }
 
 function Loading() {
-  return <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Cargando desde el backend…</div>
+  return <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />Loading from the backend…</div>
 }
 
 function Notice({ kind, text }: { kind: 'error' | 'warning'; text: string }) {
@@ -375,7 +375,7 @@ function Notice({ kind, text }: { kind: 'error' | 'warning'; text: string }) {
 
 function RecommendationCard({ recommendation }: { recommendation: BackendRecommendation }) {
   const saving = recommendation.estimated_saving
-  const configValue = (config: Record<string, unknown>) => String(config.SKUName ?? config.sku_name ?? config.ComputeModel ?? config.compute_model ?? 'Configuración no disponible')
+  const configValue = (config: Record<string, unknown>) => String(config.SKUName ?? config.sku_name ?? config.ComputeModel ?? config.compute_model ?? 'Configuration unavailable')
   return (
     <div className="mt-4 rounded-lg border border-border bg-background p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -383,13 +383,13 @@ function RecommendationCard({ recommendation }: { recommendation: BackendRecomme
         <Badge variant={recommendation.generation_state === 'complete' ? 'success' : 'warning'}>{recommendation.generation_state}</Badge>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{money(saving?.monthly_amount, saving?.currency)}</p><p className="text-[10px] text-muted-foreground">ahorro potencial/mes</p></div>
-        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{recommendation.risk?.level ?? '—'}</p><p className="text-[10px] text-muted-foreground">riesgo</p></div>
-        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{recommendation.confidence ? `${(recommendation.confidence.score * 100).toFixed(0)}%` : '—'}</p><p className="text-[10px] text-muted-foreground">confianza</p></div>
+        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{money(saving?.monthly_amount, saving?.currency)}</p><p className="text-[10px] text-muted-foreground">potential savings/month</p></div>
+        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{recommendation.risk?.level ?? '—'}</p><p className="text-[10px] text-muted-foreground">risk</p></div>
+        <div className="rounded-md bg-muted/40 p-2"><p className="text-sm font-semibold">{recommendation.confidence ? `${(recommendation.confidence.score * 100).toFixed(0)}%` : '—'}</p><p className="text-[10px] text-muted-foreground">confidence</p></div>
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendation.rationale?.summary || 'El backend no proporcionó una explicación adicional.'}</p>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{recommendation.rationale?.summary || 'The backend did not provide an additional explanation.'}</p>
       {recommendation.rationale?.factors?.length > 0 && <ul className="mt-2 space-y-1">{recommendation.rationale.factors.map((factor, index) => <li key={`${factor}-${index}`} className="flex gap-2 text-[11px] text-muted-foreground"><Check className="mt-0.5 size-3 shrink-0 text-primary" />{factor}</li>)}</ul>}
-      <p className="mt-3 text-[10px] text-muted-foreground">ID {recommendation.recommendation_uid} · política v{recommendation.policy_version} · requiere revisión humana{recommendation.audit_status === 'audit_pending' ? ' · auditoría pendiente' : ''}</p>
+      <p className="mt-3 text-[10px] text-muted-foreground">ID {recommendation.recommendation_uid} · policy v{recommendation.policy_version} · requires human review{recommendation.audit_status === 'audit_pending' ? ' · audit pending' : ''}</p>
     </div>
   )
 }

@@ -73,7 +73,7 @@ export default function OverviewPage() {
     setPerfSeriesResult({ data: null, source: null, status: 'loading', error: null })
     getCostDaily(resourceUid, timeRange.from, timeRange.to)
       .then((res) => setCostDailyResult(res))
-      .catch((err) => setCostDailyResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error cargando costos' }))
+      .catch((err) => setCostDailyResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Failed to load costs' }))
 
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
       .then((res) => setPerfSeriesResult(res))
@@ -97,7 +97,7 @@ export default function OverviewPage() {
           <div className="flex items-center gap-2">
             <Badge variant="success" className="h-7 px-2.5">
               <CheckCircle2 className="size-3.5" />
-              {kpisResult.data?.status ?? 'Estado no disponible'}
+              {kpisResult.data?.status ?? 'Status unavailable'}
             </Badge>
             <Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>
           </div>
@@ -108,7 +108,7 @@ export default function OverviewPage() {
         <KpiCard label="Resource status" value={kpisResult.data?.status ?? '—'} sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
         <KpiCard label="Current cost" value={kpisResult.data?.currentCost != null ? `$${kpisResult.data.currentCost.toFixed(2)}` : '—'} sub="selected period" delta={kpisResult.data?.currentCostDelta ?? undefined} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
         <KpiCard label="Estimated cost" value={kpisResult.data?.estimatedCost != null ? `$${kpisResult.data.estimatedCost.toFixed(2)}` : '—'} sub="according to recommendation" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-        <KpiCard label="Estimated savings" value={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : '—'} sub={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)} / mes` : 'Sin recomendación'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Estimated savings" value={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : '—'} sub={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)} / month` : 'No recommendation'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
         <KpiCard label="Risk" value={kpisResult.data?.risk ?? '—'} sub="within constraints" tone="success" icon={ShieldCheck} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
         <KpiCard label="Confidence" value={kpisResult.data?.confidence != null ? `${kpisResult.data.confidence}%` : '—'} sub="recommendation confidence" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
       </div>
@@ -118,10 +118,10 @@ export default function OverviewPage() {
           <RecommendationSummary rec={currentRecommendation} recSource={recResult.source} />
         ) : (
           <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-            {recResult.status === 'loading' ? 'Cargando recomendación...' :
-              recResult.status === 'error' ? `No fue posible consultar la recomendación: ${recResult.error ?? 'Error desconocido'}` :
-              recResult.error === 'no_resource' ? 'Selecciona un recurso para consultar recomendaciones.' :
-              'No hay recomendaciones disponibles para el recurso seleccionado.'}
+              {recResult.status === 'loading' ? 'Loading recommendation...' :
+              recResult.status === 'error' ? `Could not retrieve the recommendation: ${recResult.error ?? 'Unknown error'}` :
+              recResult.error === 'no_resource' ? 'Select a resource to view recommendations.' :
+              'No recommendations available for the selected resource.'}
           </div>
         )}
       </div>
@@ -135,7 +135,7 @@ export default function OverviewPage() {
         >
           {!costDailyResult.data || costDailyResult.status !== 'ready' ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
-              {costDailyResult.status === 'empty' && <p className="text-xs text-muted-foreground">No hay datos de costo disponibles para el recurso seleccionado.</p>}
+              {costDailyResult.status === 'empty' && <p className="text-xs text-muted-foreground">No cost data available for the selected resource.</p>}
               {costDailyResult.status === 'error' && <p className="text-xs text-muted-foreground">{costDailyResult.error}</p>}
             </div>
           ) : (
@@ -145,7 +145,7 @@ export default function OverviewPage() {
 
         <Panel title="Data quality" description="Signals feeding the analysis" action={dataQualityResult.status === 'ready' && dataQualityResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
           <div className="space-y-3">
-            {dataQualityResult.status !== 'ready' && <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Cargando cobertura...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No hay información de cobertura disponible.'}</p>}
+            {dataQualityResult.status !== 'ready' && <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Loading coverage...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No coverage information available.'}</p>}
             {dataQualityResult.data && (
             <>
             <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
@@ -183,10 +183,10 @@ export default function OverviewPage() {
           </div>
           {!perfSeriesResult.data || perfSeriesResult.status !== 'ready' || !perfSeriesResult.data.some(p => p.p50 !== null) ? (
             <div className="h-[230px] flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
-              {!perfSeriesResult.data && perfSeriesResult.status === 'loading' && <p className="text-xs text-muted-foreground">Cargando datos de rendimiento...</p>}
-              {perfSeriesResult.status === 'empty' && <p className="text-xs text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>}
+              {!perfSeriesResult.data && perfSeriesResult.status === 'loading' && <p className="text-xs text-muted-foreground">Loading performance data...</p>}
+              {perfSeriesResult.status === 'empty' && <p className="text-xs text-muted-foreground">No performance data available for the selected resource.</p>}
               {perfSeriesResult.status === 'error' && <p className="text-xs text-muted-foreground">{perfSeriesResult.error}</p>}
-              {perfSeriesResult.status === 'ready' && <p>No hay percentiles de CPU calculados para el período seleccionado.</p>}
+              {perfSeriesResult.status === 'ready' && <p>No CPU percentiles have been calculated for the selected period.</p>}
             </div>
           ) : (
             <MultiLine
@@ -208,9 +208,9 @@ export default function OverviewPage() {
         <Panel title="Opportunity snapshot" description="What a right-size would change">
           {!currentRecommendation ? (
             <p className="text-sm text-muted-foreground">
-              {recResult.status === 'loading' ? 'Cargando oportunidad...' :
-                recResult.status === 'error' ? 'No fue posible consultar la oportunidad.' :
-                'No hay una oportunidad evaluada para el recurso seleccionado.'}
+              {recResult.status === 'loading' ? 'Loading opportunity...' :
+                recResult.status === 'error' ? 'Could not retrieve the opportunity.' :
+                'No evaluated opportunity for the selected resource.'}
             </p>
           ) : (
           <div className="space-y-4">
@@ -223,7 +223,7 @@ export default function OverviewPage() {
             <ConfidenceBar value={currentRecommendation.confidence} />
             {recResult.source === 'mock' && <Badge variant="outline" className="text-[9px]">Mock</Badge>}
             <div className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-              Consulta la evidencia y los escenarios antes de tomar una decisión de capacidad.
+              Review the evidence and scenarios before making a capacity decision.
             </div>
             <Button size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/scenarios" />}>
               Compare scenarios

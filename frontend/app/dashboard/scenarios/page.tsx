@@ -81,7 +81,7 @@ export default function ScenariosPage() {
       if (result.source === 'backend') {
         setSimulateResult(result.data)
       } else {
-        setSimulateResult({ error: result.error || 'Error al evaluar' })
+        setSimulateResult({ error: result.error || 'Evaluation failed' })
       }
     } catch {
       // Error handled by tryBackend
@@ -93,35 +93,35 @@ export default function ScenariosPage() {
   if (demoMode !== true) {
     return (
       <div>
-        <PageHeader title="Scenario analysis" description="Candidatos y simulaciones persistidos para el recurso seleccionado. Ningún valor ausente se infiere." />
+        <PageHeader title="Scenario analysis" description="Persisted candidates and simulations for the selected resource. Missing values are never inferred." />
         {realResult.status !== 'ready' || !realResult.data?.length ? (
           <Panel>
             <p className="text-sm text-muted-foreground">
-              {realResult.status === 'loading' ? 'Cargando escenarios...' : realResult.status === 'error' ?
-                `No fue posible consultar los escenarios: ${realResult.error ?? 'Error desconocido'}` :
-                realResult.error === 'no_resource' ? 'Selecciona un recurso.' : 'No hay escenarios persistidos para este recurso.'}
+              {realResult.status === 'loading' ? 'Loading scenarios...' : realResult.status === 'error' ?
+                `Could not retrieve scenarios: ${realResult.error ?? 'Unknown error'}` :
+                realResult.error === 'no_resource' ? 'Select a resource.' : 'No persisted scenarios for this resource.'}
             </p>
-            <Button className="mt-3" size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/intelligence" />}>Abrir evaluación de recomendaciones</Button>
+            <Button className="mt-3" size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/intelligence" />}>Open recommendation evaluation</Button>
           </Panel>
         ) : realResult.data.map(scenario => (
-          <Panel key={scenario.scenario_uid} className="mb-4" title={`Escenario ${scenario.scenario_uid.slice(0, 8)}`} description={`Estado: ${scenario.status} · Horizonte: ${scenario.horizon_days} días · Creado: ${scenario.created_at}`}>
-            {scenario.candidates.length === 0 ? <p className="text-xs text-muted-foreground">No hay candidatos persistidos.</p> : (
+          <Panel key={scenario.scenario_uid} className="mb-4" title={`Scenario ${scenario.scenario_uid.slice(0, 8)}`} description={`Status: ${scenario.status} · Horizon: ${scenario.horizon_days} days · Created: ${scenario.created_at}`}>
+            {scenario.candidates.length === 0 ? <p className="text-xs text-muted-foreground">No persisted candidates.</p> : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px] text-sm">
                   <thead><tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="p-2">Candidato</th><th className="p-2">Capacidad</th><th className="p-2">Costo mensual</th>
-                    <th className="p-2">CPU p99 proyectado</th><th className="p-2">Latencia p95</th><th className="p-2">Ahorro</th><th className="p-2">Factible</th>
+                    <th className="p-2">Candidate</th><th className="p-2">Capacity</th><th className="p-2">Monthly cost</th>
+                    <th className="p-2">Predicted CPU p99</th><th className="p-2">Latency p95</th><th className="p-2">Savings</th><th className="p-2">Feasible</th>
                   </tr></thead>
                   <tbody>{scenario.candidates.map(candidate => (
                     <tr key={candidate.candidate_id} className="border-b">
-                      <td className="p-2">{candidate.candidate_id}{candidate.recommended ? ' · recomendado' : ''}</td>
+                      <td className="p-2">{candidate.candidate_id}{candidate.recommended ? ' · recommended' : ''}</td>
                       <td className="p-2">{candidate.capacity_vcores == null ? '—' : `${candidate.capacity_vcores} vCores`}{candidate.compute_model ? ` · ${candidate.compute_model}` : ''}</td>
-                      <td className="p-2">{candidate.predicted_monthly_cost != null ? `$${candidate.predicted_monthly_cost.toFixed(2)} (simulado)` :
-                        candidate.estimated_monthly_cost != null ? `$${candidate.estimated_monthly_cost.toFixed(2)} (candidato)` : '—'}</td>
+                      <td className="p-2">{candidate.predicted_monthly_cost != null ? `$${candidate.predicted_monthly_cost.toFixed(2)} (simulated)` :
+                        candidate.estimated_monthly_cost != null ? `$${candidate.estimated_monthly_cost.toFixed(2)} (candidate)` : '—'}</td>
                       <td className="p-2">{candidate.predicted_cpu_p99 == null ? '—' : `${candidate.predicted_cpu_p99}%`}</td>
                       <td className="p-2">{candidate.predicted_latency_p95_ms == null ? '—' : `${candidate.predicted_latency_p95_ms} ms`}</td>
                       <td className="p-2">{candidate.estimated_savings_pct == null ? '—' : `${candidate.estimated_savings_pct}%`}</td>
-                      <td className="p-2">{candidate.feasible == null ? 'No evaluado' : candidate.feasible ? 'Sí' : 'No'}</td>
+                      <td className="p-2">{candidate.feasible == null ? 'Not evaluated' : candidate.feasible ? 'Yes' : 'No'}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -136,16 +136,16 @@ export default function ScenariosPage() {
   if (scenariosStatus !== 'ready' || !scenarios.length) {
     return (
       <div>
-        <PageHeader title="Scenario analysis" description="Comparación de configuraciones evaluadas para el recurso seleccionado." />
+        <PageHeader title="Scenario analysis" description="Comparison of evaluated configurations for the selected resource." />
         <Panel>
           <p className="text-sm text-muted-foreground">
-            {scenariosStatus === 'loading' ? 'Cargando escenarios...' : scenariosStatus === 'error'
-              ? 'No se pudieron consultar los escenarios.' : 'No hay escenarios evaluados disponibles. El backend no expone una consulta de escenarios para esta vista.'}
+            {scenariosStatus === 'loading' ? 'Loading scenarios...' : scenariosStatus === 'error'
+              ? 'Could not retrieve scenarios.' : 'No evaluated scenarios available. The backend does not expose a scenario query for this view.'}
           </p>
           {scenariosStatus !== 'loading' && resourceUid && !isDemoMode() && (
             <div className="mt-3">
               <Button size="sm" variant="outline" onClick={handleSimulate} disabled={simulating}>
-                {simulating ? 'Evaluando...' : 'Solicitar evaluación al backend'}
+                {simulating ? 'Evaluating...' : 'Request backend evaluation'}
               </Button>
               {simulateResult && <pre className="mt-3 overflow-x-auto text-xs">{JSON.stringify(simulateResult, null, 2)}</pre>}
             </div>
@@ -213,7 +213,7 @@ export default function ScenariosPage() {
       </Panel>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Cargando'}</Badge>}>
+        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Loading'}</Badge>}>
           <Bars
             data={scenarios.map((s) => ({ label: s.label, cost: s.cost }))}
             xKey="label"
@@ -223,7 +223,7 @@ export default function ScenariosPage() {
           />
         </Panel>
 
-        <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Cargando'}</Badge>}>
+        <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Loading'}</Badge>}>
           {(() => {
             const s = scenarios.find((x) => x.id === selected) ?? scenarios[0]
             return (

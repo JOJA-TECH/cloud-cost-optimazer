@@ -63,13 +63,13 @@ export default function PerformancePage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) {
-      setDataResult({ data: null, source: null, status: 'empty', error: 'Selecciona un recurso y un período.' })
+      setDataResult({ data: null, source: null, status: 'empty', error: 'Select a resource and a time period.' })
       return
     }
 
     getPerfSeries(resourceUid, 'cpu_percent', timeRange.from, timeRange.to)
       .then((res) => setDataResult(res))
-      .catch((err) => setDataResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error desconocido' }))
+      .catch((err) => setDataResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Unknown error' }))
 
     getPerfSummary().then((res) => setPerfSummaryResult(res))
     getReliabilityEvents().then((res) => setReliabilityEventsResult(res))
@@ -111,17 +111,17 @@ export default function PerformancePage() {
       {!shownData.length || dataResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           {dataResult.status === 'loading' ? (
-            <div className="text-xs text-muted-foreground">Cargando datos de rendimiento...</div>
+            <div className="text-xs text-muted-foreground">Loading performance data...</div>
           ) : dataResult.status === 'empty' ? (
-            <p className="text-sm text-muted-foreground">{dataResult.error ?? 'No hay datos de rendimiento disponibles para el recurso seleccionado.'}</p>
+            <p className="text-sm text-muted-foreground">{dataResult.error ?? 'No performance data available for the selected resource.'}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>
+            <p className="text-sm text-muted-foreground">No performance data available for the selected resource.</p>
           )}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-            <div className="col-span-full"><Badge variant="outline" className="text-[9px]">Resumen: {perfSummaryResult.source ?? 'sin datos'}</Badge></div>
+            <div className="col-span-full"><Badge variant="outline" className="text-[9px]">Summary: {perfSummaryResult.source ?? 'no data'}</Badge></div>
             {perfSummaryResult.data?.map((m: any) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-3 shadow-sm">
                 <p className="text-[11px] text-muted-foreground">{m.label}</p>
@@ -165,30 +165,30 @@ export default function PerformancePage() {
                 { y: 75, color: 'var(--warning)', label: 'warning' },
                 { y: 90, color: 'var(--danger)', label: 'critical' },
               ]}
-            /> : <p className="text-sm text-muted-foreground">No hay percentiles de CPU calculados para el período seleccionado.</p>}
+            /> : <p className="text-sm text-muted-foreground">No CPU percentiles have been calculated for the selected period.</p>}
           </Panel>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <Panel title="I/O utilization" description="Percent of provisioned throughput" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {shownData.some(point => point.io !== null) ? <AreaTrend data={shownData} dataKey="io" xKey="t" unit="%" color="var(--chart-2)" height={190} /> :
-                <p className="text-xs text-muted-foreground">No hay métricas de I/O disponibles.</p>}
+                <p className="text-xs text-muted-foreground">No I/O metrics available.</p>}
             </Panel>
             <Panel title="Active sessions" description="Concurrent sessions" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {shownData.some(point => point.sessions !== null) ? <AreaTrend data={shownData} dataKey="sessions" xKey="t" color="var(--chart-1)" height={190} /> :
-                <p className="text-xs text-muted-foreground">No hay métricas de sesiones disponibles.</p>}
+                <p className="text-xs text-muted-foreground">No session metrics available.</p>}
             </Panel>
             <Panel title="Query latency" description="Average response time (ms)" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {shownData.some(point => point.latency !== null) ? <AreaTrend data={shownData} dataKey="latency" xKey="t" unit=" ms" color="var(--chart-3)" height={190} /> :
-                <p className="text-xs text-muted-foreground">No hay métricas de latencia disponibles en este endpoint.</p>}
+                <p className="text-xs text-muted-foreground">No latency metrics available from this endpoint.</p>}
             </Panel>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Panel title="Memory utilization" description="Working set as percent of provisioned" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               {shownData.some(point => point.memory !== null) ? <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} /> :
-                <p className="text-xs text-muted-foreground">No hay métricas de memoria disponibles.</p>}
+                <p className="text-xs text-muted-foreground">No memory metrics available.</p>}
             </Panel>
-            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{reliabilityEventsResult.source ?? 'sin datos'}</Badge>}>
+            <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{reliabilityEventsResult.source ?? 'no data'}</Badge>}>
               <div className="grid grid-cols-2 gap-3">
                 {reliabilityEventsResult.data?.map((e: any) => (
                   <div key={e.label} className="rounded-lg border border-border bg-background p-3">
@@ -202,7 +202,7 @@ export default function PerformancePage() {
               </div>
               {reliabilityEventsResult.status !== 'ready' && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  {reliabilityEventsResult.status === 'error' ? reliabilityEventsResult.error : 'No hay eventos de fiabilidad disponibles.'}
+                  {reliabilityEventsResult.status === 'error' ? reliabilityEventsResult.error : 'No reliability events available.'}
                 </p>
               )}
             </Panel>

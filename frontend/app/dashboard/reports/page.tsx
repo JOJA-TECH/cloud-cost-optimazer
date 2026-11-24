@@ -113,10 +113,10 @@ export default function ReportsPage() {
           ...prev,
         ])
       } else {
-        setError(result.error ?? 'No se pudo generar el reporte.')
+        setError(result.error ?? 'Could not generate the report.')
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo generar el reporte.')
+      setError(cause instanceof Error ? cause.message : 'Could not generate the report.')
     } finally {
       setGenerating(false)
     }
@@ -160,10 +160,10 @@ export default function ReportsPage() {
           ...prev,
         ])
       } else {
-        setError(job.error ?? 'No se pudo encolar el reporte.')
+        setError(job.error ?? 'Could not queue the report.')
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo encolar el reporte.')
+      setError(cause instanceof Error ? cause.message : 'Could not queue the report.')
     } finally {
       setGenerating(false)
     }
@@ -189,7 +189,7 @@ export default function ReportsPage() {
         )
       )
     } else {
-      setError(job.error ?? 'No se pudo consultar el estado del reporte.')
+      setError(job.error ?? 'Could not retrieve the report status.')
     }
   }
 
@@ -205,7 +205,7 @@ export default function ReportsPage() {
         )
       )
     } else {
-      setError(result.error ?? 'No se pudo cancelar el reporte.')
+      setError(result.error ?? 'Could not cancel the report.')
     }
   }
 
@@ -215,7 +215,7 @@ export default function ReportsPage() {
 
     const result = await downloadReportArtifact(report.report_uid)
     if (result.status !== 'ready' || !result.data) {
-      setError(result.error ?? 'No se pudo descargar el reporte.')
+      setError(result.error ?? 'Could not download the report.')
       return
     }
 
@@ -231,7 +231,7 @@ export default function ReportsPage() {
 
   function formatDate(ts: string | null): string {
     if (!ts) return '—'
-    return new Date(ts).toLocaleString()
+    return new Date(ts).toLocaleString('en-US')
   }
 
   function statusBadge(status: string) {
@@ -250,23 +250,23 @@ export default function ReportsPage() {
     <div>
       <PageHeader
         title="Reports"
-        description="Genera reportes de optimización en formato JSON, CSV o HTML. Los reportes pueden generarse síncronamente o encolarse como jobs asíncronos."
+        description="Generate optimization reports in JSON, CSV, or HTML. Reports can be generated synchronously or queued as asynchronous jobs."
       />
 
       {!resourceUid ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">No hay recurso seleccionado</p>
+          <p className="text-sm text-muted-foreground">No resource selected</p>
           <p className="text-xs text-muted-foreground">
-            Selecciona un recurso cloud desde el barra superior para generar reportes.
+            Select a cloud resource from the top bar to generate reports.
           </p>
         </div>
       ) : (
         <>
-          <Panel title="Generar reporte de optimización" className="mb-4" action={<Badge variant="outline" className="text-[9px]">backend</Badge>}>
+          <Panel title="Generate optimization report" className="mb-4" action={<Badge variant="outline" className="text-[9px]">backend</Badge>}>
             <form onSubmit={handleGenerateReport} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="flex flex-col">
-                  <Label>Formato de salida</Label>
+                  <Label>Output format</Label>
                   <select
                     value={format}
                     onChange={(e) => setFormat(e.target.value as ReportFormat)}
@@ -280,16 +280,16 @@ export default function ReportsPage() {
                   </select>
                 </div>
                 <div className="flex flex-col">
-                  <Label>Título del reporte (opcional)</Label>
+                  <Label>Report title (optional)</Label>
                   <Input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Ej. Reporte de optimización Q3 2026"
+                    placeholder="e.g. Q3 2026 optimization report"
                   />
                 </div>
                 <div className="flex flex-col items-end">
                   <Button type="submit" disabled={generating} className="w-full">
-                    {generating ? 'Generando...' : 'Generar reporte (síncrono)'}
+                    {generating ? 'Generating...' : 'Generate report (synchronous)'}
                   </Button>
                 </div>
               </div>
@@ -302,7 +302,7 @@ export default function ReportsPage() {
                     onChange={(e) => setIncludeAudit(e.target.checked)}
                     className="rounded border-input bg-background"
                   />
-                  Incluir auditoría
+                  Include audit
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -311,7 +311,7 @@ export default function ReportsPage() {
                     onChange={(e) => setIncludeEvidence(e.target.checked)}
                     className="rounded border-input bg-background"
                   />
-                  Incluir evidencia
+                  Include evidence
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -320,7 +320,7 @@ export default function ReportsPage() {
                     onChange={(e) => setIncludeRisks(e.target.checked)}
                     className="rounded border-input bg-background"
                   />
-                  Incluir riesgos
+                  Include risks
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -329,7 +329,7 @@ export default function ReportsPage() {
                     onChange={(e) => setIncludeMetrics(e.target.checked)}
                     className="rounded border-input bg-background"
                   />
-                  Incluir métricas
+                  Include metrics
                 </label>
               </div>
             </form>
@@ -341,29 +341,29 @@ export default function ReportsPage() {
                 disabled={generating}
                 className="w-full"
               >
-                {generating ? 'Encolando...' : 'Encolar reporte como job (asíncrono)'}
+                {generating ? 'Queuing...' : 'Queue report as a job (asynchronous)'}
               </Button>
               <p className="mt-2 text-xs text-muted-foreground">
-                Los jobs asíncronos permiten consultar su estado y descargar el artefacto cuando estén listos.
+                Asynchronous jobs let you check their status and download the report when ready.
               </p>
             </form>
             {error && <p role="alert" className="mt-3 text-xs text-danger">{error}</p>}
           </Panel>
 
-          <Panel title="Reportes y jobs" className="mt-4" action={<Badge variant="outline" className="text-[9px]">Sesión actual</Badge>}>
+          <Panel title="Reports and jobs" className="mt-4" action={<Badge variant="outline" className="text-[9px]">Current session</Badge>}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-foreground">
-                {reports.length} reporte{reports.length !== 1 ? 's' : ''}
+                {reports.length} {reports.length === 1 ? 'report' : 'reports'}
               </h3>
               <Button variant="outline" size="sm" onClick={() => void refreshStatuses()} disabled={loadingReports}>
                 <RefreshCw className="size-4 mr-1" />
-                {loadingReports ? 'Actualizando...' : 'Actualizar estados'}
+                {loadingReports ? 'Refreshing...' : 'Refresh statuses'}
               </Button>
             </div>
 
             {reports.length === 0 ? (
               <div className="p-4 text-center text-xs text-muted-foreground">
-                No hay reportes generados en esta sesión. El backend no ofrece un listado de reportes.
+                No reports generated in this session. The backend does not provide a report list.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -371,12 +371,12 @@ export default function ReportsPage() {
                   <thead>
                     <tr className="border-b border-border text-xs text-muted-foreground">
                       <th className="px-4 py-2 text-left">Job UID</th>
-                      <th className="px-4 py-2 text-left">Estado</th>
-                      <th className="px-4 py-2 text-left">Formato</th>
-                      <th className="px-4 py-2 text-left">Creado</th>
-                      <th className="px-4 py-2 text-left">Completado</th>
+                      <th className="px-4 py-2 text-left">Status</th>
+                      <th className="px-4 py-2 text-left">Format</th>
+                      <th className="px-4 py-2 text-left">Created</th>
+                      <th className="px-4 py-2 text-left">Completed</th>
                       <th className="px-4 py-2 text-left">Error</th>
-                      <th className="px-4 py-2 text-right">Acciones</th>
+                      <th className="px-4 py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>

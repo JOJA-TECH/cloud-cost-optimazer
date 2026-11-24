@@ -45,7 +45,7 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
     sessionStorage.setItem(ACCESS_TOKEN_KEY, data.access_token)
     sessionStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
     sessionStorage.setItem(EXPIRES_AT_KEY, String(data.expires_at))
-    sessionStorage.setItem('cco_user_name', data.display_name || data.email.split('@')[0] || 'Usuario')
+    sessionStorage.setItem('cco_user_name', data.display_name || data.email.split('@')[0] || 'User')
     sessionStorage.setItem('cco_user_email', data.email)
   }
   currentToken = data.access_token

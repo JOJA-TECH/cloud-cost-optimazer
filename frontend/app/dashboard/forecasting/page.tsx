@@ -27,7 +27,7 @@ export default function ForecastingPage() {
   const [forecastResult, setForecastResult] = useState<ServiceResult<ForecastResponse[]>>({ data: null, source: null, status: 'loading', error: null })
 
   const forecastSeries: ForecastPoint[] = (forecastResult.data ?? []).map((point) => ({
-    t: new Date(point.PeriodStartUTC).toLocaleString(),
+    t: new Date(point.PeriodStartUTC).toLocaleString('en-US'),
     observed: null,
     forecast: point.YPred,
     lower: point.YLower,
@@ -44,13 +44,13 @@ export default function ForecastingPage() {
 
   useEffect(() => {
     if (!resourceUid || !timeRange) {
-      setForecastResult({ data: null, source: null, status: 'empty', error: 'Selecciona un recurso y un período.' })
+      setForecastResult({ data: null, source: null, status: 'empty', error: 'Select a resource and a time period.' })
       return
     }
 
     getAnalyticsForecasts('cpu_avg')
       .then((res) => setForecastResult(res))
-      .catch((err: unknown) => setForecastResult({ data: null, source: null, status: 'error', error: err instanceof Error ? err.message : 'Error al consultar forecasts' }))
+      .catch((err: unknown) => setForecastResult({ data: null, source: null, status: 'error', error: err instanceof Error ? err.message : 'Failed to load forecasts' }))
   }, [resourceUid, timeRange])
 
   return (
@@ -68,11 +68,11 @@ export default function ForecastingPage() {
 
       {forecastResult.status !== 'ready' || !forecastSeries.length ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">{forecastResult.status === 'loading' ? 'Cargando forecasts...' : 'No hay forecasts disponibles'}</p>
+          <p className="text-sm text-muted-foreground">{forecastResult.status === 'loading' ? 'Loading forecasts...' : 'No forecasts available'}</p>
           <p className="text-xs text-muted-foreground">
             {forecastResult.error && forecastResult.status === 'error'
               ? forecastResult.error
-              : 'Verifica el recurso y la ventana seleccionados, la disponibilidad de cco_data y el servicio ML.'}
+              : 'Check the selected resource and time window, cco_data availability, and the ML service.'}
           </p>
         </div>
       ) : (

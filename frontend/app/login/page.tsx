@@ -27,7 +27,7 @@ function LoginForm() {
       await login(email, password)
       router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message || 'Credenciales inválidas')
+      setError(err.message || 'Invalid credentials')
     } finally {
       setLoading(false)
     }
@@ -36,7 +36,7 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md p-6">
-        <h1 className="text-2xl font-bold mb-6">Iniciar sesión</h1>
+        <h1 className="text-2xl font-bold mb-6">Sign in</h1>
         {error && (
           <div className="mb-4 p-3 rounded bg-red-50 text-red-700 text-sm border border-red-100">
             {error}
@@ -44,7 +44,7 @@ function LoginForm() {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Correo electrónico</Label>
+            <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
@@ -54,7 +54,7 @@ function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Contraseña</Label>
+            <Label htmlFor="password">Password</Label>
             <Input
               id="password"
               type="password"
@@ -64,11 +64,11 @@ function LoginForm() {
             />
           </div>
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? 'Ingresando...' : 'Ingresar'}
+            {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
         <p className="mt-6 text-sm text-muted-foreground">
-          ¿No tienes cuenta? <a href="/register" className="text-primary">Regístrate</a>
+          Don&apos;t have an account? <a href="/register" className="text-primary">Sign up</a>
         </p>
       </div>
     </div>

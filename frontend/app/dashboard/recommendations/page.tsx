@@ -97,7 +97,7 @@ export default function RecommendationsPage() {
     try {
       const result = await action(r.id)
       if (result.status !== 'ready') {
-        setActionError(result.error ?? 'No se pudo registrar la decisión.')
+        setActionError(result.error ?? 'Could not record the decision.')
         return
       }
       const updated = await getRecommendation(r.id)
@@ -106,10 +106,10 @@ export default function RecommendationsPage() {
         const updatedTrace = await getRecommendationTrace(r.id)
         if (updatedTrace.status === 'ready' && updatedTrace.data) setTrace(updatedTrace.data)
       } else {
-        setActionError(updated.error ?? 'Decisión registrada, pero no se pudo actualizar la vista.')
+        setActionError(updated.error ?? 'Decision recorded, but the view could not be refreshed.')
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'No se pudo registrar la decisión.')
+      setActionError(error instanceof Error ? error.message : 'Could not record the decision.')
     } finally {
       setActionPending(false)
     }
@@ -120,13 +120,13 @@ export default function RecommendationsPage() {
   if (!r || recStatus !== 'ready') {
     return (
       <div>
-        <PageHeader title="Recommendation detail" description="Recomendaciones calculadas para el recurso seleccionado." />
+        <PageHeader title="Recommendation detail" description="Recommendations calculated for the selected resource." />
         <Panel>
           <p className="text-sm text-muted-foreground">
-            {recStatus === 'loading' ? 'Cargando recomendación...' :
-              recStatus === 'error' ? `No fue posible consultar la recomendación: ${recError ?? 'Error desconocido'}` :
-              recError === 'no_resource' ? 'Selecciona un recurso para consultar recomendaciones.' :
-              'No hay recomendaciones disponibles para el recurso seleccionado.'}
+            {recStatus === 'loading' ? 'Loading recommendation...' :
+              recStatus === 'error' ? `Could not retrieve the recommendation: ${recError ?? 'Unknown error'}` :
+              recError === 'no_resource' ? 'Select a resource to view recommendations.' :
+              'No recommendations available for the selected resource.'}
           </p>
         </Panel>
       </div>
@@ -145,7 +145,7 @@ export default function RecommendationsPage() {
         {/* Main detail */}
         <div className="space-y-4 lg:col-span-2">
           <Panel action={recSource === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
-            {r.status && <Badge variant="outline" className="mb-3">Estado: {r.status}</Badge>}
+            {r.status && <Badge variant="outline" className="mb-3">Status: {r.status}</Badge>}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success">
@@ -179,7 +179,7 @@ export default function RecommendationsPage() {
                     <span className="text-muted-foreground">{c.label}</span>
                   </li>
                 ))}
-                {r.constraints.length === 0 && <li className="text-xs text-muted-foreground">No se proporcionaron restricciones evaluadas.</li>}
+                {r.constraints.length === 0 && <li className="text-xs text-muted-foreground">No evaluated constraints were provided.</li>}
               </ul>
             </Panel>
 
@@ -192,7 +192,7 @@ export default function RecommendationsPage() {
                     <span className={cn('ml-auto font-medium tabular-nums', e.tone ? toneText(e.tone) : 'text-foreground')}>{e.value}</span>
                   </li>
                 ))}
-                {evidence.length === 0 && <li className="text-xs text-muted-foreground">No hay evidencia disponible para esta recomendación.</li>}
+                {evidence.length === 0 && <li className="text-xs text-muted-foreground">No evidence available for this recommendation.</li>}
               </ul>
             </Panel>
 
@@ -219,7 +219,7 @@ export default function RecommendationsPage() {
                     {l}
                   </li>
                 ))}
-                {r.limitations.length === 0 && <li className="text-xs text-muted-foreground">No se proporcionaron limitaciones.</li>}
+                {r.limitations.length === 0 && <li className="text-xs text-muted-foreground">No limitations were provided.</li>}
               </ul>
             </Panel>
 
@@ -263,7 +263,7 @@ export default function RecommendationsPage() {
               </div>
               {recSource !== 'backend' && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Los botones de decisión están deshabilitados sin conexión al backend.
+                  Decision buttons are disabled without a backend connection.
                 </p>
               )}
               {actionError && <p role="alert" className="mt-2 text-xs text-danger">{actionError}</p>}
@@ -288,7 +288,7 @@ export default function RecommendationsPage() {
                 <div className="border-t border-border pt-4">
                   <ConfidenceBar value={r.confidence} />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    La confianza es una estimación del motor; consulta la evidencia antes de tomar una decisión.
+                    Confidence is an estimate from the engine; review the evidence before making a decision.
                   </p>
                 </div>
               </div>
@@ -324,13 +324,13 @@ export default function RecommendationsPage() {
               <Panel title="Audit trace" description="Recommendation decision lineage">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span>Estado: {trace.status}</span>
+                    <span>Status: {trace.status}</span>
                     <Badge variant={trace.status === 'accepted' || trace.status === 'applied' ? 'success' : trace.status === 'rejected' ? 'danger' : 'outline'}>
                       {trace.decision}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground">Riesgo: {trace.risk.level} · Confianza: {Math.round(trace.confidence.score * 100)}%</p>
-                  {trace.events.length === 0 && <p className="text-xs text-muted-foreground">Sin eventos de auditoría registrados.</p>}
+                  <p className="text-xs text-muted-foreground">Risk: {trace.risk.level} · Confidence: {Math.round(trace.confidence.score * 100)}%</p>
+                  {trace.events.length === 0 && <p className="text-xs text-muted-foreground">No audit events recorded.</p>}
                   {trace.events.map((event) => (
                     <div key={event.event_id} className="flex gap-2 border-t border-border pt-2 text-xs text-muted-foreground">
                       <span className="font-mono">{event.event_id}</span>
@@ -373,7 +373,7 @@ function AssistantPanel() {
   return (
     <Panel
       title="Ask about this recommendation"
-      description="Ejemplos ilustrativos; no consultan la recomendación actual"
+      description="Illustrative examples; they do not query the current recommendation"
       action={<Badge variant="outline" className="text-[9px]">mock</Badge>}
     >
       <div className="flex flex-col gap-2">
@@ -397,7 +397,7 @@ function AssistantPanel() {
         <div className="mt-3 rounded-lg bg-muted/60 p-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-primary">
             <Sparkles className="size-3" />
-            Respuesta de ejemplo, no generada a partir de los datos actuales
+            Sample response, not generated from current data
           </div>
           <p className="text-xs leading-relaxed text-foreground">{assistantSuggestionsMock[question]}</p>
         </div>
