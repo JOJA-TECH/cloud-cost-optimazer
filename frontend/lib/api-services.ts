@@ -1,5 +1,4 @@
-import { apiJson } from './api'
-import { getToken } from './auth'
+import { apiFetch, apiJson } from './api'
 import {
   kpis,
   resources,
@@ -19,11 +18,11 @@ import {
   waitCategories,
   history,
   dataQuality,
-  resource as mockResource,
   type RiskLevel,
   type EvidenceTone,
-  type HistoryStatus,
 } from './mock-data'
+import type { HistoryStatus } from './mock-data'
+export type { HistoryStatus } from './mock-data'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos del backend (subconjunto usado por el frontend)
@@ -154,6 +153,7 @@ export interface HistoryItem {
   confidence: number
   status: HistoryStatus
   version: string
+  analysisPeriod?: string
 }
 
 export interface DataQualityItem {
@@ -203,6 +203,10 @@ export function errorResult<T>(message: string): ServiceResult<T> {
   return { data: null, source: null, status: 'error', error: message }
 }
 
+function missingRange<T>(): ServiceResult<T> {
+  return { data: null, source: null, status: 'empty', error: 'time_range missing' }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: llama al backend y devuelve ServiceResult
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,11 +229,16 @@ export async function getCloudAccounts(): Promise<ServiceResult<CloudAccount[]>>
 }
 
 export async function getCloudResources(
-  resourceUid?: string | null
+  cloudAccountId?: string | null
 ): Promise<ServiceResult<CloudResource[]>> {
-  const uid = resourceUid ?? getSelectedResourceUid()
-  if (!uid) return emptyResult('no_resource')
-  return tryBackend(() => apiJson<CloudResource[]>(`/api/v1/cloud-accounts/${uid}/resources`))
+  if (!cloudAccountId) {
+    const accounts = await getCloudAccounts()
+    if (accounts.status !== 'ready' || !accounts.data?.length) {
+      return accounts.status === 'error' ? errorResult(accounts.error ?? 'Error cargando cuentas') : emptyResult('no_resource')
+    }
+    cloudAccountId = accounts.data[0].cloud_account_id
+  }
+  return tryBackend(() => apiJson<CloudResource[]>(`/api/v1/cloud-accounts/${cloudAccountId}/resources`))
 }
 
 export interface DashboardResource {
@@ -237,36 +246,38 @@ export interface DashboardResource {
   name: string
   server: string
   service: string
-  tier: string
-  computeModel: string
-  vCores: number
-  memoryGb: number
+  tier: string | null
+  computeModel: string | null
+  vCores: number | null
+  memoryGb: number | null
   region: string
-  storageUsedGb: number
-  storageLimitGb: number
-  redundancy: string
+  storageUsedGb: number | null
+  storageLimitGb: number | null
+  redundancy: string | null
   state: string
   lastSyncMinutes: number
-  collation: string
-  maxWorkers: number
-  maxSessions: number
+  collation: string | null
+  maxWorkers: number | null
+  maxSessions: number | null
 }
 
-export async function getDashboardResource(): Promise<ServiceResult<DashboardResource | null>> {
-  const cloudResourcesRes = await getCloudResources()
-  if (cloudResourcesRes.source !== 'backend' || !cloudResourcesRes.data || cloudResourcesRes.data.length === 0) {
-    return emptyResult('no_resource')
+export async function getDashboardResource(cloudAccountId?: string): Promise<ServiceResult<DashboardResource>> {
+  const cloudResourcesRes = await getCloudResources(cloudAccountId)
+  if (cloudResourcesRes.status !== 'ready' || !cloudResourcesRes.data?.length) {
+    return cloudResourcesRes.status === 'error'
+      ? errorResult(cloudResourcesRes.error ?? 'Error cargando recursos')
+      : emptyResult('no_resource')
   }
 
-  const r = cloudResourcesRes.data[0]
+  const r = cloudResourcesRes.data.find(item => item.resource_uid === getSelectedResourceUid()) ?? cloudResourcesRes.data[0]
   const resourceUID = r.resource_uid
-  setSelectedResourceUid(resourceUid)
+  setSelectedResourceUid(resourceUID)
 
-  const configRes = await getConfigSnapshots(resourceUid)
+  const configRes = await getConfigSnapshots(resourceUID)
   const latestSnapshot = configRes.source === 'backend' && configRes.data ? configRes.data[0] : null
 
   const resource: DashboardResource = {
-    resource_uid: resourceUid,
+    resource_uid: resourceUID,
     name: r.database_name,
     server: r.server_name,
     service: 'Azure SQL Database',
@@ -285,7 +296,7 @@ export async function getDashboardResource(): Promise<ServiceResult<DashboardRes
     maxSessions: null,
   }
 
-  return { data: resource, source: 'backend', error: null }
+  return backendResult(resource)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,6 +312,7 @@ export async function getMetrics(
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid || !metricCode) return { data: null, source: null, status: 'empty', error: 'resource_uid or metric_code missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<MetricsResponse>(
       `/api/v1/data/metrics?resource_uid=${uid}&metric_code=${metricCode}&from=${range.from}&to=${range.to}`
@@ -316,6 +328,7 @@ export async function getCosts(
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<CostRecord[]>(`/api/v1/data/costs?resource_uid=${uid}&from=${range.from}&to=${range.to}`)
   )
@@ -386,17 +399,18 @@ export interface DESComponents {
 }
 
 export interface ForecastResponse {
-  resource_uid: string
-  target_metric: string
-  horizon_steps: number
-  step_unit: string
-  points: Array<{
-    step: number
-    timestamp_utc: string
-    forecast: number
-    lower: number
-    upper: number
-  }>
+  ForecastUID: string
+  ModelVersionID: number | null
+  ResourceUID: string
+  TargetMetric: string
+  HorizonSteps: number
+  StepUnit: string
+  PeriodStartUTC: string
+  YPred: number
+  YLower: number | null
+  YUpper: number | null
+  Alpha: number
+  GeneratedAt: string
 }
 
 export interface AnalyticsJob {
@@ -412,6 +426,7 @@ async function analyticsPost<T>(path: string, body: any): Promise<ServiceResult<
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<T>(path, {
       method: 'POST',
@@ -425,6 +440,7 @@ async function analyticsGet<T>(path: string): Promise<ServiceResult<T>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<T>(`${path}?resource_uid=${uid}&from=${range.from}&to=${range.to}`)
   )
@@ -437,6 +453,7 @@ export async function getPercentiles(
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<PercentileResult[]>(
       `/api/v1/analytics/percentiles?resource_uid=${uid}&metric_code=${metricCode}&period_type=${periodType}&from=${range.from}&to=${range.to}`
@@ -458,6 +475,7 @@ export async function getCapacityAnalysis(
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<CapacityAnalysis>(`/api/v1/analytics/capacity?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`)
   )
@@ -473,19 +491,21 @@ export async function getDESComponents(
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson<DESComponents>(`/api/v1/analytics/des?resource_uid=${uid}&period_type=${periodType}&period_start=${range.from}`)
   )
 }
 
 export async function getAnalyticsForecasts(
-  targetMetric: string = 'cpu_percent'
-): Promise<ServiceResult<ForecastResponse | null>> {
+  targetMetric: string = 'cpu_avg'
+): Promise<ServiceResult<ForecastResponse[]>> {
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
-    apiJson<ForecastResponse>(`/api/v1/analytics/forecasts?resource_uid=${uid}&target_metric=${targetMetric}&from=${range.from}&to=${range.to}`)
+    apiJson<ForecastResponse[]>(`/api/v1/analytics/forecasts?resource_uid=${uid}&target_metric=${targetMetric}&from=${range.from}&to=${range.to}`)
   )
 }
 
@@ -559,10 +579,35 @@ export interface RecommendationEvidence {
   rationale: string
 }
 
+export interface AuditEvent {
+  event_id: number
+  organization_id?: string
+  actor: { user_id?: string; actor_type: string; auth_method?: string; principal_id?: string }
+  action: string
+  resource: { type?: string; id?: string; external_id?: string }
+  occurred_at: string
+  trace: { request_id?: string; correlation_id?: string; operation_id?: string }
+  metadata: Record<string, unknown>
+  ip_address?: string
+  user_agent?: string
+}
+
+export interface AuditEventsResponse {
+  items: AuditEvent[]
+  count: number
+}
+
 export interface RecommendationTrace {
   recommendation_uid: string
-  decision_traces: DecisionTrace[]
-  events: AuditEvent[]
+  resource_uid: string
+  scenario_uid: string
+  policy_uid: string
+  decision: string
+  status: string
+  risk: { score: number; level: string }
+  confidence: { score: number }
+  estimated_saving: { monthly_amount: number; currency: string }
+  events: Array<{ event_id: number; action: string; occurred_at: string }>
 }
 
 export interface RecommendationDecision {
@@ -591,6 +636,7 @@ export async function evaluateRecommendations(
   const uid = resourceUid || getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() =>
     apiJson('/api/v1/recommendations/evaluate', {
       method: 'POST',
@@ -647,6 +693,7 @@ export async function getAuditEvents(
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
 
   const query = new URLSearchParams()
   query.set('resource_uid', uid)
@@ -698,19 +745,15 @@ export async function getCostDaily(
 ): Promise<ServiceResult<any[]>> {
   const costsRes = await getCosts(resourceUid, from, to)
   if (costsRes.source === 'backend' && costsRes.data && costsRes.data.length > 0) {
-    return {
-      data: costsRes.data.map((c) => ({
+    return backendResult(costsRes.data.map((c) => ({
         day: c.usage_date,
         billed: c.pre_tax_cost,
         estimated: +(c.pre_tax_cost * 0.758).toFixed(2),
         reference: +(c.pre_tax_cost * 1.02).toFixed(2),
         cumulative: 0,
-      })),
-      source: 'backend',
-      error: null,
-    }
+      })))
   }
-  return { data: costDaily, source: 'mock', error: costsRes.error }
+  return mockResult(costDaily)
 }
 
 export async function getCostComponents(
@@ -726,18 +769,14 @@ export async function getCostComponents(
     }
     const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
     let i = 0
-    return {
-      data: Array.from(byService.entries()).map(([name, current]) => ({
+    return backendResult(Array.from(byService.entries()).map(([name, current]) => ({
         name,
         current,
         estimated: +(current * 0.758).toFixed(1),
         color: colors[i++ % colors.length],
-      })),
-      source: 'backend',
-      error: null,
-    }
+      })))
   }
-  return { data: costComponents, source: 'mock', error: costsRes.error }
+  return mockResult(costComponents)
 }
 
 export async function getPerfSeries(
@@ -749,14 +788,17 @@ export async function getPerfSeries(
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
 
   const [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes] = await Promise.all([
-    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=cpu_percent&from=${range.from}&to=${range.to}`),
-    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=io_percent&from=${range.from}&to=${range.to}`),
-    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=memory_percent&from=${range.from}&to=${range.to}`),
-    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=sessions&from=${range.from}&to=${range.to}`),
-    apiJson<MetricsResponse>(`/api/v1/data/metrics?resource_uid=${uid}&metric_code=latency_ms&from=${range.from}&to=${range.to}`),
+    getMetrics(uid, 'cpu_percent', range.from, range.to),
+    getMetrics(uid, 'io_percent', range.from, range.to),
+    getMetrics(uid, 'memory_percent', range.from, range.to),
+    getMetrics(uid, 'sessions', range.from, range.to),
+    getMetrics(uid, 'latency_ms', range.from, range.to),
   ])
+  const failed = [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes].find(result => result.status === 'error')
+  if (failed) return errorResult(failed.error ?? 'Error cargando métricas')
 
   const cpuPoints = cpuRes.source === 'backend' && cpuRes.data ? cpuRes.data.points : []
   const ioPoints = ioRes.source === 'backend' && ioRes.data ? ioRes.data.points : []
@@ -804,7 +846,7 @@ export async function getPerfSeries(
     else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: null, latency: +p.avg.toFixed(1) })
   })
 
-  return { data: Array.from(pointMap.values()), source: 'backend', error: null }
+  return backendResult(Array.from(pointMap.values()))
 }
 
 export async function getPerfSummary(): Promise<ServiceResult<any[]>> {
@@ -819,11 +861,11 @@ export async function getRecommendationSummary(): Promise<ServiceResult<Recommen
   const uid = getSelectedResourceUid()
   if (uid) {
     const single = await getRecommendation(uid)
-    if (single.source === 'backend' && single.data) return single
+    if (single.source === 'backend' && single.data) return backendResult(single.data)
   }
   const recs = await getRecommendations()
-  if (recs.source === 'backend' && recs.data && recs.data.length > 0) return { data: recs.data[0], source: 'backend', error: null }
-  return { data: recommendation, source: 'mock', error: recs.error }
+  if (recs.source === 'backend' && recs.data && recs.data.length > 0) return backendResult(recs.data[0])
+  return mockResult(recommendation)
 }
 
 export async function getScenarios(): Promise<ServiceResult<ScenarioItem[]>> {
@@ -847,7 +889,7 @@ export async function getWorkloadClassification(): Promise<ServiceResult<Workloa
 }
 
 export async function getWorkloadPatterns(): Promise<ServiceResult<string[]>> {
-  return { data: workloadPatterns, source: 'mock', status: 'ready', error: null }
+  return mockResult([...workloadPatterns])
 }
 
 export async function getTopQueries(): Promise<ServiceResult<any[]>> {
@@ -861,9 +903,9 @@ export async function getWaitCategories(): Promise<ServiceResult<any[]>> {
 export async function getHistory(): Promise<ServiceResult<HistoryItem[]>> {
   const recsRes = await getRecommendations()
   if (recsRes.source === 'backend' && recsRes.data && recsRes.data.length > 0) {
-    return { data: recsRes.data.map(r => ({ id: r.id, date: r.generated, resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus', current: r.from, proposed: r.to, savings: `${r.savingsPct}%`, risk: r.risk, confidence: r.confidence, status: 'New' as HistoryStatus, version: r.modelVersion })), source: 'backend', error: null }
+    return backendResult(recsRes.data.map(r => ({ id: r.id, date: r.generated, resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus', current: r.from, proposed: r.to, savings: `${r.savingsPct}%`, risk: r.risk, confidence: r.confidence, status: 'New' as HistoryStatus, version: r.modelVersion, analysisPeriod: r.analysisPeriod })))
   }
-  return { data: history, source: 'mock', error: recsRes.error }
+  return mockResult(history)
 }
 
 export async function getDataQuality(): Promise<ServiceResult<DataQuality>> {
@@ -918,6 +960,7 @@ export async function generateOptimizationReport(request: ReportRequest): Promis
   const uid = request.resource_uid || getSelectedResourceUid()
   const range = request.from && request.to ? { from: request.from, to: request.to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() => apiJson<ReportResponse>('/api/v1/reports/optimization', { method: 'POST', body: JSON.stringify({ resource_uid: uid, from: range.from, to: range.to, format: request.format, recommendation_uids: request.recommendation_uids, include_audit: request.include_audit, include_trace: request.include_trace, include_evidence: request.include_evidence, include_risks: request.include_risks, include_metrics: request.include_metrics, title: request.title, parameters: request.parameters }) }))
 }
 
@@ -925,6 +968,7 @@ export async function queueOptimizationReport(request: ReportRequest): Promise<S
   const uid = request.resource_uid || getSelectedResourceUid()
   const range = request.from && request.to ? { from: request.from, to: request.to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
+  if (!range) return missingRange()
   return tryBackend(() => apiJson<ReportJob>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ resource_uid: uid, from: range.from, to: range.to, format: request.format, recommendation_uids: request.recommendation_uids, include_audit: request.include_audit, include_trace: request.include_trace, include_evidence: request.include_evidence, include_risks: request.include_risks, include_metrics: request.include_metrics, title: request.title, parameters: request.parameters }) }))
 }
 
@@ -943,11 +987,11 @@ export async function cancelReport(uid: string): Promise<ServiceResult<{ job_uid
 export async function downloadReportArtifact(uid: string): Promise<ServiceResult<Blob | null>> {
   const reportRes = await getReport(uid)
   if (reportRes.source !== 'backend' || !reportRes.data?.artifact?.storage_uri) {
-    return { data: null, source: 'mock', status: 'empty', error: 'no artifact available' }
+    return emptyResult('no_data')
   }
   return tryBackend(async () => {
-    const res = await fetch(`/api/v1/reports/${uid}/artifact`, { method: 'GET', headers: { Authorization: `Bearer ${getToken()}` } })
-    if (!res.ok) return { data: null, source: 'mock', status: 'error', error: res.statusText }
+    const res = await apiFetch(`/api/v1/reports/${uid}/artifact`)
+    if (!res.ok) throw new Error(res.statusText || `Error ${res.status}`)
     return await res.blob()
   })
 }

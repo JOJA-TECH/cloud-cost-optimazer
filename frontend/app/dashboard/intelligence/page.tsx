@@ -67,7 +67,7 @@ export default function IntelligencePage() {
       try {
         const cloudResources = await getCloudResources()
         if (!active) return
-        const data = cloudResources.source === 'backend' ? cloudResources.data : []
+        const data = cloudResources.source === 'backend' ? (cloudResources.data ?? []) : []
         setResources(data)
         const selected = data[0]?.resource_uid ?? ''
         setResourceUID(selected)

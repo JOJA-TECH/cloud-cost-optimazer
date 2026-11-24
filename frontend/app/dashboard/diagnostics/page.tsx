@@ -9,6 +9,7 @@ import {
   getWaitCategories,
   getSelectedResourceUid,
   getTimeRange,
+  type ServiceResult,
 } from '@/lib/api-services'
 
 export default function DiagnosticsPage() {
@@ -16,8 +17,8 @@ export default function DiagnosticsPage() {
   const [waitCategories, setWaitCategories] = useState<{ name: string; pct: number; color: string }[]>(waitCategoriesMock)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
-  const [topQueriesResult, setTopQueriesResult] = useState<DataResult<any[]>>({ data: null, source: null, status: 'loading', error: null })
-  const [waitCategoriesResult, setWaitCategoriesResult] = useState<DataResult<any[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [topQueriesResult, setTopQueriesResult] = useState<ServiceResult<typeof topQueriesMock>>({ data: null, source: null, status: 'loading', error: null })
+  const [waitCategoriesResult, setWaitCategoriesResult] = useState<ServiceResult<typeof waitCategoriesMock>>({ data: null, source: null, status: 'loading', error: null })
 
   useEffect(() => {
     const uid = getSelectedResourceUid()

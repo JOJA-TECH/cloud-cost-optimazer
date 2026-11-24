@@ -94,17 +94,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   async function loadAccountsAndResources() {
     try {
-      const accts = await getCloudAccounts()
+      const accountsResult = await getCloudAccounts()
+      const accts = accountsResult.data ?? []
       setAccounts(accts)
       if (accts.length > 0) {
-        const res = await getCloudResources(accts[0].cloud_account_id)
+        const resourcesResult = await getCloudResources(accts[0].cloud_account_id)
+        const res = resourcesResult.data ?? []
         setCloudResourcesState(res)
         if (res.length > 0) {
           const currentUid = getSelectedResourceUid()
           const selected = res.find((r) => r.resource_uid === currentUid) ?? res[0]
           setSelectedResourceUid(selected.resource_uid)
-          const dashboardRes = await getDashboardResource()
-          setResource(dashboardRes ?? null)
+          const dashboardRes = await getDashboardResource(accts[0].cloud_account_id)
+          setResource(dashboardRes.data)
         }
       }
     } catch {
@@ -184,7 +186,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           onMenu={() => setMobileOpen(true)}
-          resource={resource ?? { name: 'Cargando...', region: '', resource_uid: '' }}
+          resource={resource}
           userName={userName ?? 'Usuario'}
           accounts={accounts}
           cloudResources={cloudResources}
@@ -312,7 +314,7 @@ function TopBar({
   setResourceDropdownOpen,
 }: {
   onMenu: () => void
-  resource: DashboardResource
+  resource: DashboardResource | null
   userName: string
   accounts: CloudAccount[]
   cloudResources: CloudResource[]
@@ -340,11 +342,11 @@ function TopBar({
         <Database className="size-4 text-primary" />
         <div className="flex flex-col items-start">
           <span className="max-w-[12rem] truncate sm:max-w-none font-semibold">
-            {resource.name}
+            {resource?.name ?? 'Cargando...'}
           </span>
           {cloudResources.length > 1 && (
             <span className="text-[10px] text-muted-foreground truncate max-w-[12rem]">
-              {selectedResource?.region_code ?? resource.region}
+              {selectedResource?.region_code ?? resource?.region ?? ''}
             </span>
           )}
         </div>
