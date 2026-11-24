@@ -1,13 +1,15 @@
 import { apiFetch, apiJson } from './api'
+import { isDemoMode } from './demo-mode'
 import {
   kpis,
-  resources,
+  resource as demoResource,
   costDaily,
   costComponents,
+  recommendation,
+  resources,
   perfSeries,
   perfSummary,
   reliabilityEvents,
-  recommendation,
   scenarios,
   forecastSeries,
   forecastMeta,
@@ -139,7 +141,7 @@ export interface ScenarioItem {
 
 export interface WorkloadClassificationItem {
   pattern: string
-  confidence: number
+  confidence: number | null
   evidence: string[]
   metrics: Array<{ label: string; value: string }>
 }
@@ -197,7 +199,7 @@ export function emptyResult<T>(reason: 'no_resource' | 'no_data'): ServiceResult
   return { data: null, source: null, status: 'empty', error: reason }
 }
 
-export function mockResult<T>(data: T, reason: 'backend_unavailable' | 'request_failed' = 'backend_unavailable'): ServiceResult<T> {
+export function mockResult<T>(data: T, reason: 'demo_mode' = 'demo_mode'): ServiceResult<T> {
   return { data, source: 'mock', status: 'ready', error: reason }
 }
 
@@ -257,13 +259,14 @@ export interface DashboardResource {
   storageLimitGb: number | null
   redundancy: string | null
   state: string
-  lastSyncMinutes: number
+  lastSyncMinutes: number | null
   collation: string | null
   maxWorkers: number | null
   maxSessions: number | null
 }
 
 export async function getDashboardResource(cloudAccountId?: string): Promise<ServiceResult<DashboardResource>> {
+  if (isDemoMode()) return mockResult({ ...demoResource, resource_uid: 'demo-resource' })
   const cloudResourcesRes = await getCloudResources(cloudAccountId)
   if (cloudResourcesRes.status !== 'ready' || !cloudResourcesRes.data?.length) {
     return cloudResourcesRes.status === 'error'
@@ -286,13 +289,13 @@ export async function getDashboardResource(cloudAccountId?: string): Promise<Ser
     tier: latestSnapshot?.tier ?? null,
     computeModel: latestSnapshot?.compute_model ?? null,
     vCores: latestSnapshot?.capacity_vcores ?? null,
-    memoryGb: latestSnapshot?.capacity_vcores ? latestSnapshot.capacity_vcores * 5.1 : null,
+    memoryGb: null,
     region: r.region_code,
-    storageUsedGb: latestSnapshot?.max_size_bytes ? latestSnapshot.max_size_bytes / (1024 * 1024 * 1024) : null,
+    storageUsedGb: null,
     storageLimitGb: latestSnapshot?.max_size_bytes ? latestSnapshot.max_size_bytes / (1024 * 1024 * 1024) : null,
     redundancy: null,
     state: r.lifecycle_status,
-    lastSyncMinutes: 8,
+    lastSyncMinutes: null,
     collation: null,
     maxWorkers: null,
     maxSessions: null,
@@ -302,7 +305,7 @@ export async function getDashboardResource(cloudAccountId?: string): Promise<Ser
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data / metrics (requieren CCO_DATA_DSN → 503 sin él, fallback a mock)
+// Data / metrics (requieren CCO_DATA_DSN)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getMetrics(
@@ -345,18 +348,14 @@ export async function getConfigSnapshots(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Analytics (requieren CCO_DATA_DSN → 503 sin él, fallback a mock)
+// Analytics (requieren CCO_DATA_DSN)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PercentileResult {
-  period_start: string
-  period_end: string
-  p50: number
-  p95: number
-  p99: number
-  avg: number
-  min: number
-  max: number
+  PeriodStartUTC: string
+  Percentile: number
+  Value: number | null
+  Method: string
 }
 
 export interface TrendResult {
@@ -366,10 +365,11 @@ export interface TrendResult {
 }
 
 export interface WorkloadPattern {
-  pattern: string
-  confidence: number
-  evidence: string[]
-  intensity_band: string
+  PeakHours: number[]
+  PeakFrequency: number
+  AvgPeakDuration: number
+  IntensityBand: string
+  AvailableMetrics: string[]
 }
 
 export interface CapacityAnalysis {
@@ -384,11 +384,10 @@ export interface CapacityAnalysis {
 }
 
 export interface CostAnalysis {
-  resource_uid: string
-  current_cost: number
-  projected_cost: number
-  savings_pct: number
-  savings_abs: number
+  ActualMonthlyCost: number
+  ProjectedMonthly: number
+  SavingsVsCurrent: number
+  Available: boolean
 }
 
 export interface DESComponents {
@@ -425,6 +424,7 @@ export interface AnalyticsJob {
 
 // ── Helper para llamadas POST de analytics (computar) ──
 async function analyticsPost<T>(path: string, body: any): Promise<ServiceResult<T>> {
+  if (isDemoMode()) return errorResult('Las acciones del backend están deshabilitadas en modo demostración.')
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
@@ -450,10 +450,13 @@ async function analyticsGet<T>(path: string): Promise<ServiceResult<T>> {
 
 export async function getPercentiles(
   metricCode: string = 'cpu_percent',
-  periodType: string = '1h'
+  periodType: string = '1h',
+  resourceUid?: string | null,
+  from?: string | null,
+  to?: string | null
 ): Promise<ServiceResult<PercentileResult[]>> {
-  const uid = getSelectedResourceUid()
-  const range = getTimeRange()
+  const uid = resourceUid ?? getSelectedResourceUid()
+  const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   if (!range) return missingRange()
   return tryBackend(() =>
@@ -502,6 +505,15 @@ export async function getDESComponents(
 export async function getAnalyticsForecasts(
   targetMetric: string = 'cpu_avg'
 ): Promise<ServiceResult<ForecastResponse[]>> {
+  if (isDemoMode()) {
+    return mockResult(forecastSeries.filter(point => point.forecast !== null).map((point, index) => ({
+      ForecastUID: `demo-${index}`, ModelVersionID: null, ResourceUID: 'demo-resource',
+      TargetMetric: targetMetric, HorizonSteps: 14, StepUnit: '1d',
+      PeriodStartUTC: new Date(Date.now() + (index + 1) * 86400000).toISOString(),
+      YPred: point.forecast!, YLower: point.lower, YUpper: point.upper,
+      Alpha: 0.05, GeneratedAt: new Date().toISOString(),
+    })))
+  }
   const uid = getSelectedResourceUid()
   const range = getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
@@ -616,7 +628,10 @@ export async function getRecommendations(resourceUid?: string): Promise<ServiceR
   return tryBackend(async () => {
     const query = resourceUid ? `?resource_uid=${encodeURIComponent(resourceUid)}` : ''
     const response = await apiJson<{ items: BackendRecommendation[]; count: number }>(`/api/v1/recommendations${query}`)
-    return (response.items ?? []).map(mapRecommendation)
+    if (!Array.isArray(response?.items)) {
+      throw new Error('Respuesta de recomendaciones inválida: falta items')
+    }
+    return response.items.map(mapRecommendation)
   })
 }
 
@@ -705,6 +720,7 @@ export async function evaluateRecommendations(
   to: string,
   currency: string = 'USD'
 ): Promise<ServiceResult<any>> {
+  if (isDemoMode()) return errorResult('La evaluación no está disponible en modo demostración.')
   const uid = resourceUid || getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
@@ -803,11 +819,30 @@ export async function getAuditResourceHistory(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Servicios con fallback automático a mock-data
+// Presentación: backend en modo real, fixtures únicamente en modo demo explícito
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getKpis(): Promise<ServiceResult<any>> {
-  return { data: kpis, source: 'mock', status: 'ready', error: null }
+  if (isDemoMode()) return mockResult(kpis)
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid || !range) return emptyResult('no_resource')
+  const costs = await getCosts(uid, range.from, range.to)
+  if (costs.status !== 'ready' || !costs.data) return { ...costs, data: null }
+  const [recommendations, analysis] = await Promise.all([getRecommendations(uid), getAnalyticsCosts()])
+  const rec = recommendations.status === 'ready' ? recommendations.data?.[0] : null
+  const projected = analysis.status === 'ready' && analysis.data?.Available ? analysis.data.ProjectedMonthly : null
+  if (projected !== null && !Number.isFinite(projected)) return errorResult('Respuesta de costos estimados inválida')
+  return backendResult({
+    status: null,
+    currentCost: costs.data.reduce((sum, item) => sum + item.pre_tax_cost, 0),
+    currentCostDelta: null,
+    estimatedCost: projected,
+    estimatedSavings: rec?.savingsAbs ?? null,
+    savingsPct: rec?.savingsPct ?? null,
+    risk: rec?.risk ?? null,
+    confidence: rec?.confidence ?? null,
+  })
 }
 
 export async function getCostDaily(
@@ -815,17 +850,18 @@ export async function getCostDaily(
   from?: string | null,
   to?: string | null
 ): Promise<ServiceResult<any[]>> {
+  if (isDemoMode()) return mockResult(costDaily)
   const costsRes = await getCosts(resourceUid, from, to)
-  if (costsRes.source === 'backend' && costsRes.data && costsRes.data.length > 0) {
-    return backendResult(costsRes.data.map((c) => ({
-        day: c.usage_date,
-        billed: c.pre_tax_cost,
-        estimated: +(c.pre_tax_cost * 0.758).toFixed(2),
-        reference: +(c.pre_tax_cost * 1.02).toFixed(2),
-        cumulative: 0,
-      })))
+  if (costsRes.status !== 'ready' || !costsRes.data) {
+    return { ...costsRes, data: null }
   }
-  return mockResult(costDaily)
+  const daily = new Map<string, number>()
+  for (const c of costsRes.data) daily.set(c.usage_date, (daily.get(c.usage_date) ?? 0) + c.pre_tax_cost)
+  let cumulative = 0
+  return backendResult([...daily.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, billed]) => {
+    cumulative += billed
+    return { day, billed, estimated: null, reference: null, cumulative: +cumulative.toFixed(2) }
+  }))
 }
 
 export async function getCostComponents(
@@ -833,22 +869,23 @@ export async function getCostComponents(
   from?: string | null,
   to?: string | null
 ): Promise<ServiceResult<any[]>> {
+  if (isDemoMode()) return mockResult(costComponents)
   const costsRes = await getCosts(resourceUid, from, to)
-  if (costsRes.source === 'backend' && costsRes.data && costsRes.data.length > 0) {
-    const byService = new Map<string, number>()
-    for (const c of costsRes.data) {
-      byService.set(c.service_name, (byService.get(c.service_name) ?? 0) + c.pre_tax_cost)
-    }
-    const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
-    let i = 0
-    return backendResult(Array.from(byService.entries()).map(([name, current]) => ({
+  if (costsRes.status !== 'ready' || !costsRes.data) {
+    return { ...costsRes, data: null }
+  }
+  const byService = new Map<string, number>()
+  for (const c of costsRes.data) {
+    byService.set(c.service_name, (byService.get(c.service_name) ?? 0) + c.pre_tax_cost)
+  }
+  const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)']
+  let i = 0
+  return backendResult(Array.from(byService.entries()).map(([name, current]) => ({
         name,
         current,
-        estimated: +(current * 0.758).toFixed(1),
+        estimated: null,
         color: colors[i++ % colors.length],
       })))
-  }
-  return mockResult(costComponents)
 }
 
 export async function getPerfSeries(
@@ -857,37 +894,46 @@ export async function getPerfSeries(
   from?: string | null,
   to?: string | null
 ): Promise<ServiceResult<any[]>> {
+  if (isDemoMode()) return mockResult(perfSeries.map((point, idx) => ({
+    ...point, timestamp: new Date(Date.now() - (perfSeries.length - idx) * 3600000).toISOString(),
+  })))
   const uid = resourceUid ?? getSelectedResourceUid()
   const range = from && to ? { from, to } : getTimeRange()
   if (!uid) return { data: null, source: null, status: 'empty', error: 'resource_uid missing' }
   if (!range) return missingRange()
 
-  const [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes] = await Promise.all([
-    getMetrics(uid, 'cpu_percent', range.from, range.to),
-    getMetrics(uid, 'io_percent', range.from, range.to),
-    getMetrics(uid, 'memory_percent', range.from, range.to),
-    getMetrics(uid, 'sessions', range.from, range.to),
-    getMetrics(uid, 'latency_ms', range.from, range.to),
+  const [cpuRes, ioRes, memoryRes, sessionsRes] = await Promise.all([
+    getPercentiles('cpu_percent', '1h', uid, range.from, range.to),
+    getMetrics(uid, 'data_io_percent', range.from, range.to),
+    getMetrics(uid, 'memory_usage_percent', range.from, range.to),
+    getMetrics(uid, 'sessions_count', range.from, range.to),
   ])
-  const failed = [cpuRes, ioRes, memoryRes, sessionsRes, latencyRes].find(result => result.status === 'error')
+  const failed = [cpuRes, ioRes, memoryRes, sessionsRes].find(result => result.status === 'error')
   if (failed) return errorResult(failed.error ?? 'Error cargando métricas')
 
-  const cpuPoints = cpuRes.source === 'backend' && cpuRes.data ? cpuRes.data.points : []
+  const cpuPoints = cpuRes.source === 'backend' && cpuRes.data ? cpuRes.data : []
   const ioPoints = ioRes.source === 'backend' && ioRes.data ? ioRes.data.points : []
   const memoryPoints = memoryRes.source === 'backend' && memoryRes.data ? memoryRes.data.points : []
   const sessionsPoints = sessionsRes.source === 'backend' && sessionsRes.data ? sessionsRes.data.points : []
-  const latencyPoints = latencyRes.source === 'backend' && latencyRes.data ? latencyRes.data.points : []
 
   const pointMap = new Map<string, any>()
 
-  cpuPoints.forEach((p, i) => {
-    pointMap.set(p.timestamp_utc, {
-      t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      timestamp: p.timestamp_utc,
-      idx: i,
-      p50: +p.avg.toFixed(1),
-      p95: +Math.min(p.avg * 1.25, 96).toFixed(1),
-      p99: +Math.min(p.max, 99).toFixed(1),
+  cpuPoints.forEach((p) => {
+    if (!p.PeriodStartUTC || p.Value == null || p.Method === 'not_available') return
+    const percentile = Math.round(p.Percentile * 100)
+    if (![50, 95, 99].includes(percentile)) return
+    const existing = pointMap.get(p.PeriodStartUTC)
+    if (existing) {
+      existing[`p${percentile}`] = p.Value
+      return
+    }
+    pointMap.set(p.PeriodStartUTC, {
+      t: new Date(p.PeriodStartUTC).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: p.PeriodStartUTC,
+      idx: pointMap.size,
+      p50: percentile === 50 ? p.Value : null,
+      p95: percentile === 95 ? p.Value : null,
+      p99: percentile === 99 ? p.Value : null,
       io: null,
       memory: null,
       sessions: null,
@@ -913,73 +959,109 @@ export async function getPerfSeries(
     else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: Math.round(p.avg), latency: null })
   })
 
-  latencyPoints.forEach((p) => {
-    const existing = pointMap.get(p.timestamp_utc)
-    if (existing) existing.latency = +p.avg.toFixed(1)
-    else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: null, latency: +p.avg.toFixed(1) })
-  })
-
   return backendResult(Array.from(pointMap.values()))
 }
 
 export async function getPerfSummary(): Promise<ServiceResult<any[]>> {
-  return { data: perfSummary, source: 'mock', status: 'ready', error: null }
+  if (isDemoMode()) return mockResult(perfSummary)
+  const result = await getPercentiles()
+  if (result.status !== 'ready' || !result.data?.length) return { ...result, data: null }
+  const summary = [50, 95, 99].flatMap(percentile => {
+    const latest = result.data!.filter(row => Math.round(row.Percentile * 100) === percentile && row.Value != null && row.Method !== 'not_available').at(-1)
+    return latest ? [{ label: `CPU p${percentile}`, value: `${latest.Value!.toFixed(1)}%`, tone: 'good' }] : []
+  })
+  return backendResult(summary)
 }
 
 export async function getReliabilityEvents(): Promise<ServiceResult<any[]>> {
-  return { data: reliabilityEvents, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(reliabilityEvents) : emptyResult('no_data')
 }
 
 export async function getRecommendationSummary(): Promise<ServiceResult<RecommendationItem>> {
+  if (isDemoMode()) return mockResult(recommendation as RecommendationItem)
   const uid = getSelectedResourceUid()
-  if (!uid) return mockResult(recommendation)
+  if (!uid) return emptyResult('no_resource')
   const recs = await getRecommendations(uid)
-  if (recs.source === 'backend' && recs.data && recs.data.length > 0) return backendResult(recs.data[0])
-  return mockResult(recommendation)
+  if (recs.status !== 'ready' || !recs.data?.length) {
+    return { data: null, source: recs.source, status: recs.status, error: recs.error }
+  }
+  return backendResult(recs.data[0])
 }
 
 export async function getScenarios(): Promise<ServiceResult<ScenarioItem[]>> {
-  return { data: scenarios, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(scenarios) : emptyResult('no_data')
 }
 
 export async function getForecastSeries(): Promise<ServiceResult<any[]>> {
-  return { data: forecastSeries, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(forecastSeries) : emptyResult('no_data')
 }
 
 export async function getForecastMeta(): Promise<ServiceResult<any>> {
-  return { data: forecastMeta, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(forecastMeta) : emptyResult('no_data')
 }
 
 export async function getWorkloadHourly(): Promise<ServiceResult<any[]>> {
-  return { data: workloadHourly, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(workloadHourly) : emptyResult('no_data')
 }
 
 export async function getWorkloadClassification(): Promise<ServiceResult<WorkloadClassificationItem>> {
-  return { data: workloadClassification, source: 'mock', status: 'ready', error: null }
+  if (isDemoMode()) return mockResult(workloadClassification)
+  const result = await getWorkloadPattern()
+  if (result.status !== 'ready' || !result.data) return { ...result, data: null }
+  return backendResult({
+    pattern: result.data.IntensityBand || 'No disponible',
+    confidence: null,
+    evidence: result.data.PeakHours?.length ? [`Horas pico: ${result.data.PeakHours.join(', ')}`] : [],
+    metrics: [
+      { label: 'Picos por día', value: String(result.data.PeakFrequency) },
+      { label: 'Duración promedio del pico', value: `${result.data.AvgPeakDuration} h` },
+    ],
+  })
 }
 
 export async function getWorkloadPatterns(): Promise<ServiceResult<string[]>> {
-  return mockResult([...workloadPatterns])
+  return isDemoMode() ? mockResult([...workloadPatterns]) : emptyResult('no_data')
 }
 
 export async function getTopQueries(): Promise<ServiceResult<any[]>> {
-  return { data: topQueries, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(topQueries) : emptyResult('no_data')
 }
 
 export async function getWaitCategories(): Promise<ServiceResult<any[]>> {
-  return { data: waitCategories, source: 'mock', status: 'ready', error: null }
+  return isDemoMode() ? mockResult(waitCategories) : emptyResult('no_data')
 }
 
 export async function getHistory(): Promise<ServiceResult<HistoryItem[]>> {
+  if (isDemoMode()) return mockResult(history)
   const recsRes = await getRecommendations()
-  if (recsRes.source === 'backend' && recsRes.data && recsRes.data.length > 0) {
-    return backendResult(recsRes.data.map(r => ({ id: r.id, date: r.generated, resource: getSelectedResourceUid() ?? 'sql-prod-orders-eastus', current: r.from, proposed: r.to, savings: `${r.savingsPct}%`, risk: r.risk, confidence: r.confidence, status: 'New' as HistoryStatus, version: r.modelVersion, analysisPeriod: r.analysisPeriod })))
+  if (recsRes.status === 'ready' && recsRes.data) {
+    return backendResult(recsRes.data.map(r => ({
+      id: r.id, date: r.generated, resource: r.resourceUid ?? '—', current: r.from, proposed: r.to,
+      savings: `${r.savingsPct}%`, risk: r.risk, confidence: r.confidence,
+      status: ({ accepted: 'Accepted', rejected: 'Rejected', dismissed: 'Archived' } as Record<string, HistoryStatus>)[r.status?.toLowerCase() ?? ''] ?? 'New',
+      version: r.modelVersion, analysisPeriod: r.analysisPeriod,
+    })))
   }
-  return mockResult(history)
+  return { ...recsRes, data: null }
 }
 
 export async function getDataQuality(): Promise<ServiceResult<DataQuality>> {
-  return { data: dataQuality, source: 'mock', status: 'ready', error: null }
+  if (isDemoMode()) return mockResult(dataQuality)
+  const uid = getSelectedResourceUid()
+  const range = getTimeRange()
+  if (!uid || !range) return emptyResult('no_resource')
+  const query = new URLSearchParams({ resource_uid: uid, metric_code: 'cpu_percent', from: range.from, to: range.to })
+  const coverage = await tryBackend(() => apiJson<{ coverage_ratio: number; gaps: number; state: string }>(`/api/v1/data/coverage?${query}`))
+  if (coverage.status !== 'ready' || !coverage.data) return { ...coverage, data: null }
+  if (!Number.isFinite(coverage.data.coverage_ratio)) return errorResult('Respuesta de cobertura inválida')
+  const ratio = coverage.data.coverage_ratio
+  return backendResult({
+    globalConfidence: coverage.data.state === 'sufficient' ? 'Suficiente' : 'Insuficiente',
+    items: [
+      { label: 'Cobertura CPU', value: `${(ratio * 100).toFixed(1)}%`, info: '', tone: ratio >= 0.8 ? 'good' : 'warn' },
+      { label: 'Intervalos sin lecturas', value: String(coverage.data.gaps), info: '', tone: coverage.data.gaps ? 'warn' : 'good' },
+    ],
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { PageHeader, Panel, RiskBadge, ConfidenceBar, EvidenceDot, toneText } fr
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { isDemoMode } from '@/lib/demo-mode'
 import {
   getRecommendationSummary,
   getRecommendation,
@@ -39,28 +40,38 @@ type EvidenceItem = {
 }
 
 export default function RecommendationsPage() {
-  const [r, setR] = useState<RecommendationItem>(recMock)
+  const [r, setR] = useState<RecommendationItem | null>(null)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
-  const [evidence, setEvidence] = useState<EvidenceItem[]>(recMock.evidence)
+  const [evidence, setEvidence] = useState<EvidenceItem[]>([])
   const [trace, setTrace] = useState<RecommendationTrace | null>(null)
   const [recSource, setRecSource] = useState<'mock' | 'backend' | null>(null)
+  const [recStatus, setRecStatus] = useState<ServiceResult<RecommendationItem>['status']>('loading')
+  const [recError, setRecError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState(false)
+  const [demo, setDemo] = useState(false)
+
+  useEffect(() => { setDemo(isDemoMode()) }, [])
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
     getRecommendationSummary().then((res) => {
       setRecSource(res.source)
+      setRecStatus(res.status)
+      setRecError(res.error)
       if (res.data) {
         setR(res.data)
         setEvidence(res.data.evidence)
+      } else {
+        setR(null)
+        setEvidence([])
       }
     })
   }, [])
 
   useEffect(() => {
-    if (recSource !== 'backend' || !resourceUid || r.resourceUid !== resourceUid) return
+    if (recSource !== 'backend' || !resourceUid || !r || r.resourceUid !== resourceUid) return
 
     getRecommendationEvidence(r.id)
       .then((e) => {
@@ -77,10 +88,10 @@ export default function RecommendationsPage() {
         }
       })
       .catch(() => setTrace(null))
-  }, [resourceUid, recSource, r.id, r.resourceUid])
+  }, [resourceUid, recSource, r?.id, r?.resourceUid])
 
   async function recordDecision(action: (uid: string) => Promise<ServiceResult<unknown>>) {
-    if (recSource !== 'backend' || !r.resourceUid || r.resourceUid !== resourceUid || actionPending) return
+    if (recSource !== 'backend' || !r?.resourceUid || r.resourceUid !== resourceUid || actionPending) return
     setActionPending(true)
     setActionError(null)
     try {
@@ -104,7 +115,23 @@ export default function RecommendationsPage() {
     }
   }
 
-  const canDecide = recSource === 'backend' && r.resourceUid === resourceUid && !actionPending
+  const canDecide = recSource === 'backend' && r?.resourceUid === resourceUid && !actionPending
+
+  if (!r || recStatus !== 'ready') {
+    return (
+      <div>
+        <PageHeader title="Recommendation detail" description="Recomendaciones calculadas para el recurso seleccionado." />
+        <Panel>
+          <p className="text-sm text-muted-foreground">
+            {recStatus === 'loading' ? 'Cargando recomendación...' :
+              recStatus === 'error' ? `No fue posible consultar la recomendación: ${recError ?? 'Error desconocido'}` :
+              recError === 'no_resource' ? 'Selecciona un recurso para consultar recomendaciones.' :
+              'No hay recomendaciones disponibles para el recurso seleccionado.'}
+          </p>
+        </Panel>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -117,7 +144,7 @@ export default function RecommendationsPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Main detail */}
         <div className="space-y-4 lg:col-span-2">
-          <Panel>
+          <Panel action={recSource === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
             {r.status && <Badge variant="outline" className="mb-3">Estado: {r.status}</Badge>}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -142,7 +169,7 @@ export default function RecommendationsPage() {
           </Panel>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Panel title="Constraints evaluated" description="All must pass for feasibility">
+            <Panel title="Constraints evaluated" description="All must pass for feasibility" action={recSource === 'mock' && r.constraints.length ? <Badge variant="outline">Mock</Badge> : undefined}>
               <ul className="space-y-2.5">
                 {r.constraints.map((c) => (
                   <li key={c.label} className="flex items-start gap-2 text-sm">
@@ -156,7 +183,7 @@ export default function RecommendationsPage() {
               </ul>
             </Panel>
 
-            <Panel title="Evidence" description="Available evidence for this recommendation" action={<Badge variant="outline" className="text-[9px]">{recSource ?? 'Cargando'}</Badge>}>
+            <Panel title="Evidence" description="Available evidence for this recommendation" action={recSource === 'mock' && evidence.length ? <Badge variant="outline">Mock</Badge> : undefined}>
               <ul className="space-y-2.5">
                 {evidence.map((e) => (
                   <li key={e.label} className="flex items-center gap-2 text-sm">
@@ -171,7 +198,7 @@ export default function RecommendationsPage() {
 
             <Panel
               title="Why this recommendation?"
-              action={<Badge variant="outline" className="text-[9px]">{recSource}</Badge>}
+              action={recSource === 'mock' && r.rationale ? <Badge variant="outline">Mock</Badge> : undefined}
             >
               <div className="space-y-3">
                   <p className="text-sm leading-relaxed text-muted-foreground">{r.rationale}</p>
@@ -184,7 +211,7 @@ export default function RecommendationsPage() {
               </div>
             </Panel>
 
-            <Panel title="Limitations" description="Stated explicitly with every recommendation">
+            <Panel title="Limitations" description="Stated explicitly with every recommendation" action={recSource === 'mock' && r.limitations.length ? <Badge variant="outline">Mock</Badge> : undefined}>
               <ul className="space-y-2">
                 {r.limitations.map((l: string) => (
                   <li key={l} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -245,7 +272,7 @@ export default function RecommendationsPage() {
 
           {/* Sidebar: risk/confidence + AI + no-rec */}
           <div className="space-y-4">
-            <Panel title="Risk & confidence" description="Evaluated independently">
+            <Panel title="Risk & confidence" description="Evaluated independently" action={recSource === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                   <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -267,9 +294,9 @@ export default function RecommendationsPage() {
               </div>
             </Panel>
 
-            <AssistantPanel />
+            {demo && <AssistantPanel />}
 
-            <Panel title="Other outcomes are valid" description="Ejemplos ilustrativos" action={<Badge variant="outline" className="text-[9px]">mock</Badge>}>
+            {demo && <Panel title="Other outcomes are valid" description="Ejemplos ilustrativos" action={<Badge variant="outline" className="text-[9px]">mock</Badge>}>
               <div className="space-y-3">
                 <div className="rounded-lg border border-border bg-background p-3">
                   <div className="mb-1 flex items-center gap-2">
@@ -291,7 +318,7 @@ export default function RecommendationsPage() {
                   </p>
                 </div>
               </div>
-            </Panel>
+            </Panel>}
 
             {trace && (
               <Panel title="Audit trace" description="Recommendation decision lineage">
@@ -386,37 +413,6 @@ function AssistantPanel() {
       </div>
     </Panel>
   )
-}
-
-const recMock: RecommendationItem = {
-  id: 'rec-2041',
-  title: 'Recommendation available',
-  from: '8 vCores',
-  to: '4 vCores',
-  savingsPct: 24.2,
-  savingsAbs: 117.8,
-  risk: 'Low',
-  confidence: 91,
-  latencyImpact: 2.1,
-  analysisPeriod: 'Last 30 days',
-  generated: 'Today, 14:32',
-  modelVersion: 'rightsizer v1.4.2 · ruleset 2024.11',
-  evidence: [
-    { label: 'CPU p95', value: '28%', tone: 'good' },
-    { label: 'CPU p99', value: '41%', tone: 'good' },
-    { label: 'I/O p95', value: 'Below threshold', tone: 'good' },
-    { label: 'Workload trend', value: 'Stable', tone: 'good' },
-    { label: 'Headroom', value: 'Sufficient', tone: 'good' },
-    { label: 'SLA (30d)', value: '99.97%', tone: 'good' },
-  ],
-  constraints: [
-    { label: 'p95 latency within threshold', pass: true },
-    { label: 'No SLA violations in analysis window', pass: true },
-    { label: 'Sufficient CPU headroom at projected peak', pass: true },
-    { label: 'I/O within provisioned limits', pass: true },
-  ],
-  limitations: [],
-  rationale: '',
 }
 
 const assistantSuggestionsMock: Record<string, string> = {

@@ -30,13 +30,13 @@ type CostDay = {
 type PerfPoint = {
   t: string
   idx: number
-  p50: number
-  p95: number
-  p99: number
-  io: number
-  memory: number
-  sessions: number
-  latency: number
+  p50: number | null
+  p95: number | null
+  p99: number | null
+  io: number | null
+  memory: number | null
+  sessions: number | null
+  latency: number | null
 }
 
 type DataResult<T> = {
@@ -63,8 +63,14 @@ export default function OverviewPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid || !timeRange) {
+      setCostDailyResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      setPerfSeriesResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
 
+    setCostDailyResult({ data: null, source: null, status: 'loading', error: null })
+    setPerfSeriesResult({ data: null, source: null, status: 'loading', error: null })
     getCostDaily(resourceUid, timeRange.from, timeRange.to)
       .then((res) => setCostDailyResult(res))
       .catch((err) => setCostDailyResult({ data: null, source: null, status: 'error', error: err?.message ?? 'Error cargando costos' }))
@@ -80,7 +86,7 @@ export default function OverviewPage() {
     getRecommendationSummary().then((res) => setRecResult(res))
   }, [])
 
-  const currentRecommendation = recResult.data ?? recMock
+  const currentRecommendation = recResult.status === 'ready' ? recResult.data : null
 
   return (
     <div>
@@ -91,7 +97,7 @@ export default function OverviewPage() {
           <div className="flex items-center gap-2">
             <Badge variant="success" className="h-7 px-2.5">
               <CheckCircle2 className="size-3.5" />
-              {kpisResult.data?.status || kpisResult.data?.status === 'Healthy' ? kpisResult.data?.status : 'Loading...'}
+              {kpisResult.data?.status ?? 'Estado no disponible'}
             </Badge>
             <Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>
           </div>
@@ -99,16 +105,25 @@ export default function OverviewPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard label="Resource status" value="Healthy" sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-        <KpiCard label="Current cost" value={`$${kpisResult.data?.currentCost.toFixed(2)}`} sub="/ month" delta={kpisResult.data?.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-        <KpiCard label="Estimated cost" value={`$${kpisResult.data?.estimatedCost.toFixed(2)}`} sub="simulated / mo" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-        <KpiCard label="Estimated savings" value={`${kpisResult.data?.savingsPct}%`} sub={`$${kpisResult.data?.estimatedSavings.toFixed(2)} / mo`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Resource status" value={kpisResult.data?.status ?? '—'} sub="Azure SQL Database" tone="success" icon={CheckCircle2} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Current cost" value={kpisResult.data?.currentCost != null ? `$${kpisResult.data.currentCost.toFixed(2)}` : '—'} sub="selected period" delta={kpisResult.data?.currentCostDelta ?? undefined} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Estimated cost" value={kpisResult.data?.estimatedCost != null ? `$${kpisResult.data.estimatedCost.toFixed(2)}` : '—'} sub="according to recommendation" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Estimated savings" value={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : '—'} sub={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)} / mes` : 'Sin recomendación'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
         <KpiCard label="Risk" value={kpisResult.data?.risk ?? '—'} sub="within constraints" tone="success" icon={ShieldCheck} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-        <KpiCard label="Confidence" value={`${kpisResult.data?.confidence}%`} sub="high coverage" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+        <KpiCard label="Confidence" value={kpisResult.data?.confidence != null ? `${kpisResult.data.confidence}%` : '—'} sub="recommendation confidence" tone="brand" icon={Gauge} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
       </div>
 
       <div className="mt-4">
-        <RecommendationSummary rec={currentRecommendation} recSource={recResult.source} />
+        {currentRecommendation ? (
+          <RecommendationSummary rec={currentRecommendation} recSource={recResult.source} />
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+            {recResult.status === 'loading' ? 'Cargando recomendación...' :
+              recResult.status === 'error' ? `No fue posible consultar la recomendación: ${recResult.error ?? 'Error desconocido'}` :
+              recResult.error === 'no_resource' ? 'Selecciona un recurso para consultar recomendaciones.' :
+              'No hay recomendaciones disponibles para el recurso seleccionado.'}
+          </div>
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -116,7 +131,7 @@ export default function OverviewPage() {
           title="Cumulative cost"
           description="Billed usage across the analysis window"
           className="lg:col-span-2"
-          action={<Badge variant="outline" className="text-[9px]">{costDailyResult.source ?? 'Cargando'}</Badge>}
+          action={costDailyResult.status === 'ready' && costDailyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
         >
           {!costDailyResult.data || costDailyResult.status !== 'ready' ? (
             <div className="h-64 flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
@@ -128,12 +143,14 @@ export default function OverviewPage() {
           )}
         </Panel>
 
-        <Panel title="Data quality" description="Signals feeding the analysis">
+        <Panel title="Data quality" description="Signals feeding the analysis" action={dataQualityResult.status === 'ready' && dataQualityResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
           <div className="space-y-3">
+            {dataQualityResult.status !== 'ready' && <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Cargando cobertura...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No hay información de cobertura disponible.'}</p>}
+            {dataQualityResult.data && (
+            <>
             <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
               <span className="text-xs text-muted-foreground">Global confidence</span>
-              <Badge variant="success">{dataQualityResult.data?.globalConfidence}</Badge>
-              <Badge variant="outline" className="text-[9px]">{dataQualityResult.source}</Badge>
+              <Badge variant="success">{dataQualityResult.data.globalConfidence}</Badge>
             </div>
             {dataQualityResult.data?.items.slice(0, 5).map((item: any) => (
               <div key={item.label} className="flex items-center justify-between text-xs">
@@ -141,6 +158,8 @@ export default function OverviewPage() {
                 <span className="font-medium tabular-nums text-foreground">{item.value}</span>
               </div>
             ))}
+            </>
+            )}
             <Button variant="outline" size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/diagnostics" />}>
               View diagnostics
               <ArrowRight />
@@ -154,19 +173,20 @@ export default function OverviewPage() {
           title="CPU utilization percentiles"
           description="Average alone does not drive the decision — peaks do"
           className="lg:col-span-2"
-          note="Observed telemetry sampled at 5-minute resolution over the last 72 hours."
-          action={perfSeriesResult.data ? <Badge variant="outline" className="text-[9px]">{perfSeriesResult.source}</Badge> : undefined}
+           note="Percentiles calculated by backend analytics for the selected time window."
+           action={perfSeriesResult.status === 'ready' && perfSeriesResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
         >
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Legend color="var(--chart-3)" label="p50" />
             <Legend color="var(--chart-2)" label="p95" />
             <Legend color="var(--chart-1)" label="p99" />
           </div>
-          {!perfSeriesResult.data || perfSeriesResult.status !== 'ready' ? (
+          {!perfSeriesResult.data || perfSeriesResult.status !== 'ready' || !perfSeriesResult.data.some(p => p.p50 !== null) ? (
             <div className="h-[230px] flex items-center justify-center rounded-lg border border-dashed bg-muted/50 p-4 text-xs text-muted-foreground">
               {!perfSeriesResult.data && perfSeriesResult.status === 'loading' && <p className="text-xs text-muted-foreground">Cargando datos de rendimiento...</p>}
               {perfSeriesResult.status === 'empty' && <p className="text-xs text-muted-foreground">No hay datos de rendimiento disponibles para el recurso seleccionado.</p>}
               {perfSeriesResult.status === 'error' && <p className="text-xs text-muted-foreground">{perfSeriesResult.error}</p>}
+              {perfSeriesResult.status === 'ready' && <p>No hay percentiles de CPU calculados para el período seleccionado.</p>}
             </div>
           ) : (
             <MultiLine
@@ -186,6 +206,13 @@ export default function OverviewPage() {
         </Panel>
 
         <Panel title="Opportunity snapshot" description="What a right-size would change">
+          {!currentRecommendation ? (
+            <p className="text-sm text-muted-foreground">
+              {recResult.status === 'loading' ? 'Cargando oportunidad...' :
+                recResult.status === 'error' ? 'No fue posible consultar la oportunidad.' :
+                'No hay una oportunidad evaluada para el recurso seleccionado.'}
+            </p>
+          ) : (
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">Compute</p>
@@ -194,17 +221,16 @@ export default function OverviewPage() {
               </p>
             </div>
             <ConfidenceBar value={currentRecommendation.confidence} />
-            <Badge variant="outline" className="text-[9px]">{recResult.source ?? 'Cargando'}</Badge>
+            {recResult.source === 'mock' && <Badge variant="outline" className="text-[9px]">Mock</Badge>}
             <div className="rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-              {recResult.source === 'backend'
-                ? 'Consulta la evidencia y los escenarios antes de tomar una decisión de capacidad.'
-                : 'Ejemplo: CPU p99 proyectado de 58% en la capacidad propuesta; estos datos son ilustrativos.'}
+              Consulta la evidencia y los escenarios antes de tomar una decisión de capacidad.
             </div>
             <Button size="sm" className="w-full" nativeButton={false} render={<Link href="/dashboard/scenarios" />}>
               Compare scenarios
               <ArrowRight />
             </Button>
           </div>
+          )}
         </Panel>
       </div>
     </div>

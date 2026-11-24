@@ -11,6 +11,7 @@ import {
   getCostComponents,
   getSelectedResourceUid,
   getTimeRange,
+  type ServiceResult,
 } from '@/lib/api-services'
 
 const valueTypes = [
@@ -23,31 +24,22 @@ const valueTypes = [
 type CostDay = {
   day: string
   billed: number
-  estimated: number
-  reference: number
+  estimated: number | null
+  reference: number | null
   cumulative: number
 }
 
 type CostComponent = {
   name: string
   current: number
-  estimated: number
+  estimated: number | null
   color: string
 }
 
-type DataResult<T> = {
-  data: T | null
-  source: 'backend' | 'mock' | null
-  status: 'loading' | 'ready' | 'empty' | 'error'
-  error: string | null
-}
-
 export default function CostsPage() {
-  const [kpisResult, setKpisResult] = useState<DataResult<any>>({ data: null, source: null, status: 'loading', error: null })
-  const [costDaily, setCostDaily] = useState<CostDay[]>([])
-  const [costsLoaded, setCostsLoaded] = useState(false)
-  const [costsSource, setCostsSource] = useState<'mock' | 'backend' | null>(null)
-  const [costComponents, setCostComponents] = useState<CostComponent[]>([])
+  const [kpisResult, setKpisResult] = useState<ServiceResult<any>>({ data: null, source: null, status: 'loading', error: null })
+  const [dailyResult, setDailyResult] = useState<ServiceResult<CostDay[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [componentsResult, setComponentsResult] = useState<ServiceResult<CostComponent[]>>({ data: null, source: null, status: 'loading', error: null })
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
@@ -59,28 +51,25 @@ export default function CostsPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid) return
+    if (!resourceUid || !timeRange) {
+      setDailyResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      setComponentsResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
+    setDailyResult({ data: null, source: null, status: 'loading', error: null })
+    setComponentsResult({ data: null, source: null, status: 'loading', error: null })
+    getCostDaily(resourceUid, timeRange.from, timeRange.to).then(setDailyResult)
+    getCostComponents(resourceUid, timeRange.from, timeRange.to).then(setComponentsResult)
+  }, [resourceUid, timeRange])
 
-    const range = getTimeRange()
-    if (!range) return
-
-    getCostDaily(resourceUid, range.from, range.to)
-      .then((res) => {
-        setCostDaily(res.data ?? [])
-        setCostsLoaded(!!res.data && res.data.length > 0)
-        setCostsSource(res.source)
-      })
-
-    getCostComponents(resourceUid, range.from, range.to)
-      .then((res) => {
-        setCostComponents(res.data ?? costComponentsMock)
-      })
-
+  useEffect(() => {
     getKpis().then((res) => {
       setKpisResult(res)
     })
-  }, [resourceUid])
+  }, [])
 
+  const costDaily = dailyResult.data ?? []
+  const costComponents = componentsResult.data ?? []
   const donutData = costComponents.map((c) => ({ name: c.name, value: c.current, color: c.color }))
 
   const compareData = costComponents.map((c) => ({
@@ -97,26 +86,27 @@ export default function CostsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Last 30 days</Badge>
-            <Badge variant="outline" className="text-[9px]">{costsSource}</Badge>
           </div>
         }
       />
 
-      {!costsLoaded ? (
+      {dailyResult.status !== 'ready' || !dailyResult.data ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">Datos insuficientes</p>
-          <p className="text-xs text-muted-foreground">
-            No hay registros de costo para el recurso y ventana seleccionados. Verifique que exista
-            datos en cco_data y que CCO_DATA_DSN esté configurado en el backend.
+          <p className="text-sm text-muted-foreground">
+            {dailyResult.status === 'loading' ? 'Cargando costos...' :
+              dailyResult.status === 'error' ? 'No fue posible consultar los costos.' :
+              dailyResult.error === 'no_resource' ? 'Selecciona un recurso y una ventana para consultar costos.' :
+              'No hay datos de costo para el recurso y ventana seleccionados.'}
           </p>
+          {dailyResult.status === 'error' && <p className="text-xs text-muted-foreground">{dailyResult.error}</p>}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiCard label="Billed cost" value={`$${kpisResult.data?.currentCost.toFixed(2)}`} sub="this period" delta={kpisResult.data?.currentCostDelta} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-            <KpiCard label="Reference price" value={`$${(kpisResult.data?.currentCost * 1.02).toFixed(2)}`} sub="list, same capacity" icon={Tag} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-            <KpiCard label="Estimated cost" value={`$${kpisResult.data?.estimatedCost.toFixed(2)}`} sub="4 vCores, simulated" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
-            <KpiCard label="Estimated savings" value={`$${kpisResult.data?.estimatedSavings.toFixed(2)}`} sub={`${kpisResult.data?.savingsPct}% / month`} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Billed cost" value={kpisResult.data?.currentCost != null ? `$${kpisResult.data.currentCost.toFixed(2)}` : '—'} sub="selected period" delta={kpisResult.data?.currentCostDelta ?? undefined} icon={DollarSign} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Reference price" value="—" sub="No disponible" icon={Tag} />
+            <KpiCard label="Estimated cost" value={kpisResult.data?.estimatedCost != null ? `$${kpisResult.data.estimatedCost.toFixed(2)}` : '—'} sub="Según recomendación" tone="brand" icon={Calculator} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
+            <KpiCard label="Estimated savings" value={kpisResult.data?.estimatedSavings != null ? `$${kpisResult.data.estimatedSavings.toFixed(2)}` : '—'} sub={kpisResult.data?.savingsPct != null ? `${kpisResult.data.savingsPct}%` : 'Sin recomendación'} tone="success" icon={TrendingDown} badge={<Badge variant="outline" className="text-[9px]">{kpisResult.source}</Badge>} />
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -124,10 +114,11 @@ export default function CostsPage() {
               title="Cost per day"
               description="Billed vs simulated daily cost"
               className="lg:col-span-2"
+              action={dailyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
             >
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <Legend color="var(--chart-1)" label="Billed" />
-                <Legend color="var(--chart-2)" label="Estimated (simulated)" />
+                {dailyResult.source === 'mock' && <Legend color="var(--chart-2)" label="Estimated (simulated)" />}
               </div>
               <Bars
                 data={costDaily}
@@ -136,12 +127,20 @@ export default function CostsPage() {
                 height={240}
                 bars={[
                   { key: 'billed', color: 'var(--chart-1)', name: 'Billed' },
-                  { key: 'estimated', color: 'var(--chart-2)', name: 'Estimated' },
+                  ...(dailyResult.source === 'mock' ? [{ key: 'estimated', color: 'var(--chart-2)', name: 'Estimated' }] : []),
                 ]}
               />
             </Panel>
 
-            <Panel title="Cost distribution" description="Billed cost by component">
+            <Panel title="Cost distribution" description="Billed cost by component" action={componentsResult.status === 'ready' && componentsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {componentsResult.status !== 'ready' || !componentsResult.data ? (
+                <p className="text-xs text-muted-foreground">
+                  {componentsResult.status === 'loading' ? 'Cargando componentes...' :
+                    componentsResult.status === 'error' ? `No fue posible consultar los componentes: ${componentsResult.error ?? 'Error desconocido'}` :
+                    'No hay componentes de costo disponibles.'}
+                </p>
+              ) : (
+              <>
               <div className="relative">
                 <Donut data={donutData} height={200} unit="" />
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
@@ -160,6 +159,8 @@ export default function CostsPage() {
                   </li>
                 ))}
               </ul>
+              </>
+              )}
             </Panel>
           </div>
 
@@ -168,12 +169,16 @@ export default function CostsPage() {
               title="Cumulative cost trend"
               description="Running billed total across the window"
               className="lg:col-span-2"
-              action={<Badge variant="neutral">Billed</Badge>}
+              action={dailyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : <Badge variant="neutral">Billed</Badge>}
             >
               <AreaTrend data={costDaily} dataKey="cumulative" prefix="$" height={230} />
             </Panel>
 
-            <Panel title="Current vs recommended" description="Estimated cost by component">
+            <Panel title="Current vs recommended" description="Estimated cost by component" action={componentsResult.status === 'ready' && componentsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {componentsResult.status !== 'ready' || !componentsResult.data || componentsResult.source !== 'mock' ? (
+                <p className="text-xs text-muted-foreground">No hay estimaciones por componente calculadas por el backend.</p>
+              ) : (
+              <>
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <Legend color="var(--chart-1)" label="Current" />
                 <Legend color="var(--chart-2)" label="Recommended" />
@@ -188,6 +193,8 @@ export default function CostsPage() {
                   { key: 'estimated', color: 'var(--chart-2)', name: 'Recommended' },
                 ]}
               />
+              </>
+              )}
             </Panel>
           </div>
 

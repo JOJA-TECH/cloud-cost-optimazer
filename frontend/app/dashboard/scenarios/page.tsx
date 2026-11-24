@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bars } from '@/components/charts'
 import { cn } from '@/lib/utils'
+import { isDemoMode } from '@/lib/demo-mode'
 import { getScenarios, evaluateRecommendations, getSelectedResourceUid } from '@/lib/api-services'
 import type { ScenarioItem } from '@/lib/api-services'
 
@@ -31,20 +32,20 @@ const rows: { key: string; label: string; render: (s: ScenarioItem) => React.Rea
 ]
 
 export default function ScenariosPage() {
-  const [scenarios, setScenarios] = useState<ScenarioItem[]>(scenariosMock)
+  const [scenarios, setScenarios] = useState<ScenarioItem[]>([])
   const [selected, setSelected] = useState('a')
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
   const [simulateResult, setSimulateResult] = useState<any>(null)
   const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend' | null>(null)
+  const [scenariosStatus, setScenariosStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
 
   useEffect(() => {
     const uid = getSelectedResourceUid()
     setResourceUid(uid)
     getScenarios().then((res) => {
-      if (res.data) {
-        setScenarios(res.data)
-      }
+      setScenarios(res.data ?? [])
+      setScenariosStatus(res.status)
       setScenariosSource(res.source)
     })
   }, [])
@@ -72,6 +73,28 @@ export default function ScenariosPage() {
     } finally {
       setSimulating(false)
     }
+  }
+
+  if (scenariosStatus !== 'ready' || !scenarios.length) {
+    return (
+      <div>
+        <PageHeader title="Scenario analysis" description="Comparación de configuraciones evaluadas para el recurso seleccionado." />
+        <Panel>
+          <p className="text-sm text-muted-foreground">
+            {scenariosStatus === 'loading' ? 'Cargando escenarios...' : scenariosStatus === 'error'
+              ? 'No se pudieron consultar los escenarios.' : 'No hay escenarios evaluados disponibles. El backend no expone una consulta de escenarios para esta vista.'}
+          </p>
+          {scenariosStatus !== 'loading' && resourceUid && !isDemoMode() && (
+            <div className="mt-3">
+              <Button size="sm" variant="outline" onClick={handleSimulate} disabled={simulating}>
+                {simulating ? 'Evaluando...' : 'Solicitar evaluación al backend'}
+              </Button>
+              {simulateResult && <pre className="mt-3 overflow-x-auto text-xs">{JSON.stringify(simulateResult, null, 2)}</pre>}
+            </div>
+          )}
+        </Panel>
+      </div>
+    )
   }
 
   return (
@@ -144,7 +167,7 @@ export default function ScenariosPage() {
 
         <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Cargando'}</Badge>}>
           {(() => {
-            const s = scenarios.find((x) => x.id === selected)!
+            const s = scenarios.find((x) => x.id === selected) ?? scenarios[0]
             return (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">

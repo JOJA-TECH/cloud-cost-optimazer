@@ -33,6 +33,8 @@ import {
   type CloudResource,
 } from '@/lib/api-services'
 import { useAuth } from '@/components/auth-provider'
+import { isDemoMode, setDemoMode } from '@/lib/demo-mode'
+import { resource as demoResource } from '@/lib/mock-data'
 
 const DEFAULT_TIME_RANGE: { from: string; to: string } = {
   from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -52,6 +54,21 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [cloudResources, setCloudResourcesState] = useState<CloudResource[]>([])
   const [resourceDropdownOpen, setResourceDropdownOpen] = useState(false)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string }>(DEFAULT_TIME_RANGE)
+  const [demo, setDemo] = useState(false)
+
+  useEffect(() => {
+    const enabled = isDemoMode()
+    setDemo(enabled)
+    const savedRange = getTimeRange()
+    if (savedRange) setTimeRangeState(savedRange)
+    else {
+      setTimeRange(DEFAULT_TIME_RANGE.from, DEFAULT_TIME_RANGE.to)
+      window.location.reload()
+    }
+    if (enabled) {
+      setResource({ ...demoResource, resource_uid: 'demo-resource' })
+    }
+  }, [])
 
   // Verificar autenticación: si no hay token, redirigir al login
   useEffect(() => {
@@ -69,7 +86,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       router.push('/login')
       return
     }
-    loadAccountsAndResources()
+    if (!isDemoMode()) loadAccountsAndResources()
     if (typeof window !== 'undefined') {
       setUserName(sessionStorage.getItem('cco_user_name') ?? null)
       setUserEmail(sessionStorage.getItem('cco_user_email') ?? null)
@@ -107,10 +124,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           setSelectedResourceUid(selected.resource_uid)
           const dashboardRes = await getDashboardResource(accts[0].cloud_account_id)
           setResource(dashboardRes.data)
+          if (currentUid !== selected.resource_uid) window.location.reload()
         }
       }
     } catch {
-      // Si falla el backend, dejar valores por defecto
+      setResource(null)
+      setCloudResourcesState([])
+      setAccounts([])
     }
   }
 
@@ -118,32 +138,17 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     setSelectedResourceUid(uid)
     const selected = cloudResources.find((r) => r.resource_uid === uid)
     if (selected) {
-      setResource({
-        resource_uid: selected.resource_uid,
-        name: selected.database_name,
-        server: selected.server_name,
-        service: 'Azure SQL Database',
-        tier: 'General Purpose',
-        computeModel: 'Provisioned',
-        vCores: 8,
-        memoryGb: 40.8,
-        region: selected.region_code,
-        storageUsedGb: 214,
-        storageLimitGb: 512,
-        redundancy: 'Zone-redundant',
-        state: selected.lifecycle_status,
-        lastSyncMinutes: 8,
-        collation: 'SQL_Latin1_General_CP1_CI_AS',
-        maxWorkers: 800,
-        maxSessions: 2400,
-      })
+      setResource(null)
+      void getDashboardResource(accounts[0]?.cloud_account_id).then((result) => setResource(result.data))
     }
     setResourceDropdownOpen(false)
+    window.location.reload()
   }
 
   function handleTimeRangeChange(from: string, to: string) {
     setTimeRange(from, to)
     setTimeRangeState({ from, to })
+    window.location.reload()
   }
 
   if (!token) return null
@@ -198,6 +203,22 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           setResourceDropdownOpen={setResourceDropdownOpen}
         />
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 pb-24 sm:px-6 md:pb-6">
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-xs">
+            <span>{demo ? 'Modo demostración: datos ilustrativos, no representan recursos reales.' : 'Modo real: sin sustitución automática por datos demostrativos.'}</span>
+            <button type="button" className="rounded border border-border px-2 py-1 font-medium" onClick={() => {
+              if (!demo) {
+                sessionStorage.setItem('cco_real_resource_uid', getSelectedResourceUid() ?? '')
+                setSelectedResourceUid('demo-resource')
+              } else {
+                setSelectedResourceUid(sessionStorage.getItem('cco_real_resource_uid') || null)
+                sessionStorage.removeItem('cco_real_resource_uid')
+              }
+              setDemoMode(!demo)
+              window.location.reload()
+            }}>
+              {demo ? 'Salir de la demo' : 'Activar demo'}
+            </button>
+          </div>
           {children}
         </main>
         <MobileTabBar pathname={pathname} />

@@ -10,6 +10,7 @@ import {
   getAuditEvents,
   getSelectedResourceUid,
   getTimeRange,
+  type ServiceResult,
 } from '@/lib/api-services'
 import type { HistoryItem, HistoryStatus } from '@/lib/api-services'
 
@@ -26,7 +27,8 @@ const statusVariant: Record<HistoryStatus, 'default' | 'neutral' | 'success' | '
 export default function HistoryPage() {
   const [filter, setFilter] = useState<(typeof statuses)[number]>('All')
   const [open, setOpen] = useState<string | null>(null)
-  const [rows, setRows] = useState<HistoryItem[]>(historyMock)
+  const [rows, setRows] = useState<HistoryItem[]>([])
+  const [historyResult, setHistoryResult] = useState<ServiceResult<HistoryItem[]>>({ data: null, source: null, status: 'loading', error: null })
   const [auditEvents, setAuditEvents] = useState<AuditEventRow[]>([])
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [historyLoaded, setHistoryLoaded] = useState(false)
@@ -51,9 +53,10 @@ export default function HistoryPage() {
     setAuditError(null)
     setAuditLoaded(false)
     getHistory().then((hRes) => {
-      if (hRes.source === 'backend' && hRes.data) {
-        setRows(hRes.data)
-        setHistoryLoaded(true)
+      setHistoryResult(hRes)
+      setRows(hRes.data ?? [])
+      setHistoryLoaded(hRes.status === 'ready')
+      if (hRes.data) {
         if (!open || !hRes.data.find((x) => x.id === open)) {
           setOpen(hRes.data[0]?.id ?? null)
         }
@@ -122,8 +125,9 @@ export default function HistoryPage() {
         title="Historial de recomendaciones"
         description="Cada recomendación generada con su configuración, ahorro, riesgo, confianza y estado."
         className="mb-4"
-        action={<Badge variant="outline" className="text-[9px]">{historyLoaded ? 'Datos reales' : 'mock'}</Badge>}
+        action={historyResult.status === 'ready' && historyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
       >
+        {historyResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{historyResult.status === 'loading' ? 'Cargando historial...' : historyResult.status === 'error' ? historyResult.error : 'No hay recomendaciones registradas.'}</p>}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
@@ -170,8 +174,8 @@ export default function HistoryPage() {
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <Detail label="Recommendation ID" value={h.id} mono />
                           <Detail label="Model / rule version" value={h.version} mono />
-                          <Detail label="Analysis period" value={h.analysisPeriod ?? 'Last 30 days'} />
-                          <Detail label="Evidence snapshot" value="Frozen at generation" />
+                           <Detail label="Analysis period" value={h.analysisPeriod ?? 'No disponible'} />
+                           <Detail label="Evidence snapshot" value="No disponible en este listado" />
                         </div>
                         <p className="mt-3 text-xs text-muted-foreground">
                           Opening a past recommendation replays the evidence exactly as it was when

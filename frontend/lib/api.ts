@@ -1,4 +1,5 @@
 import { getToken, refreshToken, isTokenExpiringSoon, getProjectId } from './auth'
+import { isDemoMode } from './demo-mode'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
@@ -32,6 +33,9 @@ export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  if (isDemoMode() && !String(input).startsWith('/auth/')) {
+    throw new Error('El modo demostración está aislado del backend. Sal de la demo para consultar datos reales.')
+  }
   const token = await getValidToken()
   const projectId = getProjectId()
 

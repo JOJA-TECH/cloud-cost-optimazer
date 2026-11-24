@@ -12,20 +12,21 @@ import {
   getWorkloadPattern,
   getSelectedResourceUid,
   getTimeRange,
+  type ServiceResult,
 } from '@/lib/api-services'
 
 type WorkloadClassification = {
   pattern: string
-  confidence: number
+  confidence: number | null
   evidence: string[]
   metrics: Array<{ label: string; value: string }>
 }
 
 export default function WorkloadPage() {
   const [workloadHourly, setWorkloadHourly] = useState<{ hour: string; intensity: number; concurrency: number; reads: number; writes: number }[]>([])
-  const [cls, setCls] = useState<WorkloadClassification>(workloadClassificationMock)
-  const [workloadPatterns, setWorkloadPatterns] = useState<string[]>(workloadPatternsMock)
-  const [patternLoaded, setPatternLoaded] = useState(false)
+  const [clsResult, setClsResult] = useState<ServiceResult<WorkloadClassification>>({ data: null, source: null, status: 'loading', error: null })
+  const [workloadPatterns, setWorkloadPatterns] = useState<string[]>([])
+  const [hourlyResult, setHourlyResult] = useState<ServiceResult<typeof workloadHourly>>({ data: null, source: null, status: 'loading', error: null })
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
@@ -37,32 +38,19 @@ export default function WorkloadPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid || !timeRange) {
+      setClsResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
     getWorkloadHourly()
-      .then((res) => setWorkloadHourly(res.data ?? []))
-      .catch(() => setWorkloadHourly([]))
+      .then((res) => { setWorkloadHourly(res.data ?? []); setHourlyResult(res) })
     getWorkloadClassification()
-      .then((res) => setCls(res.data ?? workloadClassificationMock))
-      .catch(() => setCls(workloadClassificationMock))
+      .then(setClsResult)
     getWorkloadPatterns()
-      .then((res) => setWorkloadPatterns(res.data ?? workloadPatternsMock))
-      .catch(() => setWorkloadPatterns(workloadPatternsMock))
-    getWorkloadPattern()
-      .then((p) => {
-        if (p.source === 'backend' && p.data) {
-          const pattern = p.data
-          setCls((previous) => ({
-            pattern: pattern.pattern,
-            confidence: pattern.confidence,
-            evidence: pattern.evidence,
-            metrics: previous.metrics,
-          }))
-          setPatternLoaded(true)
-        }
-      })
-      .catch(() => setPatternLoaded(false))
+      .then((res) => setWorkloadPatterns(res.data ?? []))
   }, [resourceUid, timeRange])
 
+  const cls = clsResult.data
   return (
     <div>
       <PageHeader
@@ -70,23 +58,22 @@ export default function WorkloadPage() {
         description="How demand actually behaves over time — the central intelligence behind every optimization. Classification, peaks, variability, and trend drive the recommendation."
         actions={
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[9px]">{patternLoaded ? 'Datos reales' : 'Demo'}</Badge>
+            {clsResult.status === 'ready' && clsResult.source === 'mock' && <Badge variant="outline" className="text-[9px]">Mock</Badge>}
           </div>
         }
       />
 
-      {!patternLoaded ? (
+      {!cls || clsResult.status !== 'ready' ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">Datos insuficientes</p>
+          <p className="text-sm text-muted-foreground">{clsResult.status === 'loading' ? 'Cargando clasificación...' : clsResult.status === 'error' ? 'No fue posible consultar el patrón de carga.' : 'Datos insuficientes'}</p>
           <p className="text-xs text-muted-foreground">
-            No hay datos de patrones de carga para el recurso y ventana seleccionados. Verifique que exista
-            datos en cco_data y que CCO_DATA_DSN esté configurado en el backend.
+            {clsResult.status === 'error' ? clsResult.error : 'No hay datos de patrones de carga para el recurso y ventana seleccionados.'}
           </p>
         </div>
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Panel className="lg:col-span-1" title="Workload pattern" description="Classified from 30 days of telemetry">
+            <Panel className="lg:col-span-1" title="Workload pattern" description="Classified from selected telemetry" action={clsResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               <div className="rounded-xl border border-primary/25 bg-primary/[0.05] p-4">
                 <div className="flex items-center gap-2">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -96,9 +83,9 @@ export default function WorkloadPage() {
                     <p className="text-lg font-semibold text-foreground">{cls.pattern}</p>
                     <p className="text-xs text-muted-foreground">Classification</p>
                   </div>
-                  <Badge variant="default" className="ml-auto">
-                    {cls.confidence}% conf.
-                  </Badge>
+                    {cls.confidence != null && <Badge variant="default" className="ml-auto">
+                      {cls.confidence}% conf.
+                    </Badge>}
                 </div>
                 <ul className="mt-4 space-y-2">
                   {cls.evidence.map((e: string) => (
@@ -122,7 +109,8 @@ export default function WorkloadPage() {
               </div>
             </Panel>
 
-            <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day">
+            <Panel className="lg:col-span-2" title="Workload intensity by hour" description="Aggregate demand across a representative day" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {hourlyResult.status === 'ready' && hourlyResult.data ? (<>
               <AreaTrend data={workloadHourly} dataKey="intensity" xKey="hour" unit="%" height={200} color="var(--chart-1)" />
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {cls.metrics.map((m: any) => (
@@ -132,19 +120,23 @@ export default function WorkloadPage() {
                   </div>
                 ))}
               </div>
+              </>) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles para este recurso.</p>}
             </Panel>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Panel title="Concurrency by hour" description="Peak concurrent sessions during business windows">
+            <Panel title="Concurrency by hour" description="Peak concurrent sessions during business windows" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {hourlyResult.status === 'ready' && hourlyResult.data ? (
               <Bars
                 data={workloadHourly}
                 xKey="hour"
                 height={220}
                 bars={[{ key: 'concurrency', color: 'var(--chart-2)', name: 'Concurrency' }]}
               />
+              ) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles.</p>}
             </Panel>
-            <Panel title="Read / write mix" description="Share of operations by hour (%)">
+            <Panel title="Read / write mix" description="Share of operations by hour (%)" action={hourlyResult.status === 'ready' && hourlyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {hourlyResult.status === 'ready' && hourlyResult.data ? (<>
               <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <Legend color="var(--chart-1)" label="Reads" />
                 <Legend color="var(--chart-4)" label="Writes" />
@@ -160,6 +152,7 @@ export default function WorkloadPage() {
                   { key: 'writes', color: 'var(--chart-4)', name: 'Writes' },
                 ]}
               />
+              </>) : <p className="text-xs text-muted-foreground">No hay datos horarios disponibles.</p>}
             </Panel>
           </div>
         </>

@@ -13,8 +13,8 @@ import {
 } from '@/lib/api-services'
 
 export default function DiagnosticsPage() {
-  const [topQueries, setTopQueries] = useState<{ id: string; text: string; execs: number; avgCpuMs: number; avgDurMs: number; reads: number }[]>(topQueriesMock)
-  const [waitCategories, setWaitCategories] = useState<{ name: string; pct: number; color: string }[]>(waitCategoriesMock)
+  const [topQueries, setTopQueries] = useState<typeof topQueriesMock>([])
+  const [waitCategories, setWaitCategories] = useState<typeof waitCategoriesMock>([])
   const [resourceUid, setResourceUid] = useState<string | null>(null)
   const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
   const [topQueriesResult, setTopQueriesResult] = useState<ServiceResult<typeof topQueriesMock>>({ data: null, source: null, status: 'loading', error: null })
@@ -28,14 +28,18 @@ export default function DiagnosticsPage() {
   }, [])
 
   useEffect(() => {
-    if (!resourceUid || !timeRange) return
+    if (!resourceUid || !timeRange) {
+      setTopQueriesResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      setWaitCategoriesResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
 
     getTopQueries().then((res) => {
-      setTopQueries(res.data ?? topQueriesMock)
+      setTopQueries(res.data ?? [])
       setTopQueriesResult(res)
     })
     getWaitCategories().then((res) => {
-      setWaitCategories(res.data ?? waitCategoriesMock)
+      setWaitCategories(res.data ?? [])
       setWaitCategoriesResult(res)
     })
   }, [resourceUid, timeRange])
@@ -48,13 +52,15 @@ export default function DiagnosticsPage() {
         actions={
           <div className="flex items-center gap-2">
             <Badge variant="neutral">Query Store · last 30 days</Badge>
-            <Badge variant="outline" className="text-[9px]">{topQueriesResult.source}</Badge>
+            {topQueriesResult.status === 'ready' && topQueriesResult.source === 'mock' && <Badge variant="outline">Mock</Badge>}
           </div>
         }
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={<Badge variant="outline" className="text-[9px]">{topQueriesResult.source}</Badge>}>
+        <Panel title="Top operations" description="Ranked by aggregate impact" className="lg:col-span-2" bodyClassName="p-0" action={topQueriesResult.status === 'ready' && topQueriesResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+          {topQueriesResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{topQueriesResult.status === 'loading' ? 'Cargando operaciones...' : topQueriesResult.status === 'error' ? topQueriesResult.error : 'No hay operaciones disponibles para este recurso.'}</p>}
+          {topQueriesResult.status === 'ready' && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -90,13 +96,17 @@ export default function DiagnosticsPage() {
               </tbody>
             </table>
           </div>
+          )}
         </Panel>
 
-        <Panel title="Wait categories" description="Where time is actually spent" action={<Badge variant="outline" className="text-[9px]">{waitCategoriesResult.source}</Badge>}>
+        <Panel title="Wait categories" description="Where time is actually spent" action={waitCategoriesResult.status === 'ready' && waitCategoriesResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+          {waitCategoriesResult.status !== 'ready' ? (
+            <p className="text-sm text-muted-foreground">{waitCategoriesResult.status === 'loading' ? 'Cargando categorías...' : waitCategoriesResult.status === 'error' ? waitCategoriesResult.error : 'No hay categorías de espera disponibles.'}</p>
+          ) : (<>
           <div className="relative">
             <Donut data={waitCategories} height={180} />
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-lg font-semibold tabular-nums text-foreground">{waitCategories[0]?.pct ?? 34}%</span>
+              <span className="text-lg font-semibold tabular-nums text-foreground">{waitCategories[0]?.pct}%</span>
               <span className="text-[11px] text-muted-foreground">CPU-bound</span>
             </div>
           </div>
@@ -109,16 +119,19 @@ export default function DiagnosticsPage() {
               </li>
             ))}
           </ul>
+          </>)}
         </Panel>
       </div>
 
-      <Panel title="How diagnostics support the recommendation" className="mt-4" note="Technical detail supporting the recommendation — top operations and wait categories. Denser than the executive views, but kept readable.">
+      {topQueriesResult.source === 'mock' && waitCategoriesResult.source === 'mock' && topQueriesResult.status === 'ready' && waitCategoriesResult.status === 'ready' && (
+      <Panel title="How diagnostics support the recommendation" className="mt-4" action={<Badge variant="outline">Mock</Badge>} note="Ejemplo demostrativo; no constituye evidencia sobre el recurso seleccionado.">
         <div className="grid gap-3 sm:grid-cols-3">
           <Insight title="CPU-bound, not I/O-bound" body="34% of waits are CPU, 22% PAGEIOLATCH. vCore reduction stays viable because I/O is not the bottleneck at peak." />
           <Insight title="Concentrated cost" body="Q3 and Q4 dominate CPU per execution. Their pattern is periodic, matching the workload classification." />
           <Insight title="Low contention" body="Lock waits at 16% and only 3 deadlocks in 30 days indicate headroom is real, not masked by blocking." />
         </div>
       </Panel>
+      )}
     </div>
   )
 }

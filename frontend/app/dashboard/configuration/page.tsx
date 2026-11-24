@@ -11,6 +11,8 @@ import {
   getConfigSnapshots,
   getSelectedResourceUid,
   type DashboardResource,
+  type DataQuality,
+  type ServiceResult,
 } from '@/lib/api-services'
 
 type ConfigSnapshot = {
@@ -29,7 +31,7 @@ type ConfigSnapshot = {
 export default function ConfigurationPage() {
   const [showTech, setShowTech] = useState(false)
   const [resource, setResource] = useState<DashboardResource | null>(null)
-  const [dataQuality, setDataQuality] = useState<any>(dataQualityMock)
+  const [dataQualityResult, setDataQualityResult] = useState<ServiceResult<DataQuality>>({ data: null, source: null, status: 'loading', error: null })
   const [configSnapshots, setConfigSnapshots] = useState<ConfigSnapshot[]>([])
   const [configLoaded, setConfigLoaded] = useState(false)
   const [resourceUid, setResourceUid] = useState<string | null>(null)
@@ -42,9 +44,7 @@ export default function ConfigurationPage() {
         setResource(res.data)
       }
     })
-    getDataQuality().then((res) => {
-      setDataQuality(res.data ?? dataQualityMock)
-    })
+    getDataQuality().then(setDataQualityResult)
     if (uid) {
       getConfigSnapshots(uid)
         .then((sRes) => {
@@ -92,7 +92,7 @@ export default function ConfigurationPage() {
         }
       />
 
-      {!configLoaded && !resource ? (
+      {!resource ? (
         <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
           <p className="text-sm text-muted-foreground">Datos insuficientes</p>
           <p className="text-xs text-muted-foreground">
@@ -103,7 +103,7 @@ export default function ConfigurationPage() {
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Panel title="Current configuration" description={resource?.name ?? '—'} className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
+            <Panel title="Current configuration" description={resource?.name ?? '—'} className="lg:col-span-2" action={resource.resource_uid === 'demo-resource' ? <Badge variant="outline">Mock</Badge> : undefined}>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {summary.map((s) => (
                   <div key={s.label} className="rounded-lg border border-border bg-background p-3">
@@ -139,13 +139,14 @@ export default function ConfigurationPage() {
               </div>
             </Panel>
 
-            <Panel title="Data quality" description="Signals feeding the analysis" action={<Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>}>
+            <Panel title="Data quality" description="Signals feeding the analysis" action={dataQualityResult.status === 'ready' && dataQualityResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {dataQualityResult.data ? (<>
               <div className="mb-3 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
                 <span className="text-xs text-muted-foreground">Global confidence</span>
-                <Badge variant="success">{dataQuality.globalConfidence}</Badge>
+                <Badge variant="success">{dataQualityResult.data.globalConfidence}</Badge>
               </div>
               <ul className="space-y-1">
-                {dataQuality.items.map((item: any) => (
+                {dataQualityResult.data.items.map((item) => (
                   <li key={item.label} className="group flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/60">
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={item.info}>
                       {item.label}
@@ -154,6 +155,7 @@ export default function ConfigurationPage() {
                   </li>
                 ))}
               </ul>
+              </>) : <p className="text-xs text-muted-foreground">{dataQualityResult.status === 'loading' ? 'Cargando cobertura...' : dataQualityResult.status === 'error' ? dataQualityResult.error : 'No hay información de cobertura disponible.'}</p>}
               <div className="mt-3 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
                 Release 1.0 analyzes Azure SQL Database and does not modify production resources.
                 Multi-cloud support is a roadmap concept.
@@ -165,7 +167,6 @@ export default function ConfigurationPage() {
             title="Configuration snapshots"
             description="Historial de configuración (ARM) del recurso, más reciente primero"
             className="mt-4"
-            action={<Badge variant="outline" className="text-[9px]">{configLoaded ? 'Datos reales' : 'Demo'}</Badge>}
           >
             {!configLoaded ? (
               <div className="p-4 text-center text-xs text-muted-foreground">

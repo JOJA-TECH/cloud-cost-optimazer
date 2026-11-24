@@ -29,13 +29,13 @@ type PerfPoint = {
   t: string
   timestamp: string
   idx: number
-  p50: number
-  p95: number
-  p99: number
-  io: number
-  memory: number
-  sessions: number
-  latency: number
+  p50: number | null
+  p95: number | null
+  p99: number | null
+  io: number | null
+  memory: number | null
+  sessions: number | null
+  latency: number | null
 }
 
 type DataResult<T> = {
@@ -134,9 +134,9 @@ export default function PerformancePage() {
 
           <Panel
             title="CPU utilization over time"
-            description="Estimated CPU percentiles · threshold lines mark warning and critical"
+            description="Calculated CPU percentiles · threshold lines mark warning and critical"
             className="mt-4"
-            note="p50 and p95 are estimates derived from the average; p99 is derived from the maximum. They are not measured percentiles."
+            note="Percentiles calculated by backend analytics; unavailable metrics are not inferred from CPU."
             action={
               <div className="flex items-center gap-2">
                 {cpuLines.map((line) => (
@@ -154,7 +154,7 @@ export default function PerformancePage() {
               </div>
             }
           >
-            <MultiLine
+            {shownData.some(point => point.p50 !== null) ? <MultiLine
               data={shownData}
               xKey="t"
               yDomain={[0, 100]}
@@ -165,24 +165,28 @@ export default function PerformancePage() {
                 { y: 75, color: 'var(--warning)', label: 'warning' },
                 { y: 90, color: 'var(--danger)', label: 'critical' },
               ]}
-            />
+            /> : <p className="text-sm text-muted-foreground">No hay percentiles de CPU calculados para el período seleccionado.</p>}
           </Panel>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
-            <Panel title="I/O utilization" description="Percent of provisioned throughput">
-              <AreaTrend data={shownData} dataKey="io" xKey="t" unit="%" color="var(--chart-2)" height={190} />
+            <Panel title="I/O utilization" description="Percent of provisioned throughput" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {shownData.some(point => point.io !== null) ? <AreaTrend data={shownData} dataKey="io" xKey="t" unit="%" color="var(--chart-2)" height={190} /> :
+                <p className="text-xs text-muted-foreground">No hay métricas de I/O disponibles.</p>}
             </Panel>
-            <Panel title="Active sessions" description="Concurrent sessions (max 2400)">
-              <AreaTrend data={shownData} dataKey="sessions" xKey="t" color="var(--chart-1)" height={190} />
+            <Panel title="Active sessions" description="Concurrent sessions" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {shownData.some(point => point.sessions !== null) ? <AreaTrend data={shownData} dataKey="sessions" xKey="t" color="var(--chart-1)" height={190} /> :
+                <p className="text-xs text-muted-foreground">No hay métricas de sesiones disponibles.</p>}
             </Panel>
-            <Panel title="Query latency" description="Average response time (ms)">
-              <AreaTrend data={shownData} dataKey="latency" xKey="t" unit=" ms" color="var(--chart-3)" height={190} />
+            <Panel title="Query latency" description="Average response time (ms)" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {shownData.some(point => point.latency !== null) ? <AreaTrend data={shownData} dataKey="latency" xKey="t" unit=" ms" color="var(--chart-3)" height={190} /> :
+                <p className="text-xs text-muted-foreground">No hay métricas de latencia disponibles en este endpoint.</p>}
             </Panel>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <Panel title="Memory utilization" description="Working set as percent of provisioned">
-              <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} />
+            <Panel title="Memory utilization" description="Working set as percent of provisioned" action={dataResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
+              {shownData.some(point => point.memory !== null) ? <AreaTrend data={shownData} dataKey="memory" xKey="t" unit="%" color="var(--chart-5)" height={190} /> :
+                <p className="text-xs text-muted-foreground">No hay métricas de memoria disponibles.</p>}
             </Panel>
             <Panel title="Reliability events" description="Errors, timeouts, and contention (30d)" action={<Badge variant="outline" className="text-[9px]">{reliabilityEventsResult.source ?? 'sin datos'}</Badge>}>
               <div className="grid grid-cols-2 gap-3">
@@ -196,10 +200,11 @@ export default function PerformancePage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex items-center gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-                <Badge variant="success">SLA 99.97%</Badge>
-                No SLA violations recorded in the analysis window.
-              </div>
+              {reliabilityEventsResult.status !== 'ready' && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {reliabilityEventsResult.status === 'error' ? reliabilityEventsResult.error : 'No hay eventos de fiabilidad disponibles.'}
+                </p>
+              )}
             </Panel>
           </div>
         </>
