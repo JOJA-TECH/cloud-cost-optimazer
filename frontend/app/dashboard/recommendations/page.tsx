@@ -269,9 +269,10 @@ export default function RecommendationsPage() {
               {actionError && <p role="alert" className="mt-2 text-xs text-danger">{actionError}</p>}
             </Panel>
           </div>
+        </div>
 
-          {/* Sidebar: risk/confidence + AI + no-rec */}
-          <div className="space-y-4">
+        {/* Sidebar: risk/confidence + AI + no-rec */}
+        <div className="space-y-4 lg:col-span-1 lg:col-start-3">
             <Panel title="Risk & confidence" description="Evaluated independently" action={recSource === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}>
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2.5">
@@ -344,7 +345,6 @@ export default function RecommendationsPage() {
           </div>
         </div>
       </div>
-    </div>
   )
 }
 
