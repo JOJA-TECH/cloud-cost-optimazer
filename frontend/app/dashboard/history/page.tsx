@@ -1,11 +1,18 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { ChevronDown, ArrowRight } from 'lucide-react'
 import { PageHeader, Panel, RiskBadge } from '@/components/dashboard/ui'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { history, type HistoryStatus } from '@/lib/mock-data'
+import {
+  getHistory,
+  getAuditEvents,
+  getSelectedResourceUid,
+  getTimeRange,
+  type ServiceResult,
+} from '@/lib/api-services'
+import type { HistoryItem, HistoryStatus } from '@/lib/api-services'
 
 const statuses: (HistoryStatus | 'All')[] = ['All', 'New', 'Reviewed', 'Accepted', 'Rejected', 'Archived']
 
@@ -19,15 +26,82 @@ const statusVariant: Record<HistoryStatus, 'default' | 'neutral' | 'success' | '
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<(typeof statuses)[number]>('All')
-  const [open, setOpen] = useState<string | null>('rec-2041')
+  const [open, setOpen] = useState<string | null>(null)
+  const [rows, setRows] = useState<HistoryItem[]>([])
+  const [historyResult, setHistoryResult] = useState<ServiceResult<HistoryItem[]>>({ data: null, source: null, status: 'loading', error: null })
+  const [auditEvents, setAuditEvents] = useState<AuditEventRow[]>([])
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [auditLoaded, setAuditLoaded] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [timeRange, setTimeRangeState] = useState<{ from: string; to: string } | null>(null)
 
-  const rows = history.filter((h) => filter === 'All' || h.status === filter)
+  useEffect(() => {
+    const uid = getSelectedResourceUid()
+    const range = getTimeRange()
+    setResourceUid(uid)
+    setTimeRangeState(range)
+  }, [])
+
+  useEffect(() => {
+    if (!resourceUid || !timeRange) {
+      setAuditError('Select a resource and time window to view audit events.')
+      setAuditLoaded(true)
+      return
+    }
+
+    setAuditError(null)
+    setAuditLoaded(false)
+    getHistory().then((hRes) => {
+      setHistoryResult(hRes)
+      setRows(hRes.data ?? [])
+      setHistoryLoaded(hRes.status === 'ready')
+      if (hRes.data) {
+        if (!open || !hRes.data.find((x) => x.id === open)) {
+          setOpen(hRes.data[0]?.id ?? null)
+        }
+      }
+    })
+
+    getAuditEvents({
+      entity_type: 'recommendation',
+      from: timeRange.from,
+      to: timeRange.to,
+      limit: 50,
+    }).then((res) => {
+      if (res.source === 'backend' && res.data) {
+        setAuditEvents(
+          res.data.items.map((e) => ({
+            event_id: e.event_id,
+            occurred_at: e.occurred_at,
+            action: e.action,
+            actor_type: e.actor.actor_type,
+            actor_user_id: e.actor.user_id ?? '—',
+            actor_auth_method: e.actor.auth_method ?? '—',
+            correlation_id: e.trace.correlation_id ?? '—',
+            operation_id: e.trace.operation_id ?? '—',
+            resource_type: e.resource.type ?? '—',
+            resource_id: e.resource.id ?? '—',
+            details: e.metadata ?? {},
+          }))
+        )
+      } else {
+        setAuditError(res.error ?? 'Could not retrieve the audit trail.')
+      }
+      setAuditLoaded(true)
+    }).catch((error: unknown) => {
+      setAuditError(error instanceof Error ? error.message : 'Could not retrieve the audit trail.')
+      setAuditLoaded(true)
+    })
+  }, [resourceUid, timeRange])
+
+  const filtered = rows.filter((h) => filter === 'All' || h.status === filter)
 
   return (
     <div>
       <PageHeader
         title="History"
-        description="Every recommendation is traceable and auditable — with the configuration, savings, risk, confidence, status, and the model/rule version used at the time."
+        description="Recommendation history and audit trail. The history shows generated right-sizing decisions; the audit trail records who made each decision and when."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -47,7 +121,13 @@ export default function HistoryPage() {
         ))}
       </div>
 
-      <Panel bodyClassName="p-0" className="overflow-hidden">
+      <Panel
+        title="Historial de recomendaciones"
+        description="Each generated recommendation with its configuration, savings, risk, confidence, and status."
+        className="mb-4"
+        action={historyResult.status === 'ready' && historyResult.source === 'mock' ? <Badge variant="outline">Mock</Badge> : undefined}
+      >
+        {historyResult.status !== 'ready' && <p className="p-4 text-sm text-muted-foreground">{historyResult.status === 'loading' ? 'Loading history...' : historyResult.status === 'error' ? historyResult.error : 'No recommendations recorded.'}</p>}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
@@ -63,7 +143,7 @@ export default function HistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((h) => (
+              {filtered.map((h) => (
                 <Fragment key={h.id}>
                   <tr
                     className="cursor-pointer border-b border-border hover:bg-muted/40"
@@ -94,8 +174,8 @@ export default function HistoryPage() {
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <Detail label="Recommendation ID" value={h.id} mono />
                           <Detail label="Model / rule version" value={h.version} mono />
-                          <Detail label="Analysis period" value="Last 30 days" />
-                          <Detail label="Evidence snapshot" value="Frozen at generation" />
+                            <Detail label="Analysis period" value={h.analysisPeriod ?? 'Not available'} />
+                            <Detail label="Evidence snapshot" value="Not available in this list" />
                         </div>
                         <p className="mt-3 text-xs text-muted-foreground">
                           Opening a past recommendation replays the evidence exactly as it was when
@@ -107,9 +187,72 @@ export default function HistoryPage() {
                   )}
                 </Fragment>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-5 py-8 text-center text-xs text-muted-foreground">
+                    No recommendations to display.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+      </Panel>
+
+      <Panel
+        title="Audit trail"
+        description="Recorded audit events for recommendation decisions: who, when, what action, and associated evidence."
+        className="mt-4"
+        action={<Badge variant="outline" className="text-[9px]">{auditError ? 'Error' : auditLoaded ? 'Live data' : 'Loading'}</Badge>}
+      >
+        {!auditLoaded ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">
+            Loading audit trail...
+          </div>
+        ) : auditError ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">{auditError}</div>
+        ) : auditEvents.length === 0 ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">
+            No audit events for the selected resource and time window.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[960px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="px-5 py-2.5 text-left font-medium">Date</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Action</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Actor</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Method</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Correlation ID</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Operation ID</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Recurso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEvents.map((e) => (
+                  <tr key={e.event_id} className="border-b border-border last:border-0 hover:bg-muted/40 cursor-pointer">
+                    <td className="px-5 py-3 tabular-nums text-xs text-muted-foreground font-mono">
+                      {e.occurred_at}
+                    </td>
+                    <td className="px-3 py-3 text-xs text-foreground">{e.action}</td>
+                    <td className="px-3 py-3 text-xs font-mono text-foreground">{e.actor_user_id}</td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground">{e.actor_auth_method}</td>
+                    <td className="px-3 py-3 text-xs font-mono text-foreground">
+                      {e.correlation_id.slice(0, 8)}...
+                    </td>
+                    <td className="px-3 py-3 text-xs font-mono text-foreground">
+                      {e.operation_id === '—' ? '—' : e.operation_id.slice(0, 8) + '...'}
+                    </td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground">
+                      {e.resource_type} / {e.resource_id}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
     </div>
   )
@@ -122,4 +265,26 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
       <p className={cn('mt-0.5 text-xs font-medium text-foreground', mono && 'font-mono')}>{value}</p>
     </div>
   )
+}
+
+const historyMock: HistoryItem[] = [
+  { id: 'rec-2041', date: '2026-09-13', resource: 'sql-prod-orders-eastus', current: '8 vCores', proposed: '4 vCores', savings: '24.2%', risk: 'Low', confidence: 91, status: 'New', version: 'v1.4.2', analysisPeriod: 'Last 30 days' },
+  { id: 'rec-1990', date: '2026-08-30', resource: 'sql-prod-billing-eastus', current: '6 vCores', proposed: '4 vCores', savings: '18.6%', risk: 'Low', confidence: 88, status: 'Accepted', version: 'v1.4.1', analysisPeriod: 'Last 30 days' },
+  { id: 'rec-1943', date: '2026-08-14', resource: 'sql-prod-analytics-westus', current: '16 vCores', proposed: '16 vCores', savings: '—', risk: 'None', confidence: 62, status: 'Reviewed', version: 'v1.4.1', analysisPeriod: 'Last 30 days' },
+  { id: 'rec-1902', date: '2026-07-29', resource: 'sql-prod-orders-eastus', current: '8 vCores', proposed: '6 vCores', savings: '11.9%', risk: 'Medium', confidence: 71, status: 'Rejected', version: 'v1.4.0', analysisPeriod: 'Last 30 days' },
+  { id: 'rec-1855', date: '2026-07-11', resource: 'sql-prod-identity-eastus', current: '4 vCores', proposed: '—', savings: '—', risk: 'None', confidence: 41, status: 'Archived', version: 'v1.3.9', analysisPeriod: 'Last 30 days' },
+]
+
+type AuditEventRow = {
+  event_id: number
+  occurred_at: string
+  action: string
+  actor_type: string
+  actor_user_id: string
+  actor_auth_method: string
+  correlation_id: string
+  operation_id: string
+  resource_type: string
+  resource_id: string
+  details: Record<string, any>
 }

@@ -34,14 +34,14 @@ El resultado apoya la decisión de continuar con Azure SQL como dominio de Relea
 
 | Acción | Prioridad | Estado |
 |---|---|---|
-| Definir una ventana histórica mínima | Crítica | Pendiente |
-| Implementar contrato normalizado de precios | Crítica | Pendiente |
-| Etiquetar cada workload y configuración | Crítica | Pendiente |
-| Separar costo facturado y costo contrafactual | Crítica | Pendiente |
-| Incorporar latencia, throughput, errores y SLA | Crítica | Pendiente |
-| Restringir el acceso público del laboratorio | Alta | Pendiente |
-| Registrar versiones y parámetros completos de ejecución | Alta | Pendiente |
-| Repetir el laboratorio con histórico extendido | Alta | Pendiente |
+| Definir una ventana histórica mínima | Crítica | Pendiente (trasladada a backlog) |
+| Implementar contrato normalizado de precios | Crítica | Pendiente (trasladada a backlog) |
+| Etiquetar cada workload y configuración | Crítica | Pendiente (trasladada a backlog) |
+| Separar costo facturado y costo contrafactual | Crítica | Pendiente (trasladada a backlog) |
+| Incorporar latencia, throughput, errores y SLA | Crítica | Pendiente (trasladada a backlog) |
+| Restringir el acceso público del laboratorio | Alta | Pendiente (trasladada a backlog) |
+| Registrar versiones y parámetros completos de ejecución | Alta | Pendiente (trasladada a backlog) |
+| Repetir el laboratorio con histórico extendido | Alta | Pendiente (trasladada a backlog) |
 
 ## Veredicto
 

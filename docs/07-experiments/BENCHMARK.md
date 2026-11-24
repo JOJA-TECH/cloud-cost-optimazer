@@ -1,5 +1,8 @@
 # BEN-XXX — Benchmark
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear registros de benchmark (BEN-XXX). No contiene resultados de ningún benchmark ejecutado.
+
+
 - **Objetivo:**
 - **Fecha:**
 - **Responsable:**

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,7 +127,9 @@ func (m *TokenManager) Validate(ctx context.Context, token string) (IdentityCont
 	return m.ValidateAccessToken(token)
 }
 
-// GenerateTokenPair creates both access and refresh tokens.
+// GenerateTokenPair creates both access and refresh tokens. The refresh token
+// must be persisted before the pair is returned; if persistence fails the
+// login fails and no token is issued.
 func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) {
 	access, err := m.GenerateAccessToken(ic)
 	if err != nil {
@@ -138,7 +141,9 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 	}
 	expiresAt := time.Now().Add(m.config.AccessTokenTTL).UnixMilli()
 	refreshExpiresAt := time.Now().Add(m.config.RefreshTokenTTL)
-	m.persistRefreshToken(refresh, ic.UserID, refreshExpiresAt)
+	if err := m.persistRefreshToken(refresh, ic.UserID, refreshExpiresAt); err != nil {
+		return TokenPair{}, err
+	}
 	return TokenPair{
 		AccessToken:  access,
 		RefreshToken: refresh,
@@ -147,22 +152,23 @@ func (m *TokenManager) GenerateTokenPair(ic IdentityContext) (TokenPair, error) 
 }
 
 // StoreRefreshToken stores a refresh token with its expiry.
-func (m *TokenManager) StoreRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
-	m.persistRefreshToken(token, userID, expiresAt)
+func (m *TokenManager) StoreRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) error {
+	return m.persistRefreshToken(token, userID, expiresAt)
 }
 
 // persistRefreshToken stores a refresh token: hashed in the DB when available,
-// in memory otherwise. Persistence is best-effort — a failed write is logged
-// but does not fail the login.
-func (m *TokenManager) persistRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) {
+// in memory otherwise. A failed DB write is returned so the caller can fail
+// the login instead of issuing an unpersistable refresh token.
+func (m *TokenManager) persistRefreshToken(token string, userID uuid.UUID, expiresAt time.Time) error {
 	if m.db == nil {
 		m.refreshTokens.Store(token, refreshTokenEntry{userID: userID, expiresAt: expiresAt})
-		return
+		return nil
 	}
 	row := database.RefreshTokenModel{TokenHash: hashToken(token), UserID: userID, ExpiresAt: expiresAt, CreatedAt: time.Now()}
 	if err := m.db.Table(database.TableName(m.db, "iam", "refresh_tokens")).Create(&row).Error; err != nil {
-		slog.Error("persist refresh token", "error", err)
+		return fmt.Errorf("persist refresh token: %w", err)
 	}
+	return nil
 }
 
 // hashToken returns the SHA-256 hex digest of a raw token.
@@ -191,20 +197,29 @@ func (m *TokenManager) ValidateRefreshToken(token string) (uuid.UUID, bool) {
 	return entry.userID, true
 }
 
-// validateDBRefreshToken looks the token up by hash and deletes it in the same
-// call (consume-on-use). RowsAffected == 0 on delete means another request
-// already consumed it, so the token is rejected.
+// validateDBRefreshToken consumes (deletes) the refresh token atomically and
+// returns the associated user id. A single DELETE ... RETURNING ensures that
+// concurrent attempts to reuse the same token are rejected (RowsAffected == 0).
+// Expired tokens are never returned.
 func (m *TokenManager) validateDBRefreshToken(token string) (uuid.UUID, bool) {
 	table := database.TableName(m.db, "iam", "refresh_tokens")
-	var row database.RefreshTokenModel
-	if err := m.db.Table(table).Where("token_hash = ?", hashToken(token)).First(&row).Error; err != nil {
+	type consumedRow struct {
+		UserID    uuid.UUID
+		ExpiresAt time.Time
+	}
+	var row consumedRow
+	err := m.db.Raw(
+		"DELETE FROM "+table+
+			" WHERE token_hash = ? AND expires_at > ?"+
+			" RETURNING user_id, expires_at",
+		hashToken(token), time.Now(),
+	).Scan(&row).Error
+	if err != nil {
 		return uuid.Nil, false
 	}
-	del := m.db.Table(table).Where("token_hash = ?", hashToken(token)).Delete(&database.RefreshTokenModel{})
-	if del.Error != nil || del.RowsAffected == 0 {
-		return uuid.Nil, false
-	}
-	if time.Now().After(row.ExpiresAt) {
+	// row.UserID is populated by RETURNING user_id; if no row matched, it stays
+	// the zero value. This works reliably on both PostgreSQL and SQLite.
+	if row.UserID == uuid.Nil {
 		return uuid.Nil, false
 	}
 	return row.UserID, true
@@ -410,13 +425,28 @@ func (a *AccountLockout) lockedKey(email string) string {
 	return "cco:lock:locked:" + email
 }
 
+// authFailClosed reports whether Valkey/cache failures must deny requests
+// instead of allowing them (fail-closed). Controlled via CCO_SECURITY_FAIL_CLOSED;
+// forced true when CCO_ENV=prod.
+func authFailClosed() bool {
+	if os.Getenv("CCO_ENV") == "prod" {
+		return true
+	}
+	return os.Getenv("CCO_SECURITY_FAIL_CLOSED") == "true"
+}
+
 // IsLocked reports whether the email is currently locked out.
+// When fail-closed (prod or CCO_SECURITY_FAIL_CLOSED=true), a Valkey error
+// treats the account as locked (deny) rather than failing open.
 func (a *AccountLockout) IsLocked(email string) bool {
 	email = strings.ToLower(email)
 	if a.valkey != nil {
 		n, err := a.valkey.Do(context.Background(), a.valkey.B().Exists().Key(a.lockedKey(email)).Build()).ToInt64()
 		if err != nil {
-			// Prototype policy: fail open — never block logins because the cache is down.
+			if authFailClosed() {
+				slog.Warn("lockout: valkey EXISTS failed, denying (fail-closed)", "error", err)
+				return true
+			}
 			slog.Warn("lockout: valkey EXISTS failed, failing open", "error", err)
 			return false
 		}
@@ -526,30 +556,48 @@ func (a *AccountLockout) RemainingAttempts(email string) int {
 // rolePermissions maps system role_code -> permission_codes.
 // Matches iam.roles + iam.permissions + iam.role_permissions in cco_app.
 var rolePermissions = map[string][]string{
-	"platform_admin": {"*:*"}, // wildcard handled in Can()
+	"platform_admin": {"*:*", "audit:read"}, // wildcard handled in Can()
+	"auditor":        {"audit:read", "audit:read:organization"},
 	"db_admin": {
 		"cloud_accounts:*",
+		"data_sources:*",
+		"acquisitions:*",
 		"resources:read",
+		"data:read",
 		"analytics:read",
+		"analytics:write",
 		"recommendations:read",
+		"recommendations:write",
+		"recommendations:evaluate",
 		"reports:read",
+		"reports:write",
 		"organizations:read",
 		"projects:read",
 		"members:read",
 	},
 	"analyst": {
 		"resources:read",
+		"data:read",
 		"analytics:read",
+		"analytics:write",
 		"recommendations:read",
+		"recommendations:write",
+		"recommendations:evaluate",
 		"reports:read",
+		"reports:write",
 		"projects:read",
 	},
 	"viewer": {
 		"resources:read",
+		"data:read",
+		"recommendations:read",
+		"reports:read",
 		"dashboards:read",
 	},
 	"collector": {
 		"metrics:write",
+		"acquisitions:run",
+		"acquisitions:read",
 		"config:read",
 		"resources:read",
 	},
@@ -562,10 +610,10 @@ var rolePermissions = map[string][]string{
 
 // membershipRolePermissions maps org membership role -> permission_codes.
 var membershipRolePermissions = map[string][]string{
-	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "resources:*", "analytics:*", "recommendations:*", "reports:*"},
-	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
-	"member": {"projects:create", "resources:read", "analytics:read", "recommendations:read", "reports:read"},
-	"viewer": {"resources:read", "dashboards:read"},
+	"owner":  {"organizations:manage", "members:manage", "projects:manage", "cloud_accounts:*", "data_sources:*", "acquisitions:*", "resources:*", "data:read", "analytics:*", "recommendations:*", "reports:*", "audit:read", "audit:read:organization"},
+	"admin":  {"members:invite", "projects:manage", "cloud_accounts:*", "data_sources:read", "data_sources:write", "acquisitions:read", "acquisitions:run", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "recommendations:write", "recommendations:evaluate", "reports:read", "reports:write", "audit:read", "audit:read:organization"},
+	"member": {"projects:create", "data_sources:read", "acquisitions:read", "resources:read", "data:read", "analytics:read", "analytics:write", "recommendations:read", "reports:read"},
+	"viewer": {"resources:read", "acquisitions:read", "data:read", "recommendations:read", "reports:read", "dashboards:read"},
 }
 
 // PermissionEngine evaluates permissions for an IdentityContext.
@@ -579,11 +627,14 @@ func NewPermissionEngine(db *gorm.DB) *PermissionEngine {
 	return &PermissionEngine{rolePermissions: loadRolePermissions(db)}
 }
 
-// loadRolePermissions builds role_code -> permission_codes from the DB and
-// falls back to the static rolePermissions map on any failure.
+// loadRolePermissions builds role_code -> permission_codes from the DB.
+// It falls back to the static rolePermissions map only when db is nil
+// (test mode). On a DB query error it logs the error and returns an empty
+// map (fail-closed) instead of silently granting static permissions. An
+// empty result also fails closed with a warning.
 func loadRolePermissions(db *gorm.DB) map[string][]string {
 	if db == nil {
-		slog.Warn("permission engine: using static role map", "reason", "no database")
+		slog.Warn("permission engine: using static role map", "reason", "database is nil (test mode)")
 		return rolePermissions
 	}
 	var rows []struct {
@@ -596,13 +647,13 @@ func loadRolePermissions(db *gorm.DB) map[string][]string {
 		Joins("JOIN " + database.TableName(db, "iam", "role_permissions") + " rp ON rp.role_id = r.role_id").
 		Joins("JOIN " + database.TableName(db, "iam", "permissions") + " p ON p.permission_id = rp.permission_id").
 		Scan(&rows).Error
-	if err != nil || len(rows) == 0 {
-		reason := "query error"
-		if err == nil {
-			reason = "empty result"
-		}
-		slog.Warn("permission engine: using static role map", "reason", reason, "error", err)
-		return rolePermissions
+	if err != nil {
+		slog.Error("permission engine: failed to load role permissions from DB; failing closed", "error", err)
+		return make(map[string][]string)
+	}
+	if len(rows) == 0 {
+		slog.Warn("permission engine: no role permissions found in DB; failing closed")
+		return make(map[string][]string)
 	}
 	m := make(map[string][]string, len(rows))
 	for _, r := range rows {
@@ -716,19 +767,27 @@ func (r *MembershipResolver) ResolveProjectRole(ctx context.Context, userID, pro
 	return r.ResolveOrgRole(ctx, userID, proj.OrganizationID)
 }
 
-// ResolvePermissions computes effective permissions for user in org/project context.
-func (r *MembershipResolver) ResolvePermissions(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, projectID *uuid.UUID) ([]string, error) {
-	// Get system roles
+// SystemRoles returns the codes of the system roles assigned to a user.
+func (r *MembershipResolver) SystemRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	userRoles, err := r.repo.ListUserRolesByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	var systemRoles []string
+	systemRoles := make([]string, 0, len(userRoles))
 	for _, ur := range userRoles {
-		role, err := r.repo.(RoleRepository).FindRoleByID(ctx, ur.RoleID)
+		role, err := r.repo.FindRoleByID(ctx, ur.RoleID)
 		if err == nil {
 			systemRoles = append(systemRoles, role.RoleCode)
 		}
+	}
+	return systemRoles, nil
+}
+
+// ResolvePermissions computes effective permissions for user in org/project context.
+func (r *MembershipResolver) ResolvePermissions(ctx context.Context, userID uuid.UUID, orgID uuid.UUID, projectID *uuid.UUID) ([]string, error) {
+	systemRoles, err := r.SystemRoles(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get org membership role

@@ -364,9 +364,9 @@ No hay consultas a base de datos en el path caliente de cada request más allá 
 | ADR-004 | Arquitectura de AuthN/AuthZ en monolito Go (sin gateway separado) | `docs/04-architecture/decisions/ADR-004-iam-authentication.md` |
 | ADR-003 | Persistencia GORM portable para `cco_app` | `docs/04-architecture/decisions/ADR-003-gorm-portable-persistence.md` |
 | ADR-002 | Separación de bases de datos `cco_app` y `cco_data` | `docs/04-architecture/decisions/ADR-002-two-postgresql-databases.md` |
-| DEC-005 | Backend como API Gateway en Go | `docs/registry/DECISION-LOG.md` |
-| DEC-011 | Autenticación con proveedor externo | `docs/registry/DECISION-LOG.md` |
-| DEC-027 | Autenticación y autorización dentro del monolito Go | `docs/registry/DECISION-LOG.md` |
+| DEC-005 | Backend como API Gateway en Go | `docs/01-governance/DECISION-LOG.md` |
+| DEC-011 | Autenticación con proveedor externo | `docs/01-governance/DECISION-LOG.md` |
+| DEC-027 | Autenticación y autorización dentro del monolito Go | `docs/01-governance/DECISION-LOG.md` |
 
 ## Pruebas relacionadas
 
@@ -383,7 +383,7 @@ Ejecución: `go test ./... -count=1` desde `backend/`.
 
 ## Limitaciones conocidas y caminos de upgrade
 
-Los shortcuts de Report 1.0 fueron resueltos en la fase de endurecimiento IAM (ver DEC-032–DEC-035 en `docs/registry/DECISION-LOG.md` y `ADR-008`). Quedan abiertos:
+Los shortcuts de Report 1.0 fueron parcialmente resueltos en la fase de endurecimiento IAM (ver DEC-028 a DEC-035 en `docs/01-governance/DECISION-LOG.md` y `ADR-004` a `ADR-008`). Quedan abiertos:
 
 | Limitación | Código | Techo | Camino de upgrade |
 |----------|--------|-------|-------------------|

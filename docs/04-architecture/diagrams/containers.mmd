@@ -1,0 +1,58 @@
+%% Contenedores (C4 Level 2) — Cloud Cost Optimizer
+flowchart TB
+    classDef client fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef app fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef db fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef ext fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef infra fill:#eceff1,stroke:#37474f,stroke-width:2px
+
+    subgraph Usuario["Usuario / Navegador"]
+        Browser[Navegador web]:::client
+    end
+
+    subgraph Backend["Backend cco-app (Go, :8080)"]
+        Router[Router net/http + middlewares<br/>CORS · Security headers · Rate limit · Lockout]:::app
+        IAM[Módulo IAM<br/>JWT · Argon2id · OIDC · M2M<br/>roles y permisos]:::app
+        Cloud[Módulo Cloud<br/>cuentas · validación · sync · bindings]:::app
+        Acquisition[Módulo Adquisición<br/>scheduler · ciclos de métricas/costos]:::app
+        Data[Módulo Datos<br/>API solo lectura: métricas, costos,<br/>config-snapshots, cobertura]:::app
+        Analytics[Módulo Analítica<br/>snapshots, percentiles, tendencias,<br/>patrones, capacidad, costos, DES,<br/>datasets, forecasts]:::app
+    end
+
+    subgraph DBs["Bases de datos PostgreSQL (local)"]
+        CCO_APP[(cco_app<br/>esquemas: iam, organization,<br/>cloud, app, audit)]:::db
+        CCO_DATA[(cco_data<br/>esquemas: raw, core, catalog,<br/>feat, opt, ml, contract)]:::db
+    end
+
+    subgraph Externos["Servicios externos"]
+        Valkey[Valkey · rate limiting ·<br/>account lockout (opcional)]:::infra
+        Azure[Azure ARM · Monitor ·<br/>Cost Management · SQL DMV]:::ext
+        ML[Servicio ML externo<br/>(Module 6, futuro)]:::ext
+    end
+
+    Browser -->|HTTPS API REST| Router
+    Router -->|authz / authn| IAM
+    Router -->|cloud routes| Cloud
+    Router -->|acquisition routes| Acquisition
+    Router -->|data routes| Data
+    Router -->|analytics routes| Analytics
+
+    IAM -->|usuarios, roles, permisos| CCO_APP
+    Cloud -->|cuentas, recursos, bindings| CCO_APP
+    Acquisition -->|objetivos y credenciales| CCO_APP
+    Acquisition -->|telemetría (raw.*, core.*)| CCO_DATA
+    Data -->|lecturas (core.*, raw.*)| CCO_DATA
+    Analytics -->|evidencia (feat.*, opt.*, ml.*)| CCO_DATA
+
+    IAM -->|estado anti-abuso (opcional)| Valkey
+    Cloud -->|conexión y recursos| Azure
+    Acquisition -->|métricas y costos| Azure
+    Analytics -->|forecasts via MLPort| ML
+
+    linkStyle default stroke-width:2px,fill:none,stroke:#666
+    linkStyle 0 stroke:#01579b,stroke-width:3px
+    linkStyle 1,2,3,4,5 stroke:#e65100,stroke-width:2px
+    linkStyle 6,7,8 stroke:#1b5e20,stroke-width:3px
+    linkStyle 9,10 stroke:#37474f,stroke-width:2px
+    linkStyle 11,12 stroke:#4a148c,stroke-width:2px
+    linkStyle 13 stroke:#4a148c,stroke-width:3px

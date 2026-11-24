@@ -6,4 +6,4 @@
 
 ## Notas de integridad
 
-El hash corresponde al archivo de entrada `responses.zip`. La ficha completa se encuentra en `06-data/DATA-001-azure-integration-responses.md`. La siguiente versión debe incluir histórico extendido, etiquetas de workload y métricas de latencia, throughput y SLA.
+El hash corresponde al archivo de entrada `responses.zip`. La ficha completa se encuentra en `docs/06-data/DATA-001-azure-integration-responses.md`. La siguiente versión debe incluir histórico extendido, etiquetas de workload y métricas de latencia, throughput y SLA.

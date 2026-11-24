@@ -3,7 +3,7 @@
 - **Tipo:** No funcional
 - **Prioridad:** Media
 - **Fuente:** Stakeholder / Reunión MTG-002
-- **Estado:** Propuesto; pendiente de precisión
+- **Estado:** Aprobado; pendiente de precisión
 - **Fecha:** 2026-09-12
 
 ## Descripción

@@ -1,0 +1,1 @@
+pnpm: the global target of the pnpm shim points back at the shim

@@ -1,5 +1,8 @@
 # Data Dictionary — DATA-001
 
+> **Versión del documento:** v1.0 · 2026-11-22 · Estado: Ejecutado
+
+
 | Campo / grupo | Tipo | Descripción | Unidad | Permitidos / rango | Nullable | Fuente |
 |---|---|---|---|---|---|---|
 | Identificador de recurso | Texto | Identifica servidor o base analizada | No aplica | Ruta de recurso Azure | Sí según fuente | Configuración y métricas |

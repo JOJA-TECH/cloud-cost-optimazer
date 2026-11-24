@@ -1,5 +1,8 @@
 # DATA-XXX — Dataset Card
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear fichas de dataset (DATA-XXX). No contiene datos reales de ningún dataset del proyecto. Copiar y completar cuando se registre un dataset concreto.
+
+
 ## Identificación
 
 - **Nombre:**

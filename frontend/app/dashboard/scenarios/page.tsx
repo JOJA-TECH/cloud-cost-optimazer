@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, FileSearch, Play, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { PageHeader, Panel, RiskBadge } from '@/components/dashboard/ui'
@@ -8,9 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bars } from '@/components/charts'
 import { cn } from '@/lib/utils'
-import { scenarios } from '@/lib/mock-data'
+import { isDemoMode } from '@/lib/demo-mode'
+import { getScenarios, getPersistedScenarios, evaluateRecommendations, getSelectedResourceUid } from '@/lib/api-services'
+import type { ScenarioItem, PersistedScenario, ServiceResult } from '@/lib/api-services'
 
-const rows: { key: string; label: string; render: (s: (typeof scenarios)[number]) => React.ReactNode }[] = [
+const rows: { key: string; label: string; render: (s: ScenarioItem) => React.ReactNode }[] = [
   { key: 'capacity', label: 'Capacity', render: (s) => s.capacity },
   { key: 'cost', label: 'Estimated cost', render: (s) => `$${s.cost}` },
   { key: 'savings', label: 'Savings', render: (s) => (s.savings ? `${s.savings}%` : '—') },
@@ -29,10 +31,129 @@ const rows: { key: string; label: string; render: (s: (typeof scenarios)[number]
   { key: 'confidence', label: 'Confidence', render: (s) => (s.confidence ? `${s.confidence}%` : '—') },
 ]
 
-const costBars = scenarios.map((s) => ({ label: s.label, cost: s.cost }))
-
 export default function ScenariosPage() {
+  const [scenarios, setScenarios] = useState<ScenarioItem[]>([])
   const [selected, setSelected] = useState('a')
+  const [resourceUid, setResourceUid] = useState<string | null>(null)
+  const [simulating, setSimulating] = useState(false)
+  const [simulateResult, setSimulateResult] = useState<any>(null)
+  const [scenariosSource, setScenariosSource] = useState<'mock' | 'backend' | null>(null)
+  const [scenariosStatus, setScenariosStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
+  const [demoMode, setDemoModeState] = useState<boolean | null>(null)
+  const [realResult, setRealResult] = useState<ServiceResult<PersistedScenario[]>>({ data: null, source: null, status: 'loading', error: null })
+
+  useEffect(() => {
+    const uid = getSelectedResourceUid()
+    setResourceUid(uid)
+    setDemoModeState(isDemoMode())
+  }, [])
+
+  useEffect(() => {
+    if (demoMode === null) return
+    if (demoMode) {
+      getScenarios().then((res) => {
+        setScenarios(res.data ?? [])
+        setScenariosStatus(res.status)
+        setScenariosSource(res.source)
+      })
+      return
+    }
+    if (!resourceUid) {
+      setRealResult({ data: null, source: null, status: 'empty', error: 'no_resource' })
+      return
+    }
+    getPersistedScenarios(resourceUid).then(setRealResult)
+  }, [demoMode, resourceUid])
+
+  async function handleSimulate() {
+    if (!resourceUid) return
+    setSimulating(true)
+    setSimulateResult(null)
+    try {
+      const result = await evaluateRecommendations(
+        resourceUid,
+        null,
+        30,
+        '',
+        '',
+        'USD'
+      )
+      if (result.source === 'backend') {
+        setSimulateResult(result.data)
+      } else {
+        setSimulateResult({ error: result.error || 'Evaluation failed' })
+      }
+    } catch {
+      // Error handled by tryBackend
+    } finally {
+      setSimulating(false)
+    }
+  }
+
+  if (demoMode !== true) {
+    return (
+      <div>
+        <PageHeader title="Scenario analysis" description="Persisted candidates and simulations for the selected resource. Missing values are never inferred." />
+        {realResult.status !== 'ready' || !realResult.data?.length ? (
+          <Panel>
+            <p className="text-sm text-muted-foreground">
+              {realResult.status === 'loading' ? 'Loading scenarios...' : realResult.status === 'error' ?
+                `Could not retrieve scenarios: ${realResult.error ?? 'Unknown error'}` :
+                realResult.error === 'no_resource' ? 'Select a resource.' : 'No persisted scenarios for this resource.'}
+            </p>
+            <Button className="mt-3" size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/intelligence" />}>Open recommendation evaluation</Button>
+          </Panel>
+        ) : realResult.data.map(scenario => (
+          <Panel key={scenario.scenario_uid} className="mb-4" title={`Scenario ${scenario.scenario_uid.slice(0, 8)}`} description={`Status: ${scenario.status} · Horizon: ${scenario.horizon_days} days · Created: ${scenario.created_at}`}>
+            {scenario.candidates.length === 0 ? <p className="text-xs text-muted-foreground">No persisted candidates.</p> : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-sm">
+                  <thead><tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="p-2">Candidate</th><th className="p-2">Capacity</th><th className="p-2">Monthly cost</th>
+                    <th className="p-2">Predicted CPU p99</th><th className="p-2">Latency p95</th><th className="p-2">Savings</th><th className="p-2">Feasible</th>
+                  </tr></thead>
+                  <tbody>{scenario.candidates.map(candidate => (
+                    <tr key={candidate.candidate_id} className="border-b">
+                      <td className="p-2">{candidate.candidate_id}{candidate.recommended ? ' · recommended' : ''}</td>
+                      <td className="p-2">{candidate.capacity_vcores == null ? '—' : `${candidate.capacity_vcores} vCores`}{candidate.compute_model ? ` · ${candidate.compute_model}` : ''}</td>
+                      <td className="p-2">{candidate.predicted_monthly_cost != null ? `$${candidate.predicted_monthly_cost.toFixed(2)} (simulated)` :
+                        candidate.estimated_monthly_cost != null ? `$${candidate.estimated_monthly_cost.toFixed(2)} (candidate)` : '—'}</td>
+                      <td className="p-2">{candidate.predicted_cpu_p99 == null ? '—' : `${candidate.predicted_cpu_p99}%`}</td>
+                      <td className="p-2">{candidate.predicted_latency_p95_ms == null ? '—' : `${candidate.predicted_latency_p95_ms} ms`}</td>
+                      <td className="p-2">{candidate.estimated_savings_pct == null ? '—' : `${candidate.estimated_savings_pct}%`}</td>
+                      <td className="p-2">{candidate.feasible == null ? 'Not evaluated' : candidate.feasible ? 'Yes' : 'No'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        ))}
+      </div>
+    )
+  }
+
+  if (scenariosStatus !== 'ready' || !scenarios.length) {
+    return (
+      <div>
+        <PageHeader title="Scenario analysis" description="Comparison of evaluated configurations for the selected resource." />
+        <Panel>
+          <p className="text-sm text-muted-foreground">
+            {scenariosStatus === 'loading' ? 'Loading scenarios...' : scenariosStatus === 'error'
+              ? 'Could not retrieve scenarios.' : 'No evaluated scenarios available. The backend does not expose a scenario query for this view.'}
+          </p>
+          {scenariosStatus !== 'loading' && resourceUid && !isDemoMode() && (
+            <div className="mt-3">
+              <Button size="sm" variant="outline" onClick={handleSimulate} disabled={simulating}>
+                {simulating ? 'Evaluating...' : 'Request backend evaluation'}
+              </Button>
+              {simulateResult && <pre className="mt-3 overflow-x-auto text-xs">{JSON.stringify(simulateResult, null, 2)}</pre>}
+            </div>
+          )}
+        </Panel>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -92,13 +213,19 @@ export default function ScenariosPage() {
       </Panel>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2">
-          <Bars data={costBars} xKey="label" prefix="$" height={230} bars={[{ key: 'cost', color: 'var(--chart-1)', name: 'Est. cost' }]} />
+        <Panel title="Estimated monthly cost" description="Lower is cheaper — but not always feasible" className="lg:col-span-2" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Loading'}</Badge>}>
+          <Bars
+            data={scenarios.map((s) => ({ label: s.label, cost: s.cost }))}
+            xKey="label"
+            prefix="$"
+            height={230}
+            bars={[{ key: 'cost', color: 'var(--chart-1)', name: 'Est. cost' }]}
+          />
         </Panel>
 
-        <Panel title="Selected scenario">
+        <Panel title="Selected scenario" action={<Badge variant="outline" className="text-[9px]">{scenariosSource ?? 'Loading'}</Badge>}>
           {(() => {
-            const s = scenarios.find((x) => x.id === selected)!
+            const s = scenarios.find((x) => x.id === selected) ?? scenarios[0]
             return (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -132,9 +259,14 @@ export default function ScenariosPage() {
                     <ArrowRight />
                   </Button>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="outline">
-                      <Play />
-                      Simulate
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSimulate}
+                      disabled={!resourceUid || simulating}
+                      className={!resourceUid || simulating ? 'opacity-50 cursor-not-allowed' : ''}
+                    >
+                      {simulating ? 'Simulating...' : <><Play /> Simulate</>}
                     </Button>
                     <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/dashboard/recommendations" />}>
                       <FileSearch />
@@ -142,11 +274,26 @@ export default function ScenariosPage() {
                     </Button>
                   </div>
                 </div>
+                {simulateResult && (
+                  <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs">
+                    <p className="text-[10px] font-semibold text-muted-foreground">Evaluation result</p>
+                    <pre className="text-[10px] text-muted-foreground break-all">{JSON.stringify(simulateResult, null, 2)}</pre>
+                  </div>
+                )}
               </div>
             )
           })()}
         </Panel>
       </div>
+
+      {!resourceUid && (
+        <div className="mt-4 rounded-lg border border-border bg-muted/50 p-6 text-center">
+          <p className="text-sm text-muted-foreground">No resource selected</p>
+          <p className="text-xs text-muted-foreground">
+            Select a cloud resource from the top bar to enable scenario simulation.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -159,3 +306,54 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+
+const scenariosMock: ScenarioItem[] = [
+  {
+    id: 'current',
+    label: 'Current',
+    capacity: '8 vCores',
+    vCores: 8,
+    cost: 486,
+    savings: null,
+    cpuP99: 41,
+    latency: 'baseline',
+    latencyPct: 0,
+    risk: 'None',
+    sla: 'Pass',
+    confidence: null,
+    feasible: true,
+    recommended: false,
+  },
+  {
+    id: 'a',
+    label: 'Candidate A',
+    capacity: '4 vCores',
+    vCores: 4,
+    cost: 368,
+    savings: 24.2,
+    cpuP99: 58,
+    latency: '+2.1%',
+    latencyPct: 2.1,
+    risk: 'Low',
+    sla: 'Pass',
+    confidence: 91,
+    feasible: true,
+    recommended: true,
+  },
+  {
+    id: 'b',
+    label: 'Candidate B',
+    capacity: '2 vCores',
+    vCores: 2,
+    cost: 276,
+    savings: 43.2,
+    cpuP99: 81,
+    latency: '+9.7%',
+    latencyPct: 9.7,
+    risk: 'Medium',
+    sla: 'Warning',
+    confidence: 74,
+    feasible: true,
+    recommended: false,
+  },
+]

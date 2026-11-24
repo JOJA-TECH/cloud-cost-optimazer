@@ -110,7 +110,9 @@ INSERT INTO catalog.metric_catalog (metric_code, display_name, unit, source, is_
     ('log_write_percent',  'Log write percentage',     'Percent', 'database_watcher',  true,  'Porcentaje de escritura de log.'),
     ('memory_usage_percent','Memory usage percentage', 'Percent', 'database_watcher',  true,  'Porcentaje de uso de memoria del buffer pool.'),
     ('instance_cpu_percent','Instance CPU percentage', 'Percent', 'database_watcher',  false, 'CPU a nivel de instancia SQL (contexto de vecinos).'),
-    ('query_duration_ms',  'Query duration',           'Milliseconds', 'query_store',      false, 'Duración de una ejecución individual; solo es válida para percentiles si la fuente entrega observaciones individuales.')
+    ('query_duration_ms',  'Query duration',           'Milliseconds', 'query_store',      false, 'Duración de una ejecución individual; solo es válida para percentiles si la fuente entrega observaciones individuales.'),
+    ('sessions_count',     'Sessions count',           'Count',   'azure_monitor',     true,  'Número de sesiones de usuario activas por intervalo (Azure Monitor / sys.dm_exec_sessions).'),
+    ('dtu_consumption_percent', 'DTU consumption',     'Percent', 'azure_monitor',     false, 'Porcentaje de DTU consumido; solo aplica a SKUs basadas en DTU.')
 ON CONFLICT (metric_code) DO NOTHING;
 
 -- 1.4 Clases de workload del dataset experimental (plan Cuadro 3)
@@ -850,11 +852,34 @@ COMMENT ON VIEW ml.v_model_leaderboard IS 'Comparacion rapida de modelos por tar
 -- 6. OPT — optimización, recomendación y riesgo
 -- =============================================================================
 
+-- 6.0 Política de optimización versionada y reutilizable
+CREATE TABLE opt.optimization_policy (
+    policy_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    policy_uid         uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    name               text NOT NULL,
+    version            integer NOT NULL CHECK (version > 0),
+    objective_weights  jsonb NOT NULL
+        CHECK (jsonb_typeof(objective_weights) = 'object'),
+    constraints        jsonb NOT NULL
+        CHECK (jsonb_typeof(constraints) = 'object'),
+    enabled            boolean NOT NULL DEFAULT true,
+    created_by         text NOT NULL,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (name, version)
+);
+
+COMMENT ON TABLE opt.optimization_policy IS 'Política de optimización reutilizable y versionada. Cada recomendación conserva la versión exacta evaluada.';
+
+CREATE INDEX idx_optimization_policy_enabled
+    ON opt.optimization_policy (name, version DESC)
+    WHERE enabled;
+
 -- 6.1 Escenario de optimización (petición del motor / usuario)
 CREATE TABLE opt.scenario (
     scenario_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     scenario_uid      uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, -- ID estable de integración
     resource_id       integer NOT NULL REFERENCES core.resource(resource_id),
+    policy_id         bigint REFERENCES opt.optimization_policy(policy_id),
     created_by        text NOT NULL DEFAULT 'system',
     horizon_days      integer NOT NULL DEFAULT 30,
     objective_weights jsonb NOT NULL DEFAULT '{"cost": 1.0}',   -- min C(c), ec. 1
@@ -901,6 +926,9 @@ CREATE TABLE opt.scenario_simulation (
     estimated_savings_pct        numeric(6,3),
     feasible                     boolean,
     violated_constraints         text[],
+    forecast_uid                 uuid,
+    forecast_model_version       text,
+    simulation_method            text NOT NULL DEFAULT 'rule_v1',
     simulated_at                 timestamptz NOT NULL DEFAULT now()
 );
 
@@ -935,7 +963,21 @@ CREATE TABLE opt.recommendation (
     recommendation_id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     recommendation_uid        uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, -- ID estable entre cco_data y cco_app
     scenario_id               bigint NOT NULL REFERENCES opt.scenario(scenario_id),
+    policy_id                 bigint NOT NULL REFERENCES opt.optimization_policy(policy_id),
     chosen_candidate_id       bigint REFERENCES opt.candidate_configuration(candidate_id),
+    action_type               text NOT NULL DEFAULT 'no_action'
+        CONSTRAINT ck_recommendation_action_type
+        CHECK (action_type IN (
+            'resize_up',
+            'resize_down',
+            'change_compute_model',
+            'enable_autoscaling',
+            'disable_autoscaling',
+            'no_action'
+        )),
+    action_description        text NOT NULL DEFAULT '',
+    action_parameters         jsonb NOT NULL DEFAULT '{}'::jsonb
+        CHECK (jsonb_typeof(action_parameters) = 'object'),
     version                   integer NOT NULL,
     supersedes_id             bigint REFERENCES opt.recommendation(recommendation_id),
     current_sku_name          text NOT NULL,
@@ -944,9 +986,26 @@ CREATE TABLE opt.recommendation (
     proposed_sku_name         text NOT NULL,
     proposed_compute_model    text,
     proposed_capacity_vcores  numeric(4,1),
+    estimated_current_monthly_cost  numeric(18,2),
+    estimated_proposed_monthly_cost numeric(18,2),
     estimated_savings_pct     numeric(6,3) NOT NULL,
     estimated_monthly_savings numeric(18,2),
+    saving_currency           char(3),
+    saving_period_start_utc   timestamptz,
+    saving_period_end_utc     timestamptz,
+    saving_method             text,
+    current_cost_basis        text
+        CHECK (current_cost_basis IN ('actual_cost_daily','price_catalog','scenario_simulation')),
+    proposed_cost_basis       text
+        CHECK (proposed_cost_basis IN ('actual_cost_daily','price_catalog','scenario_simulation')),
     confidence                numeric(5,4) CHECK (confidence BETWEEN 0 AND 1),
+    confidence_components     jsonb CONSTRAINT ck_recommendation_confidence_components CHECK (
+        (confidence IS NULL AND confidence_components IS NULL) OR
+        (confidence IS NOT NULL AND confidence_components IS NOT NULL AND
+         jsonb_typeof(confidence_components) = 'object')
+    ),
+    domain_payload            jsonb NOT NULL DEFAULT '{}'::jsonb
+        CHECK (jsonb_typeof(domain_payload) = 'object'),
     status                    text NOT NULL DEFAULT 'proposed'
         CHECK (status IN ('proposed','under_review','accepted','rejected','applied','dismissed')),
     rationale                 text NOT NULL,       -- racional legible (Cuadro 5)
@@ -1036,17 +1095,35 @@ SELECT DISTINCT ON (s.resource_id)
     s.resource_id,
     rec.recommendation_id,
     rec.scenario_id,
+    rec.policy_id,
+    policy.policy_uid,
+    policy.name AS policy_name,
+    policy.version AS policy_version,
     rec.version,
+    rec.action_type,
+    rec.action_description,
+    rec.action_parameters,
     rec.current_sku_name,
     rec.proposed_sku_name,
     rec.proposed_compute_model,
     rec.proposed_capacity_vcores,
+    rec.estimated_current_monthly_cost,
+    rec.estimated_proposed_monthly_cost,
     rec.estimated_savings_pct,
+    rec.estimated_monthly_savings,
+    rec.saving_currency,
+    rec.saving_period_start_utc,
+    rec.saving_period_end_utc,
+    rec.saving_method,
+    rec.current_cost_basis,
+    rec.proposed_cost_basis,
     rec.confidence,
+    rec.confidence_components,
     rec.status,
     rec.created_at
 FROM opt.recommendation rec
 JOIN opt.scenario s ON s.scenario_id = rec.scenario_id
+JOIN opt.optimization_policy policy ON policy.policy_id = rec.policy_id
 WHERE rec.status NOT IN ('dismissed','rejected')
 ORDER BY s.resource_id, rec.created_at DESC;
 
@@ -1148,17 +1225,19 @@ SELECT resource_uid, provider_code, subscription_id, resource_group, server_name
 FROM core.resource;
 
 CREATE VIEW contract.v_forecast AS
-SELECT f.forecast_uid, r.resource_uid, f.target_metric, f.horizon_steps,
+SELECT f.forecast_uid, f.model_version_id, r.resource_uid, f.target_metric, f.horizon_steps,
        f.step_unit, f.period_start_utc, f.y_pred, f.y_lower, f.y_upper,
        f.alpha, f.generated_at
 FROM ml.forecast f
 JOIN core.resource r ON r.resource_id = f.resource_id;
 
 CREATE VIEW contract.v_scenario AS
-SELECT s.scenario_uid, r.resource_uid, s.horizon_days, s.objective_weights,
+SELECT s.scenario_uid, r.resource_uid, policy.policy_uid, policy.name AS policy_name,
+       policy.version AS policy_version, s.horizon_days, s.objective_weights,
        s.constraints, s.status, s.created_by, s.created_at, s.completed_at
 FROM opt.scenario s
-JOIN core.resource r ON r.resource_id = s.resource_id;
+JOIN core.resource r ON r.resource_id = s.resource_id
+LEFT JOIN opt.optimization_policy policy ON policy.policy_id = s.policy_id;
 
 CREATE VIEW contract.v_percentile_statistic AS
 SELECT r.resource_uid, ps.period_type, ps.period_start_utc,
@@ -1169,15 +1248,21 @@ JOIN core.resource r ON r.resource_id = ps.resource_id;
 
 CREATE VIEW contract.v_recommendation AS
 SELECT rec.recommendation_uid, s.scenario_uid, r.resource_uid,
-       rec.version, rec.current_sku_name, rec.current_compute_model,
+       policy.policy_uid, policy.name AS policy_name, policy.version AS policy_version,
+       rec.version, rec.action_type, rec.action_description, rec.action_parameters,
+       rec.current_sku_name, rec.current_compute_model,
        rec.current_capacity_vcores, rec.proposed_sku_name,
        rec.proposed_compute_model, rec.proposed_capacity_vcores,
+       rec.estimated_current_monthly_cost, rec.estimated_proposed_monthly_cost,
        rec.estimated_savings_pct, rec.estimated_monthly_savings,
-       rec.confidence, rec.status, rec.rationale, rec.generated_by,
+       rec.saving_currency, rec.saving_period_start_utc, rec.saving_period_end_utc,
+       rec.saving_method, rec.current_cost_basis, rec.proposed_cost_basis,
+       rec.confidence, rec.confidence_components, rec.status, rec.rationale, rec.generated_by,
        rec.created_at, rec.decided_at, rec.decided_by, rec.applied_at
 FROM opt.recommendation rec
 JOIN opt.scenario s ON s.scenario_id = rec.scenario_id
-JOIN core.resource r ON r.resource_id = s.resource_id;
+JOIN core.resource r ON r.resource_id = s.resource_id
+JOIN opt.optimization_policy policy ON policy.policy_id = rec.policy_id;
 
 COMMENT ON VIEW contract.v_resource IS 'cco_app.cloud.resource_bindings.data_resource_uid = resource_uid. No resource_id is exposed.';
 COMMENT ON VIEW contract.v_forecast IS 'Read-only public forecast surface. Consumers use forecast_uid and resource_uid.';
@@ -1225,18 +1310,11 @@ COMMENT ON VIEW raw.v_default_partition_health IS 'Debe permanecer en cero; fila
 -- Plantillas de roles, retención y permisos para completar según el entorno.
 
 -- Roles por schema (separación conceptual Y física de permisos):
---   CREATE ROLE app_backend LOGIN;      -- Go: core, raw (collector), opt (lectura+escritura)
---   CREATE ROLE app_mlservice LOGIN;    -- Python: feat, ml (lectura+escritura), raw (lectura)
---   CREATE ROLE app_frontend LOGIN;     -- vistas de opt y core, solo lectura
---   GRANT USAGE ON SCHEMA catalog, core, raw TO app_backend;
---   GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA raw, core TO app_backend;
---   GRANT USAGE ON SCHEMA feat, ml TO app_mlservice;
---   GRANT SELECT ON ALL TABLES IN SCHEMA raw, core, catalog TO app_mlservice;
---   GRANT SELECT ON opt.v_recommendation_latest TO app_frontend;
---   GRANT USAGE ON SCHEMA contract TO cco_data_backend, cco_data_readonly;
---   GRANT SELECT ON contract.v_resource, contract.v_forecast, contract.v_scenario,
---       contract.v_percentile_statistic, contract.v_recommendation
---       TO cco_data_backend, cco_data_readonly;
+--   El rol app_mlservice (Python/ML) está definido y aplicado mediante:
+--     databases/cco_data/roles/ml_service.sql
+--   Ese script otorga lectura sobre catalog, core, raw, feat, contract y
+--   escritura ÚNICAMENTE sobre ml.* (tablas y secuencias).
+--   Sin acceso a cco_app, opt.*, ni escritura en raw/core.
 
 -- Retención de crudo (control de costos del laboratorio — plan 19):
 --   -- Archivar un mes viejo sin borrar fila a fila:

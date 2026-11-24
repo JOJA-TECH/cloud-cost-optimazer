@@ -1,5 +1,8 @@
 # MTG-XXX — Acta de reunión
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear actas de reunión (MTG-XXX). No contiene acta real. Las actas ejecutadas viven en `docs/01-governance/meetings/`.
+
+
 ## Identificación
 
 - **ID:** MTG-XXX

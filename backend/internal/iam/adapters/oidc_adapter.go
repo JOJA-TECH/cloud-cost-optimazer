@@ -119,7 +119,7 @@ func (a *OIDCAdapter) Authenticate(ctx context.Context, cred iam.Credentials) (i
 		Provider: "entra_id",
 		Subject:  claims.Subject,
 	})
-	if err != nil && !errors.Is(err, iam.ErrExternalIdentityExists) {
+	if err != nil {
 		return iam.IdentityContext{}, err
 	}
 
@@ -175,12 +175,6 @@ func (a *OIDCAdapter) findOrCreateUser(ctx context.Context, subject, email, name
 	if email != "" {
 		user, err := a.repo.FindUserByEmail(ctx, email)
 		if err == nil {
-			// Link external identity
-			_, _ = a.repo.LinkExternalIdentity(ctx, iam.CreateExternalIdentityInput{
-				UserID:   user.ID,
-				Provider: "entra_id",
-				Subject:  subject,
-			})
 			return a.getUserInfo(ctx, user.ID)
 		}
 	}
@@ -202,13 +196,6 @@ func (a *OIDCAdapter) findOrCreateUser(ctx context.Context, subject, email, name
 	if err != nil {
 		return nil, err
 	}
-
-	// Link external identity
-	_, _ = a.repo.LinkExternalIdentity(ctx, iam.CreateExternalIdentityInput{
-		UserID:   created.ID,
-		Provider: "entra_id",
-		Subject:  subject,
-	})
 
 	return a.getUserInfo(ctx, created.ID)
 }

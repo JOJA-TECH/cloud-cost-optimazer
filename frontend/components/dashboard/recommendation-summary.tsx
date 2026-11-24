@@ -3,10 +3,10 @@ import { ArrowRight, CircleCheck, FileSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EvidenceDot, RiskBadge, toneText } from './ui'
-import { recommendation } from '@/lib/mock-data'
+import type { DataSource, RecommendationItem } from '@/lib/api-services'
 
-export function RecommendationSummary() {
-  const r = recommendation
+export function RecommendationSummary({ rec, recSource }: { rec: RecommendationItem; recSource?: DataSource | null }) {
+  const r = rec
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
       <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-start">
@@ -17,6 +17,7 @@ export function RecommendationSummary() {
             </span>
             <div>
               <h2 className="text-sm font-semibold text-foreground">{r.title}</h2>
+              <Badge variant="outline" className="text-[9px]">{recSource ?? 'Loading'}</Badge>
               <p className="text-xs text-muted-foreground">
                 Decision support · does not modify the production resource
               </p>
@@ -78,6 +79,7 @@ export function RecommendationSummary() {
                 </span>
               </li>
             ))}
+            {r.evidence.length === 0 && <li className="text-xs text-muted-foreground">Open the details to view available evidence.</li>}
           </ul>
           <Badge variant="neutral" className="mt-3 w-full justify-center">
             Analysis period: {r.analysisPeriod}

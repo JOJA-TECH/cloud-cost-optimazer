@@ -2,15 +2,72 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	valkey "github.com/valkey-io/valkey-go"
 )
+
+// trustedNetworks holds parsed CIDRs from CCO_TRUSTED_PROXIES. Requests whose
+// direct peer is in one of these networks may have their client IP taken from
+// X-Forwarded-For; all others fall back to RemoteAddr.
+var trustedNetworks []*net.IPNet
+
+func init() {
+	if v := os.Getenv("CCO_TRUSTED_PROXIES"); v != "" {
+		for _, cidr := range strings.Split(v, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr == "" {
+				continue
+			}
+			_, netw, err := net.ParseCIDR(cidr)
+			if err != nil {
+				slog.Warn("invalid trusted proxy CIDR, ignoring", "cidr", cidr)
+				continue
+			}
+			trustedNetworks = append(trustedNetworks, netw)
+		}
+	}
+}
+
+// isTrustedProxy reports whether the given address (host:port or IP) belongs
+// to a configured trusted proxy network.
+func isTrustedProxy(addr string) bool {
+	if len(trustedNetworks) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, nw := range trustedNetworks {
+		if nw.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// securityFailClosed reports whether Valkey/cache failures must deny requests
+// instead of allowing them (fail-closed). Honoured by rate limiting and
+// lockout. Controlled via CCO_SECURITY_FAIL_CLOSED; forced true when CCO_ENV=prod.
+func securityFailClosed() bool {
+	if os.Getenv("CCO_ENV") == "prod" {
+		return true
+	}
+	return os.Getenv("CCO_SECURITY_FAIL_CLOSED") == "true"
+}
 
 // rateLimiter implements a simple per-IP sliding-window rate limiter.
 // In-memory fallback for single-instance dev; state resets on restart.
@@ -72,7 +129,7 @@ func RateLimitMiddleware(limit int, window time.Duration, vc valkey.Client, next
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !valkeyAllow(r.Context(), vc, clientIP(r), limit, window) {
+		if !valkeyAllow(r.Context(), vc, clientIP(r), limit, window, securityFailClosed()) {
 			writeRateLimited(w)
 			return
 		}
@@ -80,10 +137,16 @@ func RateLimitMiddleware(limit int, window time.Duration, vc valkey.Client, next
 	})
 }
 
-// clientIP resolves the request IP, preferring the proxy-provided header.
+// clientIP resolves the request IP. X-Forwarded-For is honoured only when the
+// direct peer is a configured trusted proxy (CCO_TRUSTED_PROXIES); otherwise
+// RemoteAddr is used, preventing IP spoofing for rate limiting.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+	if isTrustedProxy(r.RemoteAddr) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// Take the left-most (original client) address.
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[0])
+		}
 	}
 	return r.RemoteAddr
 }
@@ -99,11 +162,16 @@ func writeRateLimited(w http.ResponseWriter) {
 }
 
 // valkeyAllow implements the Valkey fixed-window counter.
-// Prototype policy: availability over strictness — any Valkey error fails open.
-func valkeyAllow(ctx context.Context, vc valkey.Client, ip string, limit int, window time.Duration) bool {
+// When failClosed is true (required in prod), any Valkey error denies the
+// request instead of failing open.
+func valkeyAllow(ctx context.Context, vc valkey.Client, ip string, limit int, window time.Duration, failClosed bool) bool {
 	key := "cco:rl:" + ip
 	n, err := vc.Do(ctx, vc.B().Incr().Key(key).Build()).ToInt64()
 	if err != nil {
+		if failClosed {
+			slog.Warn("rate limiter: valkey error, denying request (fail-closed)", "err", err)
+			return false
+		}
 		slog.Warn("rate limiter: valkey error, allowing request", "err", err)
 		return true
 	}
@@ -111,8 +179,12 @@ func valkeyAllow(ctx context.Context, vc valkey.Client, ip string, limit int, wi
 		// First hit in the window: start the expiry; NX keeps concurrent
 		// first hits from extending the window.
 		if err := vc.Do(ctx, vc.B().Expire().Key(key).Seconds(int64(window.Seconds())).Nx().Build()).Error(); err != nil {
+			if failClosed {
+				slog.Warn("rate limiter: valkey expire failed, denying request (fail-closed)", "err", err)
+				vc.Do(ctx, vc.B().Del().Key(key).Build())
+				return false
+			}
 			slog.Warn("rate limiter: valkey expire failed, allowing request", "err", err)
-			// Drop the key so the client is not locked out by a TTL-less counter.
 			vc.Do(ctx, vc.B().Del().Key(key).Build())
 			return true
 		}
@@ -121,8 +193,8 @@ func valkeyAllow(ctx context.Context, vc valkey.Client, ip string, limit int, wi
 }
 
 // CORS returns middleware that adds Cross-Origin Resource Sharing headers.
-// With no explicit origins (dev) any origin is allowed. With explicit origins,
-// only requests whose Origin header matches get CORS headers.
+// With no explicit origins, no Access-Control-Allow-Origin header is emitted
+// (callers must configure an allowlist; do not default to "*").
 func CORS(allowedOrigins []string, next http.Handler) http.Handler {
 	allowAll := len(allowedOrigins) == 0
 	allowed := make(map[string]bool, len(allowedOrigins))
@@ -141,10 +213,53 @@ func CORS(allowedOrigins []string, next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID, X-Correlation-ID, X-Org-ID, X-Project-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-Correlation-ID, X-Operation-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// CSRFMiddleware provides minimal double-submit cookie CSRF protection for
+// state-changing requests. It is intentionally permissive by default: it only
+// blocks when a cco_csrf cookie is present and the request lacks a matching
+// X-CSRF-Token header on non-safe methods. Enable strict mode with
+// CCO_CSRF_STRICT=true or CCO_ENV=prod so clients are required to send the
+// token. Safe methods (GET/HEAD/OPTIONS) are never blocked and may set the
+// cookie.
+func CSRFMiddleware(strict bool, next http.Handler) http.Handler {
+	safe := map[string]bool{
+		http.MethodGet:     true,
+		http.MethodHead:    true,
+		http.MethodOptions: true,
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if safe[r.Method] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie("cco_csrf")
+		if err != nil || cookie.Value == "" {
+			// No CSRF cookie yet: not blocking (allows gradual rollout).
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := r.Header.Get("X-CSRF-Token")
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(cookie.Value)) != 1 {
+			if strict {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"code":    "CSRF_INVALID",
+					"message": "CSRF token missing or invalid",
+				})
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)

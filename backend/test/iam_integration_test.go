@@ -94,7 +94,7 @@ func TestIAMStackEndToEnd(t *testing.T) {
 	if err := db.Table("organizations").Create(&database.OrganizationModel{
 		OrganizationID: orgID,
 		Name:           "Acme Corp",
-		Slug:           "acme",
+		Slug:           "acme-iam",
 		Status:         "active",
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),

@@ -183,6 +183,22 @@ $$;
 ALTER FUNCTION app.is_project_member(p_project_id uuid) OWNER TO postgres;
 
 --
+-- Name: reject_event_mutation(); Type: FUNCTION; Schema: audit; Owner: postgres
+--
+
+CREATE FUNCTION audit.reject_event_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'audit.events is append-only';
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION audit.reject_event_mutation() OWNER TO postgres;
+
+--
 -- TOC entry 321 (class 1255 OID 17838)
 -- Name: set_updated_at(); Type: FUNCTION; Schema: app; Owner: postgres
 --
@@ -386,14 +402,20 @@ CREATE TABLE audit.events (
     event_id bigint NOT NULL,
     organization_id uuid,
     user_id uuid,
+    actor_type character varying(40) DEFAULT 'user'::character varying NOT NULL,
     action character varying(80) NOT NULL,
     entity_type character varying(80),
     entity_id uuid,
     occurred_at timestamp with time zone DEFAULT now() NOT NULL,
     request_id uuid,
+    correlation_id uuid,
+    operation_id uuid,
     ip_address inet,
     user_agent text,
+    event_version smallint DEFAULT 1 NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT ck_audit_action_not_blank CHECK ((length(trim((action)::text)) > 0)),
+    CONSTRAINT ck_audit_actor_type CHECK (((actor_type)::text = ANY ((ARRAY['user'::character varying, 'service_principal'::character varying, 'managed_identity'::character varying, 'system'::character varying, 'anonymous'::character varying])::text[]) AND (((actor_type)::text <> 'system'::text) OR (user_id IS NULL)))),
     CONSTRAINT ck_audit_metadata_object CHECK ((jsonb_typeof(metadata) = 'object'::text))
 );
 
@@ -442,6 +464,8 @@ CREATE TABLE cloud.accounts (
     subscription_id character varying(128) NOT NULL,
     tenant_id character varying(128),
     credential_reference character varying(512),
+    client_id character varying(128),
+    last_connection_error text,
     status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -453,6 +477,44 @@ CREATE TABLE cloud.accounts (
 
 
 ALTER TABLE cloud.accounts OWNER TO postgres;
+
+--
+-- TOC entry 238 (class 1259 OID 17515)
+-- Name: resources; Type: TABLE; Schema: cloud; Owner: postgres
+--
+
+CREATE TABLE cloud.resources (
+    resource_uid uuid DEFAULT gen_random_uuid() NOT NULL,
+    cloud_account_id uuid NOT NULL,
+    provider_code character varying(30) NOT NULL DEFAULT 'azure'::character varying,
+    subscription_id character varying(128) NOT NULL,
+    resource_group character varying(160) NOT NULL,
+    server_name character varying(160) NOT NULL DEFAULT ''::character varying,
+    database_name character varying(160) NOT NULL DEFAULT ''::character varying,
+    azure_resource_id text NOT NULL,
+    region_code character varying(80) NOT NULL DEFAULT ''::character varying,
+    kind character varying(160),
+    lifecycle_status character varying(20) NOT NULL DEFAULT 'active'::character varying,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    deactivated_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_resources_lifecycle_status CHECK (((lifecycle_status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'deleted'::character varying, 'archived'::character varying])::text[])))
+);
+
+
+ALTER TABLE cloud.resources OWNER TO postgres;
+
+CREATE INDEX ix_resources_account_server ON cloud.resources USING btree (cloud_account_id, server_name);
+
+CREATE INDEX ix_resources_account_lifecycle ON cloud.resources USING btree (cloud_account_id, lifecycle_status);
+
+CREATE TRIGGER trg_cloud_resources_updated_at BEFORE UPDATE ON cloud.resources FOR EACH ROW EXECUTE FUNCTION app.set_updated_at();
+
+CREATE TRIGGER trg_audit_events_no_row_mutation BEFORE UPDATE OR DELETE ON audit.events FOR EACH ROW EXECUTE FUNCTION audit.reject_event_mutation();
+
+CREATE TRIGGER trg_audit_events_no_truncate BEFORE TRUNCATE ON audit.events FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_event_mutation();
 
 --
 -- TOC entry 239 (class 1259 OID 17534)
@@ -822,6 +884,16 @@ ALTER TABLE ONLY cloud.accounts
     ADD CONSTRAINT uq_cloud_account_subscription UNIQUE (provider_code, subscription_id);
 
 
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_pkey PRIMARY KEY (resource_uid);
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_cloud_account_id_fkey FOREIGN KEY (cloud_account_id) REFERENCES cloud.accounts(cloud_account_id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY cloud.resources
+    ADD CONSTRAINT resources_azure_resource_id_key UNIQUE (azure_resource_id);
+
+
 --
 -- TOC entry 5123 (class 2606 OID 17551)
 -- Name: resource_bindings uq_resource_binding; Type: CONSTRAINT; Schema: cloud; Owner: postgres
@@ -1124,6 +1196,12 @@ CREATE UNIQUE INDEX uq_saved_views_user_project_name ON app.saved_views USING bt
 --
 
 CREATE INDEX ix_audit_action_time ON audit.events USING btree (action, occurred_at DESC);
+
+CREATE INDEX ix_audit_correlation_time ON audit.events USING btree (correlation_id, occurred_at DESC) WHERE (correlation_id IS NOT NULL);
+
+CREATE INDEX ix_audit_operation_time ON audit.events USING btree (operation_id, occurred_at DESC) WHERE (operation_id IS NOT NULL);
+
+CREATE INDEX ix_audit_recommendation ON audit.events USING btree (((metadata ->> 'recommendation_uid'::text)), occurred_at DESC) WHERE (metadata ? 'recommendation_uid'::text);
 
 
 --
@@ -1758,7 +1836,7 @@ CREATE POLICY user_preferences_self ON app.user_preferences USING (((user_id = a
 -- Name: events audit_insert_own_context; Type: POLICY; Schema: audit; Owner: postgres
 --
 
-CREATE POLICY audit_insert_own_context ON audit.events FOR INSERT WITH CHECK ((app.is_platform_admin() OR ((user_id = app.current_user_id()) AND ((organization_id IS NULL) OR app.is_org_member(organization_id)))));
+CREATE POLICY audit_insert_own_context ON audit.events FOR INSERT WITH CHECK ((((actor_type)::text = 'system'::text) AND (user_id IS NULL) AND app.is_platform_admin()) OR (((actor_type)::text <> 'system'::text) AND (app.is_platform_admin() OR ((user_id = app.current_user_id()) AND ((organization_id IS NULL) OR app.is_org_member(organization_id))))));
 
 
 --

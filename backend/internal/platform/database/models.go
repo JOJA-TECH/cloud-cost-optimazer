@@ -11,7 +11,7 @@ import (
 // embed them; this keeps GORM and database types at the infrastructure edge.
 type UserModel struct {
 	UserID        uuid.UUID  `gorm:"column:user_id;type:uuid;primaryKey"`
-	Email         string     `gorm:"column:email;not null;uniqueIndex"`
+	Email         string     `gorm:"column:email;not null;unique"`
 	DisplayName   string     `gorm:"column:display_name;not null"`
 	Status        string     `gorm:"column:status;not null;default:active"`
 	EmailVerified bool       `gorm:"column:email_verified;not null;default:false"`
@@ -28,8 +28,8 @@ func (UserModel) TableName() string { return "users" }
 type ExternalIdentityModel struct {
 	ExternalIdentityID uuid.UUID  `gorm:"column:external_identity_id;type:uuid;primaryKey"`
 	UserID             uuid.UUID  `gorm:"column:user_id;type:uuid;not null"`
-	Provider           string     `gorm:"column:provider;not null"`
-	Subject            string     `gorm:"column:subject;not null"`
+	Provider           string     `gorm:"column:provider;not null;uniqueIndex:uq_external_identity"`
+	Subject            string     `gorm:"column:subject;not null;uniqueIndex:uq_external_identity"`
 	CreatedAt          time.Time  `gorm:"column:created_at;not null"`
 	LastSeenAt         *time.Time `gorm:"column:last_seen_at"`
 }
@@ -38,7 +38,7 @@ func (ExternalIdentityModel) TableName() string { return "external_identities" }
 
 type RoleModel struct {
 	RoleID       int16     `gorm:"column:role_id;primaryKey"`
-	RoleCode     string    `gorm:"column:role_code;not null"`
+	RoleCode     string    `gorm:"column:role_code;not null;unique"`
 	Description  *string   `gorm:"column:description"`
 	IsSystemRole bool      `gorm:"column:is_system_role;not null;default:true"`
 	CreatedAt    time.Time `gorm:"column:created_at;not null"`
@@ -48,7 +48,7 @@ func (RoleModel) TableName() string { return "roles" }
 
 type PermissionModel struct {
 	PermissionID   int16     `gorm:"column:permission_id;primaryKey"`
-	PermissionCode string    `gorm:"column:permission_code;not null"`
+	PermissionCode string    `gorm:"column:permission_code;not null;unique"`
 	Description    *string   `gorm:"column:description"`
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 }
@@ -74,7 +74,7 @@ func (UserRoleModel) TableName() string { return "user_roles" }
 type OrganizationModel struct {
 	OrganizationID uuid.UUID `gorm:"column:organization_id;type:uuid;primaryKey"`
 	Name           string    `gorm:"column:name;not null"`
-	Slug           string    `gorm:"column:slug;not null"`
+	Slug           string    `gorm:"column:slug;not null;unique"`
 	Status         string    `gorm:"column:status;not null;default:active"`
 	CreatedAt      time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
@@ -115,12 +115,35 @@ type CloudAccountModel struct {
 	TenantID            *string    `gorm:"column:tenant_id"`
 	CredentialReference *string    `gorm:"column:credential_reference"`
 	Status              string     `gorm:"column:status;not null;default:pending"`
+	ClientID            *string    `gorm:"column:client_id"`
+	LastConnectionError *string    `gorm:"column:last_connection_error"`
 	CreatedBy           *uuid.UUID `gorm:"column:created_by;type:uuid"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null"`
 	UpdatedAt           time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (CloudAccountModel) TableName() string { return "accounts" }
+
+type ResourceModel struct {
+	ResourceUID     uuid.UUID  `gorm:"column:resource_uid;type:uuid;primaryKey"`
+	CloudAccountID  uuid.UUID  `gorm:"column:cloud_account_id;type:uuid;not null"`
+	ProviderCode    string     `gorm:"column:provider_code;not null;default:azure"`
+	SubscriptionID  string     `gorm:"column:subscription_id;not null"`
+	ResourceGroup   string     `gorm:"column:resource_group;not null"`
+	ServerName      string     `gorm:"column:server_name;not null;default:''"`
+	DatabaseName    string     `gorm:"column:database_name;not null;default:''"`
+	AzureResourceID string     `gorm:"column:azure_resource_id;not null;unique"`
+	RegionCode      string     `gorm:"column:region_code;not null;default:''"`
+	Kind            *string    `gorm:"column:kind"`
+	LifecycleStatus string     `gorm:"column:lifecycle_status;not null;default:active"`
+	RegisteredAt    time.Time  `gorm:"column:registered_at;not null"`
+	LastSeenAt      time.Time  `gorm:"column:last_seen_at;not null"`
+	DeactivatedAt   *time.Time `gorm:"column:deactivated_at"`
+	CreatedAt       time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (ResourceModel) TableName() string { return "resources" }
 
 type AccountProjectModel struct {
 	CloudAccountID uuid.UUID `gorm:"column:cloud_account_id;type:uuid;primaryKey"`
@@ -257,14 +280,18 @@ type AuditEventModel struct {
 	EventID        uint64         `gorm:"column:event_id;primaryKey;autoIncrement"`
 	OrganizationID *uuid.UUID     `gorm:"column:organization_id;type:uuid"`
 	UserID         *uuid.UUID     `gorm:"column:user_id;type:uuid"`
+	ActorType      string         `gorm:"column:actor_type;type:varchar(40);not null;default:user"`
 	Action         string         `gorm:"column:action;not null"`
 	EntityType     *string        `gorm:"column:entity_type"`
 	EntityID       *uuid.UUID     `gorm:"column:entity_id;type:uuid"`
 	OccurredAt     time.Time      `gorm:"column:occurred_at;not null"`
 	RequestID      *uuid.UUID     `gorm:"column:request_id;type:uuid"`
+	CorrelationID  *uuid.UUID     `gorm:"column:correlation_id;type:uuid"`
+	OperationID    *uuid.UUID     `gorm:"column:operation_id;type:uuid"`
 	IPAddress      *string        `gorm:"column:ip_address"`
 	UserAgent      *string        `gorm:"column:user_agent"`
-	Metadata       datatypes.JSON `gorm:"column:metadata;not null"`
+	EventVersion   int16          `gorm:"column:event_version;not null;default:1"`
+	Metadata       datatypes.JSON `gorm:"column:metadata;type:jsonb;not null"`
 }
 
 func (AuditEventModel) TableName() string { return "events" }

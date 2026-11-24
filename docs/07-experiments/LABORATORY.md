@@ -1,5 +1,8 @@
 # LAB-XXX — Laboratorio
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear registros de laboratorio (LAB-XXX). No contiene datos reales de ningún laboratorio ejecutado.
+
+
 - **Título:**
 - **Fecha:**
 - **Responsable:**

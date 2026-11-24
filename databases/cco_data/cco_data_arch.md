@@ -1,5 +1,8 @@
 # Análisis de la base de datos `cco_data`
 
+> **Versión del documento:** v1.0 · 2026-11-22
+
+
 ## 1. Resumen ejecutivo
 
 `cco_data` es la base de datos analítica del sistema **Cloud Cost Optimizer**. Su responsabilidad es adquirir y conservar datos de recursos cloud, convertir telemetría en variables analíticas, entrenar y evaluar modelos, simular configuraciones y producir recomendaciones de optimización.
@@ -25,6 +28,8 @@ Recomendaciones
 ```
 
 La base no representa usuarios, organizaciones, membresías, permisos de producto ni interacciones de usuario. Esas responsabilidades pertenecen a `cco_app`. La integración entre ambas bases utiliza UUIDs públicos estables y vistas del schema `contract`, sin claves foráneas PostgreSQL entre bases.
+
+> **Nota sobre autenticación:** `cco_app` implementa login local con contraseñas hasheadas (Argon2id) en `iam.users` además de OIDC externo. El backend es responsable de la persistencia de contraseñas; `cco_data` no almacena secretos ni contraseñas.
 
 El diseño prioriza cinco propiedades:
 

@@ -17,7 +17,7 @@ El dataset se utiliza para verificar la disponibilidad de fuentes, documentar la
 
 El paquete contiene respuestas de configuración de recursos, costos, precios, métricas, logs, recomendaciones externas, Query Store, Database watcher, estado de una tabla y registros de una carga sintética. No constituye todavía un dataset de benchmark ni un conjunto etiquetado de workloads comparables.
 
-Las capturas se organizan en dos escenarios en `07-experiments/laboratory-001/`:
+Las capturas se organizan en dos escenarios en `docs/07-experiments/laboratory-001/`:
 
 - `db-1/` — captura de prueba sobre base de datos **gratuita** (nivel free limit) + `DATOS_PROVEEDORES.md`.
 - `db-2/` — captura sobre base de datos **con costo** (esquema pagado), prevista para medir el KPI económico + artefactos de factibilidad (informe, instrucciones de repetición y `data/feasibility/`).
@@ -40,7 +40,7 @@ Las capturas se organizan en dos escenarios en `07-experiments/laboratory-001/`:
 
 ## Variables principales
 
-Las variables se describen en `06-data/DATA-DICTIONARY-DATA-001.md`.
+Las variables se describen en `docs/06-data/DATA-DICTIONARY-DATA-001.md`.
 
 ## Recolección / adquisición
 

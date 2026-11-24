@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // oidcAuthURLProvider is implemented by *adapters.OIDCAdapter.
@@ -18,13 +19,63 @@ type oidcAuthURLProvider interface {
 	AuthURL(state string) string
 }
 
-// HealthHandler returns 200 OK for liveness/readiness checks.
+// HealthHandler returns 200 OK for liveness checks.
 type HealthHandler struct{}
 
 func (h HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// ReadyzHandler checks that mandatory dependencies are reachable before the
+// service declares itself ready to serve traffic. /healthz stays a simple
+// liveness ("I am up"); /readyz answers "I can serve requests" by verifying
+// database(s), schema version and (optionally) cache/queue connectivity.
+// No secrets or internals are exposed.
+type ReadyzHandler struct {
+	DB        *gorm.DB    // cco_app (mandatory)
+	DataDB    *gorm.DB    // cco_data (optional; checked when configured)
+	MigrateOK func() bool // optional hook reporting schema migrations applied
+}
+
+func (h ReadyzHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.DB == nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database not configured")
+		return
+	}
+	sqlDB, err := h.DB.DB()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database driver unavailable")
+		return
+	}
+	if err := sqlDB.PingContext(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "database unreachable")
+		return
+	}
+
+	// Verify cco_data connectivity when configured (separate database context).
+	if h.DataDB != nil {
+		dataSQL, err := h.DataDB.DB()
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "NOT_READY", "data database driver unavailable")
+			return
+		}
+		if err := dataSQL.PingContext(r.Context()); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "NOT_READY", "data database unreachable")
+			return
+		}
+	}
+
+	// Verify schema migrations have been applied when a hook is provided.
+	if h.MigrateOK != nil && !h.MigrateOK() {
+		writeError(w, http.StatusServiceUnavailable, "NOT_READY", "schema migrations not applied")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 // RootHandler returns basic API information for the root path "/".
@@ -112,6 +163,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("user logged in",
 		"user_id", ic.UserID,
@@ -186,6 +238,7 @@ func (h *M2MTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("m2m token issued",
 		"user_id", ic.UserID,
@@ -293,6 +346,7 @@ func (h *OIDCCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "cco_access",
@@ -379,6 +433,7 @@ func (h *TokenRefreshHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), ic))
 
 	slog.Info("token refreshed", "user_id", userID, "request_id", ic.RequestID)
 
@@ -457,6 +512,9 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, code, err.Error())
 		return
 	}
+	r = r.WithContext(WithIdentityContext(r.Context(), IdentityContext{
+		UserID: created.ID, AuthMethod: "registration",
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

@@ -1,5 +1,8 @@
 # EXP-XXX — Experimento
 
+> **Plantilla sin rellenar.** Este archivo es una plantilla de referencia para crear registros de experimento (EXP-XXX). No contiene resultados de ningún experimento ejecutado.
+
+
 - **Objetivo:**
 - **Fecha:**
 - **Responsable:**

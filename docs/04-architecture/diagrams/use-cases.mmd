@@ -1,0 +1,43 @@
+%% Diagrama de casos de uso (C4 Level 2 complementario) — Cloud Cost Optimizer
+%% Actor principal: Usuario autenticado (DBA, ingeniero cloud, responsable financiero)
+
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor Usuario as u <<Persona>>
+actor AdministradorTecnico as at <<Persona>>
+actor Auditorio as au <<Persona>>
+
+rectangle "Backend cco-app (Go)" {
+  usecase "UC-01 Registrar / conectar fuente Azure" as uc1
+  usecase "UC-02 Ejecutar recolección de datos" as uc2
+  usecase "UC-03 Consultar estado de un recurso" as uc3
+  usecase "UC-04 Ejecutar análisis de capacidad" as uc4
+  usecase "UC-05 Crear escenario de optimización" as uc5
+  usecase "UC-06 Comparar configuraciones" as uc6
+  usecase "UC-07 Revisar una recomendación" as uc7
+  usecase "UC-08 Aceptar / rechazar / descartar recomendación" as uc8
+  usecase "UC-09 Ejecutar entrenamiento ML" as uc9
+  usecase "UC-10 Promover versión de modelo" as uc10
+  usecase "UC-11 Auditar una recomendación" as uc11
+}
+
+u --> uc1 : configura cuenta cloud
+u --> uc2 : dispara ciclo de adquisición
+u --> uc3 : ve métricas y costos
+u --> uc4 : ejecuta análisis de capacidad
+u --> uc5 : define escenario con restricciones
+u --> uc6 : compara actual vs candidato
+u --> uc7 : revisa evidencia y riesgo
+u --> uc8 : decide aplicar o no
+at --> uc9 : entrena modelo de forecasting
+at --> uc10 : promueve modelo a champion
+au --> uc11 : reconstruye trazabilidad lineage
+
+u ..> uc8 : sin cambios automáticos (Req: informativo únicamente)
+uc9 ..> ML : servicio ML externo (Module 6)
+uc11 ..> cco_app : audit.events (append-only)
+uc11 ..> cco_data : opt.* + contract vistas
+
+@enduml
