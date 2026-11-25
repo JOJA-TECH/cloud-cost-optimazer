@@ -95,9 +95,13 @@ func mapARMToConfigReading(r armDatabaseResponse) acquisition.ConfigReading {
 	payloadBytes, _ := json.Marshal(r)
 	payload := string(payloadBytes)
 
+	// compute_model is a catalog enum (provisioned/serverless); SKU tier and
+	// service objective are not valid values there.
+	model := "provisioned"
 	reading := acquisition.ConfigReading{
 		ObservedAtUTC: obs,
 		SourcePayload: &payload,
+		ComputeModel:  &model,
 	}
 
 	if r.SKU != nil {
@@ -105,7 +109,6 @@ func mapARMToConfigReading(r armDatabaseResponse) acquisition.ConfigReading {
 		reading.Tier = &r.SKU.Tier
 		reading.Family = r.SKU.Family
 		reading.CapacityVCores = r.SKU.Capacity
-		reading.ComputeModel = &r.SKU.Tier // falls back to tier if no explicit model
 	}
 
 	if r.Properties != nil {
@@ -113,22 +116,12 @@ func mapARMToConfigReading(r armDatabaseResponse) acquisition.ConfigReading {
 		reading.AutoPauseDelayMin = r.Properties.AutoPauseDelay
 		reading.Status = &r.Properties.Status
 		reading.FreeLimit = r.Properties.UseFreeLimit
-
-		// Compute model from properties when SKU tier is not specific
-		if reading.ComputeModel == nil || *reading.ComputeModel == "" {
-			if r.Properties.ServiceLevelObjective != "" {
-				reading.ComputeModel = &r.Properties.ServiceLevelObjective
-			}
-		}
 	}
 
-	// If SKU name looks like serverless (contains "serverless" or has minCapacity), adjust compute_model
 	if reading.SKUName != nil && (containsServerless(*reading.SKUName) || r.SKU.MinCapacity != nil) {
 		cm := "serverless"
 		reading.ComputeModel = &cm
-		if r.SKU.MinCapacity != nil {
-			reading.MinCapacityVCores = r.SKU.MinCapacity
-		}
+		reading.MinCapacityVCores = r.SKU.MinCapacity
 	}
 
 	return reading

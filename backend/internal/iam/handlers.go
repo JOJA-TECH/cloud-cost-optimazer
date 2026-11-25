@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -302,11 +304,19 @@ type OIDCCallbackHandler struct {
 	tokenMgr     *TokenManager
 	cookieDomain string
 	cookieSecure bool
+	frontendURL  string
+	loginHook    func(context.Context, IdentityContext)
 }
 
 // NewOIDCCallbackHandler creates an OIDCCallbackHandler.
-func NewOIDCCallbackHandler(exchanger oidcCodeExchanger, tokenMgr *TokenManager, cookieDomain string, cookieSecure bool) *OIDCCallbackHandler {
-	return &OIDCCallbackHandler{exchanger: exchanger, tokenMgr: tokenMgr, cookieDomain: cookieDomain, cookieSecure: cookieSecure}
+func NewOIDCCallbackHandler(exchanger oidcCodeExchanger, tokenMgr *TokenManager, cookieDomain string, cookieSecure bool, frontendURL string) *OIDCCallbackHandler {
+	return &OIDCCallbackHandler{exchanger: exchanger, tokenMgr: tokenMgr, cookieDomain: cookieDomain, cookieSecure: cookieSecure, frontendURL: strings.TrimSuffix(frontendURL, "/")}
+}
+
+// SetLoginHook registers post-login work (e.g. cloud resource discovery).
+// A hook error must never block the login redirect.
+func (h *OIDCCallbackHandler) SetLoginHook(fn func(context.Context, IdentityContext)) {
+	h.loginHook = fn
 }
 
 func (h *OIDCCallbackHandler) clearStateCookie(w http.ResponseWriter, maxAge int) {
@@ -340,6 +350,9 @@ func (h *OIDCCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, CodeInvalidToken, err.Error())
 		return
 	}
+	if h.loginHook != nil {
+		h.loginHook(r.Context(), ic)
+	}
 
 	pair, err := h.tokenMgr.GenerateTokenPair(ic)
 	if err != nil {
@@ -370,7 +383,51 @@ func (h *OIDCCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	})
 
 	slog.Info("oidc login completed", "user_id", ic.UserID, "email", ic.Email)
-	http.Redirect(w, r, "/", http.StatusFound)
+	destination := "/"
+	if h.frontendURL != "" {
+		destination = h.frontendURL + "/auth/oidc/callback"
+	}
+	http.Redirect(w, r, destination, http.StatusFound)
+}
+
+// OIDCSessionHandler exposes the backend-issued session to the frontend after
+// an OIDC redirect. The cookies remain HttpOnly; this endpoint only reads them.
+type OIDCSessionHandler struct {
+	tokenMgr *TokenManager
+}
+
+// NewOIDCSessionHandler creates an OIDCSessionHandler.
+func NewOIDCSessionHandler(tokenMgr *TokenManager) *OIDCSessionHandler {
+	return &OIDCSessionHandler{tokenMgr: tokenMgr}
+}
+
+func (h *OIDCSessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("cco_access")
+	if err != nil || cookie.Value == "" {
+		writeError(w, http.StatusUnauthorized, CodeInvalidToken, "no OIDC session")
+		return
+	}
+	ic, err := h.tokenMgr.ValidateAccessToken(cookie.Value)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, CodeInvalidToken, "invalid OIDC session")
+		return
+	}
+	refresh := ""
+	if c, err := r.Cookie("cco_refresh"); err == nil {
+		refresh = c.Value
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token":  cookie.Value,
+		"refresh_token": refresh,
+		"expires_at":    ic.TokenExpiresAt,
+		"user_id":       ic.UserID,
+		"email":         ic.Email,
+		"display_name":  ic.DisplayName,
+		"org_id":        ic.OrgID,
+		"org_role":      ic.OrgRole,
+	})
 }
 
 // TokenRefreshHandler rotates access/refresh tokens.
@@ -413,13 +470,18 @@ func (h *TokenRefreshHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	orgID, _ := uuid.Parse(os.Getenv("CCO_DEFAULT_ORG_ID"))
+	orgRole := "viewer"
+	if orgID != uuid.Nil {
+		orgRole = "admin"
+	}
 	ic := IdentityContext{
 		UserID:         user.ID,
 		Email:          user.Email,
 		DisplayName:    user.DisplayName,
 		AuthMethod:     "refresh_token",
-		OrgID:          uuid.Nil,
-		OrgRole:        "viewer",
+		OrgID:          orgID,
+		OrgRole:        orgRole,
 		RequestID:      uuid.New().String(),
 		CorrelationID:  uuid.New().String(),
 		TokenExpiresAt: time.Now().Add(h.tokenMgr.config.AccessTokenTTL).UnixMilli(),

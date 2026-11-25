@@ -16,7 +16,7 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, loginWithEntra } = useAuth()
   const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -67,6 +67,14 @@ function LoginForm() {
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
+        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button type="button" variant="outline" className="w-full" onClick={loginWithEntra}>
+          Sign in with Microsoft
+        </Button>
         <p className="mt-6 text-sm text-muted-foreground">
           Don&apos;t have an account? <a href="/register" className="text-primary">Sign up</a>
         </p>

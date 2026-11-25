@@ -240,6 +240,7 @@ func main() {
 
 	// ── Repositories ─────────────────────────────────────────────────────
 	userRepo := iam.NewUserRepository(db)
+	projectRepo := repositories.NewProjectRepository(db)
 	repo := &compositeRepo{
 		userRepo:       userRepo,
 		roleRepo:       repositories.NewRoleRepository(db),
@@ -247,7 +248,7 @@ func main() {
 		userRoleRepo:   repositories.NewUserRoleRepository(db),
 		extIDRepo:      repositories.NewExternalIdentityRepository(db),
 		membershipRepo: repositories.NewMembershipRepository(db),
-		projectRepo:    repositories.NewProjectRepository(db),
+		projectRepo:    projectRepo,
 	}
 
 	// ── Authorization engine ─────────────────────────────────────────────
@@ -455,6 +456,14 @@ func main() {
 			resourceUID = &id
 		}
 		_, err := acqSvc.RunCycle(ctx, orgID, resourceUID)
+		return err
+	})
+
+	jw.RegisterHandler("acquisition:cost", func(ctx context.Context, payload []byte) error {
+		if acqSvc == nil {
+			return errors.New("acquisition service not configured (CCO_DATA_DSN missing)")
+		}
+		_, err := acqSvc.RunCostCycle(ctx, nil)
 		return err
 	})
 
@@ -746,7 +755,27 @@ func main() {
 	))
 	if oidcAdapter != nil {
 		mux.Handle("GET /auth/oidc/login", iam.NewOIDCLoginHandler(oidcAdapter, oidcCfg.CookieDomain, oidcCfg.CookieSecure))
-		mux.Handle("GET /auth/oidc/callback", iam.NewOIDCCallbackHandler(oidcAdapter, tokenMgr, oidcCfg.CookieDomain, oidcCfg.CookieSecure))
+		oidcCallback := iam.NewOIDCCallbackHandler(oidcAdapter, tokenMgr, oidcCfg.CookieDomain, oidcCfg.CookieSecure, os.Getenv("CCO_OIDC_FRONTEND_URL"))
+		if mode == "azure" {
+			oidcCallback.SetLoginHook(func(ctx context.Context, ic iam.IdentityContext) {
+				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				credRef := os.Getenv("CCO_AZURE_CREDENTIAL_REFERENCE")
+				if credRef == "" {
+					credRef = "env:CCO_AZURE_CLIENT_SECRET"
+				}
+				if err := cloudSvc.SyncOnLogin(ctx, ic.OrgID, ic.UserID, projectRepo, cloud.LoginSyncConfig{
+					TenantID:            os.Getenv("CCO_AZURE_TENANT_ID"),
+					SubscriptionID:      os.Getenv("CCO_AZURE_SUBSCRIPTION_ID"),
+					ClientID:            os.Getenv("CCO_AZURE_CLIENT_ID"),
+					CredentialReference: credRef,
+				}); err != nil {
+					slog.Warn("cloud sync on login failed", "error", err)
+				}
+			})
+		}
+		mux.Handle("GET /auth/oidc/callback", oidcCallback)
+		mux.Handle("GET /auth/oidc/session", iam.NewOIDCSessionHandler(tokenMgr))
 	}
 	mux.Handle("POST /auth/m2m/token", iam.NewM2MTokenHandler(spAdapter, tokenMgr))
 	mux.Handle("POST /auth/token/refresh", iam.NewTokenRefreshHandler(tokenMgr, userRepo))

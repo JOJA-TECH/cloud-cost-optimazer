@@ -48,8 +48,8 @@ func acColumns() []costColumn {
 	return []costColumn{
 		{Name: "UsageDate", Type: "String"},
 		{Name: "ResourceId", Type: "String"},
-		{Name: "ServiceName", Type: "String"},
-		{Name: "MeterId", Type: "String"},
+		{Name: "MeterCategory", Type: "String"},
+		{Name: "Meter", Type: "String"},
 		{Name: "ChargeType", Type: "String"},
 		{Name: "Cost", Type: "Number"},
 		{Name: "UsageQuantity", Type: "Number"},
@@ -61,7 +61,7 @@ func acColumns() []costColumn {
 }
 
 func acRow(date, resourceID, serviceName, meterID, chargeType string, cost, usageQty float64) []interface{} {
-	return []interface{}{date, resourceID, serviceName, meterID, chargeType, cost, usageQty, "USD", "Hour", "consumption", "usage"}
+	return []interface{}{date, resourceID, serviceName, meterID, chargeType, cost, usageQty, "USD", "Hour", "OnDemand", "Usage"}
 }
 
 func acBody(columns []costColumn, rows [][]interface{}, nextLink string) string {
@@ -124,6 +124,9 @@ func TestParseCostResponseValidMultiplePages(t *testing.T) {
 	}
 	if records[0].PreTaxCost != 12.34 {
 		t.Errorf("record 0 PreTaxCost = %v, want 12.34", records[0].PreTaxCost)
+	}
+	if records[0].PricingModel == nil || *records[0].PricingModel != "consumption" {
+		t.Errorf("record 0 PricingModel = %v, want consumption", records[0].PricingModel)
 	}
 	if records[0].SourceChargeID == nil {
 		t.Fatal("record 0 SourceChargeID is nil")
@@ -236,12 +239,20 @@ func TestBuildCostQueryBody(t *testing.T) {
 	if !ok || len(grouping) != 4 {
 		t.Fatalf("expected 4 grouping dimensions, got %v", ds["grouping"])
 	}
-	wantGroups := []string{"ResourceId", "ServiceName", "MeterId", "ChargeType"}
+	wantGroups := []string{"ResourceId", "MeterCategory", "Meter", "ChargeType"}
 	for i, name := range wantGroups {
 		g := grouping[i]
 		if g["name"] != name || g["type"] != "Dimension" {
 			t.Errorf("grouping[%d] = %v, want {Dimension, %s}", i, grouping[i], name)
 		}
+	}
+}
+
+func TestToTimeCostManagementUsageDate(t *testing.T) {
+	got := toTime(float64(20261124))
+	want := time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("toTime(20261124) = %v, want %v", got, want)
 	}
 }
 

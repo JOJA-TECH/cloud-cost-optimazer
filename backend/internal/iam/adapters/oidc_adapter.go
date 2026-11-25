@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
@@ -15,13 +18,15 @@ import (
 
 // OIDCAdapter implements AuthenticationProvider + TokenValidator for Entra ID / Keycloak / Google.
 type OIDCAdapter struct {
-	verifier     *oidc.IDTokenVerifier
-	oauth2Config *oauth2.Config
-	provider     *oidc.Provider
-	tokenManager *iam.TokenManager
-	repo         iam.IdentityRepository
-	cookieDomain string
-	cookieSecure bool
+	verifier      *oidc.IDTokenVerifier
+	oauth2Config  *oauth2.Config
+	provider      *oidc.Provider
+	tokenManager  *iam.TokenManager
+	repo          iam.IdentityRepository
+	cookieDomain  string
+	cookieSecure  bool
+	issuerBaseURL string
+	isEntra       bool
 }
 
 // OIDCConfig holds OIDC provider configuration.
@@ -52,24 +57,48 @@ func NewOIDCAdapter(ctx context.Context, cfg OIDCConfig) (*OIDCAdapter, error) {
 		return nil, fmt.Errorf("oidc provider discovery: %w", err)
 	}
 
-	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
+	baseURL, err := issuerBaseURL(cfg.IssuerURL)
+	if err != nil {
+		return nil, err
+	}
+	// Entra multi-tenant apps must use /common; a tenant-specific endpoint
+	// rejects users homed in other tenants. The ID token issuer is checked
+	// against the token's own tid below.
+	isEntra := strings.HasSuffix(strings.Split(baseURL, "://")[1], "login.microsoftonline.com")
+	verifyCfg := &oidc.Config{ClientID: cfg.ClientID}
+	endpoint := provider.Endpoint()
+	if isEntra {
+		verifyCfg.SkipIssuerCheck = true
+		endpoint = oauth2.Endpoint{
+			AuthURL:  baseURL + "/common/oauth2/v2.0/authorize",
+			TokenURL: baseURL + "/common/oauth2/v2.0/token",
+		}
+	}
+
+	// Tenant-specific JWKS omits personal Microsoft account keys; /common has all.
+	verifier := provider.Verifier(verifyCfg)
+	if isEntra {
+		verifier = oidc.NewVerifier(baseURL+"/common/v2.0", oidc.NewRemoteKeySet(ctx, baseURL+"/common/discovery/v2.0/keys"), verifyCfg)
+	}
 
 	oauth2Config := &oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
 		RedirectURL:  cfg.RedirectURL,
-		Endpoint:     provider.Endpoint(),
+		Endpoint:     endpoint,
 		Scopes:       append([]string{oidc.ScopeOpenID, "profile", "email"}, cfg.Scopes...),
 	}
 
 	return &OIDCAdapter{
-		verifier:     verifier,
-		oauth2Config: oauth2Config,
-		provider:     provider,
-		tokenManager: cfg.TokenManager,
-		repo:         cfg.Repo,
-		cookieDomain: cfg.CookieDomain,
-		cookieSecure: cfg.CookieSecure,
+		verifier:      verifier,
+		oauth2Config:  oauth2Config,
+		provider:      provider,
+		tokenManager:  cfg.TokenManager,
+		repo:          cfg.Repo,
+		cookieDomain:  cfg.CookieDomain,
+		cookieSecure:  cfg.CookieSecure,
+		issuerBaseURL: baseURL,
+		isEntra:       isEntra,
 	}, nil
 }
 
@@ -98,6 +127,7 @@ func (a *OIDCAdapter) Authenticate(ctx context.Context, cred iam.Credentials) (i
 	// Extract claims
 	var claims struct {
 		Subject           string `json:"sub"`
+		Issuer            string `json:"iss"`
 		Email             string `json:"email"`
 		Name              string `json:"name"`
 		PreferredUsername string `json:"preferred_username"`
@@ -106,9 +136,23 @@ func (a *OIDCAdapter) Authenticate(ctx context.Context, cred iam.Credentials) (i
 	if err := idToken.Claims(&claims); err != nil {
 		return iam.IdentityContext{}, fmt.Errorf("parse claims: %w", err)
 	}
+	if a.isEntra {
+		if claims.TenantID == "" {
+			return iam.IdentityContext{}, fmt.Errorf("%w: missing tid claim", iam.ErrTokenInvalid)
+		}
+		if want := a.issuerBaseURL + "/" + claims.TenantID + "/v2.0"; claims.Issuer != want {
+			return iam.IdentityContext{}, fmt.Errorf("%w: unexpected issuer %q", iam.ErrTokenInvalid, claims.Issuer)
+		}
+	}
 
+	// Entra ID often omits `email` for work accounts; preferred_username is the
+	// stable UPN in that case.
+	email := claims.Email
+	if email == "" {
+		email = claims.PreferredUsername
+	}
 	// Find or create user
-	user, err := a.findOrCreateUser(ctx, claims.Subject, claims.Email, claims.Name)
+	user, err := a.findOrCreateUser(ctx, claims.Subject, email, claims.Name)
 	if err != nil {
 		return iam.IdentityContext{}, err
 	}
@@ -233,16 +277,23 @@ func (a *OIDCAdapter) getUserInfo(ctx context.Context, userID uuid.UUID) (*userI
 
 func (a *OIDCAdapter) resolveDefaultOrg(ctx context.Context, userID uuid.UUID) (uuid.UUID, string, error) {
 	memberships, err := a.repo.ListMembershipsByUser(ctx, userID)
-	if err != nil || len(memberships) == 0 {
-		return uuid.Nil, "viewer", nil
-	}
-	// Return first active membership
-	for _, m := range memberships {
-		if m.Status == "active" {
-			return m.OrgID, m.MembershipRole, nil
+	if err == nil {
+		// Return first active membership
+		for _, m := range memberships {
+			if m.Status == "active" {
+				return m.OrgID, m.MembershipRole, nil
+			}
+		}
+		if len(memberships) > 0 {
+			return memberships[0].OrgID, memberships[0].MembershipRole, nil
 		}
 	}
-	return memberships[0].OrgID, memberships[0].MembershipRole, nil
+	// shortcut: new Entra users get admin in the default org so the app can load
+	// cloud accounts; upgrade: provision memberships from Entra groups.
+	if id, err := uuid.Parse(os.Getenv("CCO_DEFAULT_ORG_ID")); err == nil {
+		return id, "admin", nil
+	}
+	return uuid.Nil, "viewer", nil
 }
 
 // SetAuthCookies sets access and refresh tokens as httpOnly cookies.
@@ -309,4 +360,12 @@ func (a *OIDCAdapter) ExchangeCode(ctx context.Context, code string) (iam.Identi
 		return iam.IdentityContext{}, errors.New("no id_token in token response")
 	}
 	return a.Authenticate(ctx, iam.Credentials{Type: "oidc", IDToken: rawIDToken})
+}
+
+func issuerBaseURL(issuerURL string) (string, error) {
+	u, err := url.Parse(issuerURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid OIDC issuer URL %q", issuerURL)
+	}
+	return u.Scheme + "://" + u.Host, nil
 }

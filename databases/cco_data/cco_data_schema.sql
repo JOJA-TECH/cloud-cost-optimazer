@@ -1047,7 +1047,7 @@ CREATE TABLE opt.risk_assessment (
     headroom           numeric(8,4),
     risk_score         numeric(6,4) NOT NULL,
     risk_level         text NOT NULL
-        CHECK (risk_level IN ('low','medium','high','critical')),
+        CHECK (risk_level IN ('low','medium','high','critical','indeterminate')),
     factors            jsonb NOT NULL,     -- desglose reproducible del puntaje
     assessed_at        timestamptz NOT NULL DEFAULT now()
 );

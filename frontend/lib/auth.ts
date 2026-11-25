@@ -35,11 +35,7 @@ export interface RegisterRequest {
   password: string
 }
 
-export async function login(req: LoginRequest): Promise<LoginResponse> {
-  const data = await apiJson<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(req),
-  })
+function persistSession(data: LoginResponse): void {
   // Persistir en sessionStorage para que sobreviva a recargas de página
   if (typeof window !== 'undefined') {
     sessionStorage.setItem(ACCESS_TOKEN_KEY, data.access_token)
@@ -49,7 +45,20 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
     sessionStorage.setItem('cco_user_email', data.email)
   }
   currentToken = data.access_token
+}
+
+export async function login(req: LoginRequest): Promise<LoginResponse> {
+  const data = await apiJson<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+  persistSession(data)
   return data
+}
+
+// Sesión ya validada por el backend tras el callback de Entra ID.
+export function restoreSession(data: LoginResponse): void {
+  persistSession(data)
 }
 
 export async function register(req: RegisterRequest) {

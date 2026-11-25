@@ -1,7 +1,7 @@
 import { getToken, refreshToken, isTokenExpiringSoon, getProjectId } from './auth'
 import { isDemoMode } from './demo-mode'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 let isRefreshing = false
 let refreshPromise: Promise<string | null> | null = null
@@ -55,6 +55,7 @@ export async function apiFetch(
   const res = await fetch(`${API_URL}${input}`, {
     ...init,
     headers,
+    credentials: 'include',
   })
 
   if (res.status === 401) {
@@ -73,6 +74,7 @@ export async function apiFetch(
       const retryRes = await fetch(`${API_URL}${input}`, {
         ...init,
         headers: newHeaders,
+        credentials: 'include',
       })
       return retryRes
     }

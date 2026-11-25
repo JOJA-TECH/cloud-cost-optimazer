@@ -96,7 +96,8 @@ func (p *AzureCostProvider) postWithRetry(ctx context.Context, token, requestURL
 }
 
 // buildCostQueryBody constructs the Usage query body (POST /query).
-// Grouping by ResourceId, ServiceName, MeterId, ChargeType to match cost_daily granularity.
+// Grouping uses dimensions supported by Cost Management; Meter is the valid
+// replacement for the old MeterId grouping.
 func buildCostQueryBody(from, to time.Time) map[string]interface{} {
 	return map[string]interface{}{
 		"type":      "Usage",
@@ -117,8 +118,8 @@ func buildCostQueryBody(from, to time.Time) map[string]interface{} {
 			},
 			"grouping": []map[string]interface{}{
 				{"type": "Dimension", "name": "ResourceId"},
-				{"type": "Dimension", "name": "ServiceName"},
-				{"type": "Dimension", "name": "MeterId"},
+				{"type": "Dimension", "name": "MeterCategory"},
+				{"type": "Dimension", "name": "Meter"},
 				{"type": "Dimension", "name": "ChargeType"},
 			},
 		},
@@ -168,7 +169,10 @@ func (p *AzureCostProvider) parseCostResponse(resp *http.Response, subscriptionI
 	for _, row := range payload.Properties.Rows {
 		resourceArmID := toString(get(row, "ResourceId"))
 		serviceName := toString(get(row, "ServiceName"))
-		meterID := toString(get(row, "MeterId"))
+		if serviceName == "" {
+			serviceName = toString(get(row, "MeterCategory"))
+		}
+		meterID := toString(get(row, "Meter"))
 		chargeType := toString(get(row, "ChargeType"))
 
 		usageDate := toTime(get(row, "UsageDate"))
@@ -186,9 +190,18 @@ func (p *AzureCostProvider) parseCostResponse(resp *http.Response, subscriptionI
 			currency = "USD"
 		}
 		usageUnit := toString(get(row, "UsageUnit"))
-		pricingModel := toString(get(row, "PricingModel"))
-		chargeCategory := toString(get(row, "ChargeCategory"))
-		if chargeCategory == "" {
+		pricingModel := strings.ToLower(toString(get(row, "PricingModel")))
+		switch pricingModel {
+		case "consumption", "ondemand", "on-demand":
+			pricingModel = "consumption"
+		case "reservation", "spot":
+		default:
+			pricingModel = "unknown"
+		}
+		chargeCategory := strings.ToLower(toString(get(row, "ChargeCategory")))
+		switch chargeCategory {
+		case "usage", "purchase", "tax", "adjustment", "credit":
+		default:
 			chargeCategory = "usage"
 		}
 
@@ -264,9 +277,18 @@ func toTime(v interface{}) time.Time {
 	}
 	switch x := v.(type) {
 	case string:
+		if len(x) == 8 {
+			t, _ := time.Parse("20060102", x)
+			return t.UTC()
+		}
 		t, _ := time.Parse(time.RFC3339, x)
 		return t.UTC()
 	case float64:
+		// Cost Management UsageDate is YYYYMMDD, not an epoch millisecond.
+		if x >= 10000000 && x <= 99999999 {
+			t, _ := time.Parse("20060102", fmt.Sprintf("%.0f", x))
+			return t.UTC()
+		}
 		return time.UnixMilli(int64(x)).UTC()
 	default:
 		return time.Time{}

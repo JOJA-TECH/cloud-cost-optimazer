@@ -20,6 +20,10 @@ type repository struct {
 
 // NewRepository construye el repository GORM sobre app.jobs (cco_app).
 func NewRepository(db *gorm.DB) Repository {
+	// GORM model TableName() is "jobs" for SQLite; scope Postgres to app.jobs.
+	if db.Dialector.Name() == "postgres" {
+		db = db.Table("app.jobs")
+	}
 	return &repository{db: db}
 }
 

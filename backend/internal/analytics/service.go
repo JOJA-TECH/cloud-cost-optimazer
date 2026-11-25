@@ -17,6 +17,7 @@ import (
 
 // repo is the storage surface the service needs.
 type repo interface {
+	ResolveResourceID(ctx context.Context, uid uuid.UUID) (int64, error)
 	WritePercentileStatistics(ctx context.Context, resourceID int64, stats []PercentileResult) (int, error)
 	WriteFeatureSnapshots(ctx context.Context, resourceID int64, snaps []FeatureSnapshotRow) (int, error)
 	WriteEfficiencyScore(ctx context.Context, resourceID int64, comp DESComponents) (int64, error)
@@ -63,16 +64,46 @@ func (s *Service) ComputePercentiles(ctx context.Context, resourceUID uuid.UUID,
 		return nil, NewError(CodeInvalidQuery, "period_type must be 1h, 1d, or 15m", ErrInvalidQuery)
 	}
 
-	// Read individual samples from raw.metric_sample for exact percentiles
-	samples, err := s.repo.PercentileStatistic(ctx, resourceUID, metricCode, periodType, from, to)
+	resourceID, err := s.resolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return nil, err
 	}
+	step := map[string]time.Duration{"15m": 15 * time.Minute, "1h": time.Hour, "1d": 24 * time.Hour}[periodType]
 
-	// PercentileStatistic already has pre-computed percentiles from repo
-	// This is a shortcut - the repo already computes exact percentiles
-	// Here we just return them
-	return samples, nil
+	start := bucketStart(from, step)
+	end := bucketStart(to.Add(-time.Nanosecond), step)
+	var stats []PercentileResult
+	for b := start; !b.After(end); b = b.Add(step) {
+		series, err := s.dataReader.MetricSeries(ctx, data.DataQuery{
+			ResourceUID: resourceUID, MetricCode: metricCode,
+			FromUTC: b, ToUTC: b.Add(step),
+		}, 10000)
+		if err != nil {
+			return nil, err
+		}
+		samples := make([]float64, 0, len(series))
+		for _, pt := range series {
+			if pt.AvgValue != nil {
+				samples = append(samples, *pt.AvgValue)
+			}
+		}
+		if len(samples) == 0 {
+			continue
+		}
+		values := s.computePercentilesFromSamples(samples, []float64{0.5, 0.95, 0.99})
+		for _, p := range []float64{0.5, 0.95, 0.99} {
+			stats = append(stats, PercentileResult{
+				ResourceUID: resourceUID, PeriodType: periodType, PeriodStartUTC: b,
+				MetricCode: metricCode, Percentile: p, Value: float64Ptr(values[p]),
+				Method: "exact_sample", ObservationCount: len(samples),
+				SourceGranularity: "1m", ComputedAt: time.Now().UTC(),
+			})
+		}
+	}
+	if _, err := s.repo.WritePercentileStatistics(ctx, resourceID, stats); err != nil {
+		return nil, err
+	}
+	return s.repo.PercentileStatistic(ctx, resourceUID, metricCode, periodType, from, to)
 }
 
 func (s *Service) computePercentilesFromSamples(samples []float64, percentiles []float64) map[float64]float64 {
@@ -156,6 +187,9 @@ func (s *Service) ComputeFeatureSnapshot(ctx context.Context, resourceUID uuid.U
 		if r.err != nil {
 			return 0, r.err
 		}
+		if len(r.snap.AvailableMetrics) == 0 {
+			continue // no fabricated snapshots for empty hours
+		}
 		snaps = append(snaps, r.snap)
 	}
 
@@ -181,7 +215,7 @@ func (s *Service) computeOneHourSnapshot(ctx context.Context, resourceID int64, 
 	// SKU context from config snapshot
 	if cfg != nil {
 		snap.SKUID = nil // SKUID resolved at write time via SKUName
-		snap.ConfigSnapshotID = cfg.CollectorRunID
+		snap.ConfigSnapshotID = cfg.ConfigSnapshotID
 		snap.ComputeModel = ptrStr(cfg.ComputeModel)
 		snap.CapacityVCores = ptrFloat64(cfg.CapacityVCores)
 	}
@@ -267,16 +301,17 @@ func (s *Service) computeOneHourSnapshot(ctx context.Context, resourceID int64, 
 
 	// Percentiles from exact samples (if available)
 	type pctTarget struct {
-		code   string
-		setter func(*float64)
+		code       string
+		percentile float64
+		setter     func(*float64)
 	}
 	targets := []pctTarget{
-		{"cpu_percent", func(v *float64) { snap.CPUP50 = v }},
-		{"cpu_percent", func(v *float64) { snap.CPUP95 = v }},
-		{"cpu_percent", func(v *float64) { snap.CPUP99 = v }},
-		{"data_io_percent", func(v *float64) { snap.DataIOP95 = v }},
-		{"log_write_percent", func(v *float64) { snap.LogWriteP95 = v }},
-		{"sessions_percent", func(v *float64) { snap.SessionsP95 = v }},
+		{"cpu_percent", 0.50, func(v *float64) { snap.CPUP50 = v }},
+		{"cpu_percent", 0.95, func(v *float64) { snap.CPUP95 = v }},
+		{"cpu_percent", 0.99, func(v *float64) { snap.CPUP99 = v }},
+		{"data_io_percent", 0.95, func(v *float64) { snap.DataIOP95 = v }},
+		{"log_write_percent", 0.95, func(v *float64) { snap.LogWriteP95 = v }},
+		{"sessions_percent", 0.95, func(v *float64) { snap.SessionsP95 = v }},
 	}
 	for _, t := range targets {
 		ps, err := s.repo.PercentileStatistic(ctx, resourceUID, t.code, "1h", bucketStart, bucketEnd)
@@ -284,16 +319,8 @@ func (s *Service) computeOneHourSnapshot(ctx context.Context, resourceID int64, 
 			continue
 		}
 		for _, pr := range ps {
-			if pr.Method == "exact_sample" && pr.Value != nil {
-				if math.Abs(pr.Percentile-0.50) < 0.001 {
-					t.setter(pr.Value)
-				}
-				if math.Abs(pr.Percentile-0.95) < 0.001 {
-					t.setter(pr.Value)
-				}
-				if math.Abs(pr.Percentile-0.99) < 0.001 {
-					t.setter(pr.Value)
-				}
+			if pr.Method == "exact_sample" && pr.Value != nil && math.Abs(pr.Percentile-t.percentile) < 0.001 {
+				t.setter(pr.Value)
 			}
 		}
 	}
@@ -330,9 +357,44 @@ func markMetricAvailable(row *FeatureSnapshotRow, codes ...string) {
 // ---- ComputeTrends ----
 
 func (s *Service) ComputeTrends(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) ([]TrendResult, error) {
-	// Trends are computed as part of feature_snapshot (cpu_slope, storage_growth_bytes)
-	// This method delegates to repo.Trend which reads from feature_snapshot.
+	resourceID, err := s.resolveResourceID(ctx, resourceUID)
+	if err != nil {
+		return nil, err
+	}
+	snaps, err := s.repo.FeatureSnapshot(ctx, resourceUID, "1h", from, to, 1000)
+	if err != nil {
+		return nil, err
+	}
+	if len(snaps) >= 2 {
+		slope := linearSlope(snaps)
+		for i := range snaps {
+			snaps[i].CPUSlope = slope
+			markMetricAvailable(&snaps[i], "cpu_slope")
+		}
+		if _, err := s.repo.WriteFeatureSnapshots(ctx, resourceID, snaps); err != nil {
+			return nil, err
+		}
+	}
 	return s.repo.Trend(ctx, resourceUID, from, to)
+}
+
+func linearSlope(snaps []FeatureSnapshotRow) float64 {
+	var sx, sy, sxx, sxy float64
+	base := snaps[0].PeriodStartUTC
+	for _, snap := range snaps {
+		x := snap.PeriodStartUTC.Sub(base).Hours()
+		y := snap.CPUAvg
+		sx += x
+		sy += y
+		sxx += x * x
+		sxy += x * y
+	}
+	n := float64(len(snaps))
+	denom := n*sxx - sx*sx
+	if denom == 0 {
+		return 0
+	}
+	return (n*sxy - sx*sy) / denom
 }
 
 // ---- DetectWorkloadPatterns ----
@@ -469,14 +531,7 @@ func (s *Service) Forecasts(ctx context.Context, resourceUID uuid.UUID, targetMe
 // ---- helpers ----
 
 func (s *Service) resolveResourceID(ctx context.Context, uid uuid.UUID) (int64, error) {
-	// This would need access to data repository; shortcut: use repo method
-	type resolver interface {
-		resolveResourceID(ctx context.Context, uid uuid.UUID) (int64, error)
-	}
-	if r, ok := s.repo.(resolver); ok {
-		return r.resolveResourceID(ctx, uid)
-	}
-	return 0, NewError(CodeInvalidQuery, "repository does not support resource resolution", ErrInvalidQuery)
+	return s.repo.ResolveResourceID(ctx, uid)
 }
 
 func bucketStart(t time.Time, step time.Duration) time.Time {
@@ -506,6 +561,8 @@ func ptrFloat64(f *float64) float64 {
 	}
 	return *f
 }
+
+func float64Ptr(f float64) *float64 { return &f }
 
 func computeDatasetHash(spec TrainingDatasetSpec) string {
 	// Simplified hash

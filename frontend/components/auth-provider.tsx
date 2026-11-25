@@ -1,7 +1,18 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
-import { login as loginApi, logout as logoutApi, getToken, getUserName, getUserEmail, isTokenExpiringSoon, refreshToken } from '@/lib/auth'
+import { API_URL } from '@/lib/api'
+import {
+  login as loginApi,
+  logout as logoutApi,
+  restoreSession as restoreSessionApi,
+  getToken,
+  getUserName,
+  getUserEmail,
+  isTokenExpiringSoon,
+  refreshToken,
+  LoginResponse,
+} from '@/lib/auth'
 
 interface AuthContextType {
   token: string | null
@@ -10,6 +21,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   isClient: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithEntra: () => void
+  restoreSession: (data: LoginResponse) => void
   logout: () => void
 }
 
@@ -29,14 +42,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsClient(true)
   }, [])
 
+  const applySession = useCallback((data: LoginResponse) => {
+    setToken(data.access_token)
+    setUserName(data.display_name || data.email.split('@')[0] || 'User')
+    setUserEmail(data.email)
+  }, [])
+
   const doLogin = useCallback(
     async (email: string, password: string) => {
-      const data = await loginApi({ email, password })
-      setToken(data.access_token)
-      setUserName(data.display_name || data.email.split('@')[0] || 'User')
-      setUserEmail(data.email)
+      applySession(await loginApi({ email, password }))
     },
-    [],
+    [applySession],
+  )
+
+  const doLoginWithEntra = useCallback(() => {
+    window.location.href = `${API_URL}/auth/oidc/login`
+  }, [])
+
+  const doRestoreSession = useCallback(
+    (data: LoginResponse) => {
+      restoreSessionApi(data)
+      applySession(data)
+    },
+    [applySession],
   )
 
   const doLogout = useCallback(() => {
@@ -76,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!token,
         isClient,
         login: doLogin,
+        loginWithEntra: doLoginWithEntra,
+        restoreSession: doRestoreSession,
         logout: doLogout,
       }}
     >

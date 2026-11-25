@@ -2,10 +2,14 @@ package cloud
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/JOJA-TECH/cloud-cost-optimazer/backend/internal/iam"
 	"github.com/google/uuid"
 )
 
@@ -117,6 +121,93 @@ func (s *Service) SyncResources(ctx context.Context, orgID, id uuid.UUID) ([]Res
 		discovered[i].LastSeenAt = now
 	}
 	return s.resources.UpsertResources(ctx, acc.CloudAccountID, discovered)
+}
+
+// LoginSyncConfig carries the provider settings used to discover resources
+// after login. The secret is resolved from the environment by the service.
+type LoginSyncConfig struct {
+	TenantID            string
+	SubscriptionID      string
+	ClientID            string
+	CredentialReference string
+}
+
+// ProjectLister supplies the organization project used for data source bindings.
+type ProjectLister interface {
+	ListProjectsByOrg(ctx context.Context, orgID uuid.UUID) ([]iam.ProjectDTO, error)
+}
+
+// SyncOnLogin registers the configured cloud account if missing, discovers its
+// resources and binds them to the organization's first project so acquisition
+// has targets. Failures are returned to the caller for logging; they never
+// block the login itself.
+func (s *Service) SyncOnLogin(ctx context.Context, orgID, userID uuid.UUID, projects ProjectLister, cfg LoginSyncConfig) error {
+	if orgID == uuid.Nil || cfg.TenantID == "" || cfg.SubscriptionID == "" || cfg.ClientID == "" || cfg.CredentialReference == "" {
+		return nil
+	}
+	accounts, err := s.accounts.ListAccounts(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("list cloud accounts: %w", err)
+	}
+	var account AccountDTO
+	if len(accounts) > 0 {
+		account = accounts[0]
+	} else {
+		clientID := cfg.ClientID
+		account, err = s.accounts.CreateAccount(ctx, CreateAccountInput{
+			OrgID:               orgID,
+			UserID:              userID,
+			ProviderCode:        ProviderAzure,
+			DisplayName:         "Azure " + cfg.SubscriptionID,
+			SubscriptionID:      cfg.SubscriptionID,
+			TenantID:            cfg.TenantID,
+			ClientID:            &clientID,
+			CredentialReference: cfg.CredentialReference,
+		})
+		if err != nil {
+			return fmt.Errorf("register cloud account: %w", err)
+		}
+		_ = s.accounts.UpdateAccountStatus(ctx, account.CloudAccountID, "active", nil)
+	}
+
+	discovered, err := s.SyncResources(ctx, orgID, account.CloudAccountID)
+	if err != nil {
+		return fmt.Errorf("discover cloud resources: %w", err)
+	}
+	if len(discovered) == 0 {
+		return nil
+	}
+	orgProjects, err := projects.ListProjectsByOrg(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+	if len(orgProjects) == 0 {
+		return nil
+	}
+	projectID := orgProjects[0].ProjectID
+	bound, err := s.bindings.ListBindings(ctx, &projectID)
+	if err != nil {
+		return fmt.Errorf("list data sources: %w", err)
+	}
+	boundUIDs := make(map[uuid.UUID]bool, len(bound))
+	for _, b := range bound {
+		boundUIDs[b.DataResourceUID] = true
+	}
+	for _, res := range discovered {
+		if boundUIDs[res.ResourceUID] {
+			continue
+		}
+		_, err := s.RegisterDataSource(ctx, orgID, CreateBindingInput{
+			ProjectID:       projectID,
+			CloudAccountID:  account.CloudAccountID,
+			DataResourceUID: res.ResourceUID,
+			DisplayName:     res.ServerName + "/" + res.DatabaseName,
+		})
+		if err != nil && !errors.Is(err, ErrBindingExists) {
+			slog.Warn("bind discovered resource on login failed", "resource_uid", res.ResourceUID, "error", err)
+		}
+	}
+	return nil
 }
 
 // ListResources returns resources for an account. 404 on org mismatch.

@@ -217,7 +217,7 @@ func (forecastRow) TableName() string { return "v_forecast" }
 
 // ---- helpers ----
 
-func (r *AnalyticsRepository) resolveResourceID(ctx context.Context, uid uuid.UUID) (int64, error) {
+func (r *AnalyticsRepository) ResolveResourceID(ctx context.Context, uid uuid.UUID) (int64, error) {
 	var row struct {
 		ResourceID int64 `gorm:"column:resource_id"`
 	}
@@ -272,7 +272,7 @@ func (r *AnalyticsRepository) WritePercentileStatistics(ctx context.Context, res
 }
 
 func (r *AnalyticsRepository) PercentileStatistic(ctx context.Context, resourceUID uuid.UUID, metricCode string, periodType string, from, to time.Time) ([]analytics.PercentileResult, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (r *AnalyticsRepository) WriteFeatureSnapshots(ctx context.Context, resourc
 }
 
 func (r *AnalyticsRepository) FeatureSnapshot(ctx context.Context, resourceUID uuid.UUID, periodType string, from, to time.Time, limit int) ([]analytics.FeatureSnapshotRow, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func (r *AnalyticsRepository) FeatureSnapshot(ctx context.Context, resourceUID u
 // ---- Trend (cpu_slope, storage_growth_bytes live in feature_snapshot) ----
 
 func (r *AnalyticsRepository) Trend(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) ([]analytics.TrendResult, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func (r *AnalyticsRepository) Trend(ctx context.Context, resourceUID uuid.UUID, 
 // ---- WorkloadPattern ----
 
 func (r *AnalyticsRepository) WorkloadPattern(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) (analytics.WorkloadPattern, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return analytics.WorkloadPattern{}, err
 	}
@@ -623,30 +623,66 @@ func (r *AnalyticsRepository) readEfficiencyScore(ctx context.Context, resourceI
 }
 
 func (r *AnalyticsRepository) CapacityAnalysis(ctx context.Context, resourceUID uuid.UUID, periodType string, periodStart time.Time) (analytics.CapacityAnalysis, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return analytics.CapacityAnalysis{}, err
 	}
-	comp, err := r.readEfficiencyScore(ctx, resourceID, periodType, periodStart, "v1_equal")
-	if err != nil {
+	// Derive capacity from observed feature snapshots; reading the stored DES
+	// score here would deadlock with ComputeDESComponents (it calls this).
+	// A 1d request aggregates the real 1h snapshots of that day.
+	query := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "feat", "feature_snapshot")).
+		Where("resource_id = ?", resourceID)
+	if periodType == "1d" {
+		query = query.Where("period_type = '1h' AND period_start_utc >= ? AND period_start_utc < ?",
+			periodStart, periodStart.Add(24*time.Hour))
+	} else {
+		query = query.Where("period_type = ? AND period_start_utc = ?", periodType, periodStart)
+	}
+	var snaps []featureSnapshotRow
+	if err := query.Find(&snaps).Error; err != nil {
 		return analytics.CapacityAnalysis{}, err
+	}
+	if len(snaps) == 0 {
+		return analytics.CapacityAnalysis{}, analytics.NewError(analytics.CodeNotFound,
+			"feature snapshot not found for capacity analysis", analytics.ErrNotFound)
+	}
+	peak := 0.0
+	var currentVCores float64
+	for _, snap := range snaps {
+		if snap.CPUMax != nil && *snap.CPUMax > peak {
+			peak = *snap.CPUMax
+		}
+		if snap.CPUAvg != nil && *snap.CPUAvg > peak {
+			peak = *snap.CPUAvg
+		}
+		if snap.CapacityVCores != 0 {
+			currentVCores = snap.CapacityVCores
+		}
+	}
+	capacityE := 1 - peak/100
+	if capacityE < 0 {
+		capacityE = 0
+	}
+	if capacityE > 1 {
+		capacityE = 1
 	}
 	return analytics.CapacityAnalysis{
 		ResourceUID:       resourceUID,
 		PeriodType:        periodType,
 		PeriodStartUTC:    periodStart,
-		CurrentVCores:     0, // shortcut: not stored here
-		HeadroomPct:       0,
-		PeakUtilization:   0,
+		CurrentVCores:     currentVCores,
+		HeadroomPct:       100 - peak,
+		PeakUtilization:   peak,
 		GrowthRateVCores:  0,
 		RecommendedVCores: 0,
-		CapacityE:         comp.CapacityE,
-		ComputedAt:        comp.ComputedAt,
+		CapacityE:         capacityE,
+		ComputedAt:        time.Now().UTC(),
 	}, nil
 }
 
 func (r *AnalyticsRepository) CostAnalysis(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) (analytics.CostAnalysis, error) {
-	if _, err := r.resolveResourceID(ctx, resourceUID); err != nil {
+	if _, err := r.ResolveResourceID(ctx, resourceUID); err != nil {
 		return analytics.CostAnalysis{}, err
 	}
 	// We don't store cost analysis persistently; compute on the fly from cost_daily.
@@ -665,7 +701,7 @@ func (r *AnalyticsRepository) CostAnalysis(ctx context.Context, resourceUID uuid
 }
 
 func (r *AnalyticsRepository) DESComponents(ctx context.Context, resourceUID uuid.UUID, periodType string, periodStart time.Time) (analytics.DESComponents, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	resourceID, err := r.ResolveResourceID(ctx, resourceUID)
 	if err != nil {
 		return analytics.DESComponents{}, err
 	}
@@ -748,13 +784,10 @@ func computeDatasetHash(spec analytics.TrainingDatasetSpec) string {
 // ---- Forecasts (contract.v_forecast) ----
 
 func (r *AnalyticsRepository) Forecasts(ctx context.Context, resourceUID uuid.UUID, targetMetric string, from, to time.Time) ([]analytics.ForecastResponse, error) {
-	resourceID, err := r.resolveResourceID(ctx, resourceUID)
-	if err != nil {
-		return nil, err
-	}
+	// contract.v_forecast exposes resource_uid only; resource_id is internal to cco_data.
 	db := r.db.WithContext(ctx).
 		Table(database.TableName(r.db, "contract", "v_forecast")).
-		Where("resource_id = ?", resourceID)
+		Where("resource_uid = ?", resourceUID)
 	if targetMetric != "" {
 		db = db.Where("target_metric = ?", targetMetric)
 	}

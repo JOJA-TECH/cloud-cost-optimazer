@@ -49,7 +49,7 @@ func dsnFor(cfg acquisition.SQLConfig) string {
 // resourceStatsQuery is incremental: the single placeholder carries the
 // service cursor (zero time on the first run; sys.dm_db_resource_stats only
 // keeps ~1 hour of rows, so a zero cursor is safe).
-const resourceStatsQuery = `SELECT end_time, avg_cpu_percent, avg_data_io_percent, avg_log_write_percent, avg_memory_usage_percent, avg_instance_cpu_percent, dtu_limit, cpu_limit FROM sys.dm_db_resource_stats WHERE end_time > ? ORDER BY end_time`
+const resourceStatsQuery = `SELECT end_time, avg_cpu_percent, avg_data_io_percent, avg_log_write_percent, avg_memory_usage_percent, avg_instance_cpu_percent, dtu_limit, cpu_limit FROM sys.dm_db_resource_stats WHERE end_time > @p1 ORDER BY end_time`
 
 const sessionsQuery = `SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1 AND status <> 'pre-connect'`
 

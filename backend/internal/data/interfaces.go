@@ -80,23 +80,23 @@ type QueryStoreRuntimeRecord struct {
 // SourceChargeID is the idempotency key of the unique partial index
 // ux_cost_daily_source_charge; a nil value is rejected by the writer.
 type CostRecord struct {
-	ResourceUID      *uuid.UUID // nil: cost without a mapped database (Storage, VNet)
-	ProviderCode     string
-	ScopeType        string // 'subscription' | 'resource_group' | 'resource'
-	ScopeName        string
-	ServiceName      string
-	RegionCode       *string
-	UsageDate        time.Time // day (UTC)
-	Currency         string
-	SourceChargeID   *string
-	MeterID          *string
-	PreTaxCost       float64
-	UsageQuantity    *float64
-	UsageUnit        *string
-	PricingModel     *string // 'consumption'|'reservation'|'spot'|'unknown'
-	ChargeCategory   *string // 'usage'|'purchase'|'tax'|'adjustment'|'credit'
-	Source           string  // defaults to 'azure_cost_management'
-	SourceResourceID *string // ARM resource id; canonical contract field so costs are assignable to resources
+	ResourceUID      *uuid.UUID `json:"resource_uid"` // nil: cost without a mapped database (Storage, VNet)
+	ProviderCode     string     `json:"provider_code"`
+	ScopeType        string     `json:"scope_type"` // 'subscription' | 'resource_group' | 'resource'
+	ScopeName        string     `json:"scope_name"`
+	ServiceName      string     `json:"service_name"`
+	RegionCode       *string    `json:"region_code"`
+	UsageDate        time.Time  `json:"usage_date"` // day (UTC)
+	Currency         string     `json:"currency"`
+	SourceChargeID   *string    `json:"source_charge_id"`
+	MeterID          *string    `json:"meter_id"`
+	PreTaxCost       float64    `json:"pre_tax_cost"`
+	UsageQuantity    *float64   `json:"usage_quantity"`
+	UsageUnit        *string    `json:"usage_unit"`
+	PricingModel     *string    `json:"pricing_model"`   // 'consumption'|'reservation'|'spot'|'unknown'
+	ChargeCategory   *string    `json:"charge_category"` // 'usage'|'purchase'|'tax'|'adjustment'|'credit'
+	Source           string     `json:"source"`          // defaults to 'azure_cost_management'
+	SourceResourceID *string    `json:"source_resource_id"` // ARM resource id; canonical contract field so costs are assignable to resources
 }
 
 // ConfigurationSnapshot maps core.resource_config_snapshot (append-only ARM
@@ -104,6 +104,7 @@ type CostRecord struct {
 // unknown SKUs are stored with a NULL sku_id and the textual name.
 type ConfigurationSnapshot struct {
 	ResourceUID       uuid.UUID
+	ConfigSnapshotID  *int64
 	CollectorRunID    *int64
 	SKUName           *string
 	Tier              *string
@@ -121,13 +122,13 @@ type ConfigurationSnapshot struct {
 
 // HistoricalMetric is one point of a stored metric series.
 type HistoricalMetric struct {
-	TimestampUTC    time.Time
-	IntervalSeconds int
-	AvgValue        *float64
-	MinValue        *float64
-	MaxValue        *float64
-	TotalValue      *float64
-	CountValue      *int
+	TimestampUTC    time.Time `json:"timestamp_utc"`
+	IntervalSeconds int       `json:"interval_seconds"`
+	AvgValue        *float64  `json:"avg"`
+	MinValue        *float64  `json:"min"`
+	MaxValue        *float64  `json:"max"`
+	TotalValue      *float64  `json:"total"`
+	CountValue      *int      `json:"count"`
 }
 
 // DataQuery selects a historical series: resource + metric + [FromUTC, ToUTC).

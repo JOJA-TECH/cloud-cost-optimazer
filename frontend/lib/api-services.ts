@@ -579,13 +579,18 @@ export async function computeDES(
 }
 
 export async function requestForecast(
-  targetMetric: string = 'cpu_percent',
-  horizonSteps: number = 24
+  targetMetric: string = 'cpu_avg',
+  horizonSteps: number = 1
 ): Promise<ServiceResult<AnalyticsJob | null>> {
+  const periodStart = new Date()
+  periodStart.setUTCMinutes(0, 0, 0)
+  periodStart.setUTCHours(periodStart.getUTCHours() + 1)
   return analyticsPost<AnalyticsJob>('/api/v1/analytics/forecasts', {
+    resource_uid: getSelectedResourceUid(),
     target_metric: targetMetric,
     horizon_steps: horizonSteps,
     step_unit: '1h',
+    period_start_utc: periodStart.toISOString(),
   })
 }
 
@@ -962,18 +967,21 @@ export async function getPerfSeries(
   })
 
   ioPoints.forEach((p) => {
+    if (p.avg == null) return
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.io = +p.avg.toFixed(1)
     else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: +p.avg.toFixed(1), memory: null, sessions: null, latency: null })
   })
 
   memoryPoints.forEach((p) => {
+    if (p.avg == null) return
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.memory = +p.avg.toFixed(1)
     else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: +p.avg.toFixed(1), sessions: null, latency: null })
   })
 
   sessionsPoints.forEach((p) => {
+    if (p.avg == null) return
     const existing = pointMap.get(p.timestamp_utc)
     if (existing) existing.sessions = Math.round(p.avg)
     else pointMap.set(p.timestamp_utc, { t: new Date(p.timestamp_utc).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), timestamp: p.timestamp_utc, idx: 0, p50: null, p95: null, p99: null, io: null, memory: null, sessions: Math.round(p.avg), latency: null })

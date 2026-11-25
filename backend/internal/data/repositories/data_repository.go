@@ -704,6 +704,75 @@ func (r *DataRepository) MetricReadingTimestamps(ctx context.Context, resourceUI
 	return ts, nil
 }
 
+// ---- QueryStoreReader ----
+
+func (r *DataRepository) TopOperations(ctx context.Context, resourceUID uuid.UUID, from, to time.Time, limit int) ([]data.TopOperation, error) {
+	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	if err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 100 {
+		limit = 100
+	}
+	var rows []struct {
+		QueryID  int64    `gorm:"column:query_id"`
+		Text     *string  `gorm:"column:text"`
+		Execs    int64    `gorm:"column:execs"`
+		AvgCPUMs *float64 `gorm:"column:avg_cpu_ms"`
+		AvgDurMs *float64 `gorm:"column:avg_dur_ms"`
+		Reads    *float64 `gorm:"column:reads"`
+	}
+	err = r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "raw", "query_store_runtime_stats")+" AS s").
+		Select(`s.query_id AS query_id, MAX(q.query_sql_text) AS text, SUM(s.count_executions) AS execs,
+			AVG(s.avg_cpu_time_us) / 1000.0 AS avg_cpu_ms,
+			AVG(s.avg_duration_us) / 1000.0 AS avg_dur_ms,
+			AVG(s.avg_logical_io_reads) AS reads`).
+		Joins("LEFT JOIN " + database.TableName(r.db, "raw", "query_store_query") +
+			" AS q ON q.resource_id = s.resource_id AND q.query_id = s.query_id AND q.snapshot_at_utc = s.snapshot_at_utc").
+		Where("s.resource_id = ? AND s.interval_start_utc >= ? AND s.interval_start_utc < ?", resourceID, from, to).
+		Group("s.query_id").
+		Order("execs DESC").
+		Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]data.TopOperation, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, data.TopOperation{
+			QueryID: row.QueryID, Text: row.Text, Execs: row.Execs,
+			AvgCPUMs: row.AvgCPUMs, AvgDurMs: row.AvgDurMs, Reads: row.Reads,
+		})
+	}
+	return out, nil
+}
+
+func (r *DataRepository) WaitCategories(ctx context.Context, resourceUID uuid.UUID, from, to time.Time) ([]data.WaitCategory, error) {
+	resourceID, err := r.resolveResourceID(ctx, resourceUID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Name        string  `gorm:"column:name"`
+		TotalWaitMs float64 `gorm:"column:total_wait_ms"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table(database.TableName(r.db, "raw", "query_store_wait_stats")).
+		Select("wait_category AS name, COALESCE(SUM(total_wait_ms), 0) AS total_wait_ms").
+		Where("resource_id = ? AND snapshot_at_utc >= ? AND snapshot_at_utc < ?", resourceID, from, to).
+		Group("wait_category").
+		Order("total_wait_ms DESC").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]data.WaitCategory, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, data.WaitCategory{Name: row.Name, TotalWaitMs: row.TotalWaitMs})
+	}
+	return out, nil
+}
+
 // ---- RunReader ----
 
 func (r *DataRepository) ListRuns(ctx context.Context, uids []uuid.UUID, f data.RunFilter) ([]data.RunRecord, error) {
@@ -1073,7 +1142,9 @@ func (r *DataRepository) ListPrices(ctx context.Context, query data.PriceQuery) 
 }
 
 func configRowToSnapshot(row configSnapshotRow) data.ConfigurationSnapshot {
+	configSnapshotID := row.ConfigSnapshotID
 	return data.ConfigurationSnapshot{
+		ConfigSnapshotID:  &configSnapshotID,
 		CollectorRunID:    row.CollectorRunID,
 		SKUName:           row.SKUName,
 		Tier:              row.Tier,

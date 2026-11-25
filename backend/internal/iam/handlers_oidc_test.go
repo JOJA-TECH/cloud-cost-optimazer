@@ -2,6 +2,7 @@ package iam
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -57,7 +58,7 @@ func TestOIDCLoginHandlerPerRequestState(t *testing.T) {
 }
 
 func TestOIDCCallbackHandlerStateMismatch(t *testing.T) {
-	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false)
+	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?code=abc&state=bad", nil)
 	req.AddCookie(&http.Cookie{Name: "cco_oidc_state", Value: "good"})
@@ -70,15 +71,16 @@ func TestOIDCCallbackHandlerStateMismatch(t *testing.T) {
 }
 
 func TestOIDCCallbackHandlerSuccess(t *testing.T) {
-	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false)
+	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false, "http://127.0.0.1:3000/")
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?code=abc&state=good", nil)
 	req.AddCookie(&http.Cookie{Name: "cco_oidc_state", Value: "good"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
-		t.Fatalf("status/location = %d/%q, want 302 to /", rec.Code, rec.Header().Get("Location"))
+	want := "http://127.0.0.1:3000/auth/oidc/callback"
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != want {
+		t.Fatalf("status/location = %d/%q, want 302 to %q", rec.Code, rec.Header().Get("Location"), want)
 	}
 	cookies := rec.Result().Cookies()
 	var hasAccess, hasRefresh, hasState bool
@@ -102,7 +104,7 @@ func TestOIDCCallbackHandlerSuccess(t *testing.T) {
 
 // guard: the code path rejects empty state/cookie combos
 func TestOIDCCallbackHandlerMissingCookie(t *testing.T) {
-	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false)
+	h := NewOIDCCallbackHandler(stubOIDCAdapter{}, NewTokenManager(DefaultTokenConfig("test-secret"), nil), "", false, "")
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?code=abc&state=good", nil))
@@ -112,5 +114,50 @@ func TestOIDCCallbackHandlerMissingCookie(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "missing or invalid code/state") {
 		t.Fatalf("body = %q, want code/state error", rec.Body.String())
+	}
+}
+
+func TestOIDCSessionHandlerReturnsIdentity(t *testing.T) {
+	tm := NewTokenManager(DefaultTokenConfig("test-secret"), nil)
+	pair, err := tm.GenerateTokenPair(IdentityContext{
+		UserID: uuid.New(), Email: "user@example.com", DisplayName: "User",
+		AuthMethod: "oidc", OrgRole: "viewer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/session", nil)
+	req.AddCookie(&http.Cookie{Name: "cco_access", Value: pair.AccessToken})
+	req.AddCookie(&http.Cookie{Name: "cco_refresh", Value: pair.RefreshToken})
+	rec := httptest.NewRecorder()
+	NewOIDCSessionHandler(tm).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		Email        string `json:"email"`
+		DisplayName  string `json:"display_name"`
+		OrgRole      string `json:"org_role"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.AccessToken != pair.AccessToken || body.RefreshToken != pair.RefreshToken ||
+		body.Email != "user@example.com" || body.DisplayName != "User" || body.OrgRole != "viewer" {
+		t.Fatalf("unexpected session payload: %+v", body)
+	}
+}
+
+func TestOIDCSessionHandlerRejectsMissingCookie(t *testing.T) {
+	h := NewOIDCSessionHandler(NewTokenManager(DefaultTokenConfig("test-secret"), nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/oidc/session", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
